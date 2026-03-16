@@ -240,31 +240,25 @@ async function handleCommand(interaction) {
 
   // ── SPECIES-ROLL ──────────────────────────────────────────────
   if (commandName === "species-roll") {
-    // Defer ephemerally first so we can edit later from button handler
-    await interaction.deferReply({ flags: 64 });
-    let userData=_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0,badges:[]};
-    if ((userData.rolls||0)<1) return interaction.editReply({embeds:[new EmbedBuilder().setColor(0xff0000).setTitle("❌ No Rolls Left").setDescription("Use `/daily` for a free roll, or win fights for a 30% chance!")]});
-    const rollResult=getRandomSpecies();
-    let newSpecies;
-    if (rollResult.isDragon) {
-      newSpecies=getDragonSubtype();
-    } else { newSpecies=rollResult; }
-    userData.species=newSpecies; userData.originalSpecies=newSpecies; userData.rolls=(userData.rolls||0)-1;
-    _state.userSpecies.set(user.id,userData); await database.saveUserSpecies(user.id,userData);
-    const member=await guild.members.fetch(user.id); await assignSpeciesRole(member,newSpecies);
-    const rollEmbed=new EmbedBuilder().setColor(newSpecies.color||0x808080)
-      .setTitle(`${newSpecies.emoji} New species rolled!`)
-      .setDescription(`**${user.displayName}** rolled ${newSpecies.emoji} **${newSpecies.name}**!\n\nChance: **${newSpecies.chance||"?"}** | HP: ${newSpecies.hp} | ATK: ${newSpecies.atkMin}–${newSpecies.atkMax} | HEAL: ${newSpecies.healMin}–${newSpecies.healMax}\n\n🎲 Rolls remaining: **${userData.rolls}**`);
-    if (userData.rolls>0) {
-      const row=new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`reroll_${user.id}`).setLabel("🔄 Reroll").setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId(`cancel_${user.id}`).setLabel("❌ Stop rolling").setStyle(ButtonStyle.Danger));
-      _state.activeRolls.set(user.id,{timestamp:Date.now()});
-      await interaction.editReply({embeds:[rollEmbed],components:[row]});
-    } else {
-      await interaction.editReply({embeds:[rollEmbed.setFooter({text:"No rolls remaining. Use /daily for a free roll!"})]});
-    }
-    return;
+    // FIX: new users start with 1 roll
+    let userData=_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:1,requestsEnabled:true,lastSwitch:0,badges:[]};
+    if ((userData.rolls||0)<1) return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xff0000).setTitle("❌ No Rolls Left").setDescription("Use `/daily` for a free roll, or win fights for a 30% chance!")],flags:64});
+
+    // Show public message with current species — no rolling yet
+    await channel.send(
+      `🎲 <@${user.id}> is rerolling their species!\n` +
+      `Current: ${userData.species.emoji} **${userData.species.name}**\n` +
+      `Rolls: **${userData.rolls||0}**`
+    );
+
+    // Store in activeRolls for the button handler
+    _state.activeRolls.set(user.id, { channelId: channel.id, timestamp: Date.now() });
+
+    // Ephemeral buttons only — no rolling happens yet
+    const row=new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`reroll_${user.id}`).setLabel("🔄 REROLL").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`cancel_${user.id}`).setLabel("❌ CANCEL").setStyle(ButtonStyle.Danger));
+    return safeReply(interaction,{content:"Use the buttons below to reroll or cancel:",components:[row],flags:64});
   }
 
   // ── AWAKENING ─────────────────────────────────────────────────
@@ -739,25 +733,34 @@ async function handleButton(interaction) {
   if (customId.startsWith("reroll_")||customId.startsWith("cancel_")) {
     const uid=customId.split("_")[1];
     if (user.id!==uid) return safeReply(interaction,{embeds:[createErrorEmbed("This isn't your roll!")],flags:64});
-    if (customId.startsWith("cancel_")) { _state.activeRolls.delete(user.id); return interaction.update({content:"✅ Reroll cancelled!",components:[]}); }
-    const userData=_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0};
-    if ((userData.rolls||0)<1) return interaction.update({content:"❌ No rolls left!",components:[]});
+    if (customId.startsWith("cancel_")) {
+      _state.activeRolls.delete(user.id);
+      return interaction.update({content:"❌ Reroll cancelled!",components:[]});
+    }
+    const userData=_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:1,requestsEnabled:true,lastSwitch:0};
+    if ((userData.rolls||0)<1) return interaction.update({content:"❌ No rolls left! Use `/daily` for a free roll.",components:[]});
+
+    // Roll happens here when button is pressed
     const rollResult=getRandomSpecies();
     const newSpecies=rollResult.isDragon?getDragonSubtype():rollResult;
     userData.species=newSpecies; userData.originalSpecies=newSpecies; userData.rolls=(userData.rolls||0)-1;
     _state.userSpecies.set(user.id,userData); await database.saveUserSpecies(user.id,userData);
     const member=await guild.members.fetch(user.id); await assignSpeciesRole(member,newSpecies);
-    // Update the same ephemeral message — no channel spam
-    const rerollEmbed=new EmbedBuilder().setColor(newSpecies.color||0x808080)
-      .setTitle(`${newSpecies.emoji} Rerolled!`)
-      .setDescription(`You rolled ${newSpecies.emoji} **${newSpecies.name}**!\n\nChance: **${newSpecies.chance||"?"}** | HP: ${newSpecies.hp} | ATK: ${newSpecies.atkMin}–${newSpecies.atkMax} | HEAL: ${newSpecies.healMin}–${newSpecies.healMax}\n\n🎲 Rolls remaining: **${userData.rolls}**`);
+
+    // Public result message in channel
+    await channel.send(`✨ <@${user.id}> rolled ${newSpecies.emoji} **${newSpecies.name}**! (${newSpecies.chance||"?"})`);
+
+    // Update the ephemeral button message
     if (userData.rolls>0) {
-      return interaction.update({embeds:[rerollEmbed],content:null,components:[new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`reroll_${user.id}`).setLabel("🔄 Reroll").setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId(`cancel_${user.id}`).setLabel("❌ Stop").setStyle(ButtonStyle.Danger))]});
+      return interaction.update({
+        content:`🎲 You got **${newSpecies.name}**! You have **${userData.rolls}** roll${userData.rolls!==1?"s":""} left.`,
+        components:[new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`reroll_${user.id}`).setLabel("🔄 REROLL").setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`cancel_${user.id}`).setLabel("❌ CANCEL").setStyle(ButtonStyle.Danger))]
+      });
     } else {
       _state.activeRolls.delete(user.id);
-      return interaction.update({embeds:[rerollEmbed.setFooter({text:"No rolls remaining. Use /daily for a free roll!"})],content:null,components:[]});
+      return interaction.update({content:`✅ You got **${newSpecies.name}**! No rolls remaining. Use \`/daily\` for a free roll.`,components:[]});
     }
   }
 
