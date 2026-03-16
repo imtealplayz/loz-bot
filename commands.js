@@ -12,13 +12,13 @@ const database = require("./database.js");
 const {
   hpBar, createErrorEmbed, createSuccessEmbed, safeReply,
   getSpeciesByName, getRandomSpecies, getDragonSubtype,
-  isPlayerInGame, isPlayerInFight, isPlayerInBotFight, canFight,
+  isPlayerInFight, isPlayerInBotFight, canFight,
   canSendRequest, assignSpeciesRole,
   updateLeaderboard, updateFightStats, updateCyborgProgress,
   isCyborgReadyForAwakening, updateReaperQuest,
 } = require("./helpers.js");
 const { buildBotFightEmbed, buildBotFightRow, buildFightEmbed, buildFightRow, makeCombatant, calculateDamage, applyUltEffect, tickCooldowns, tickBothUltCooldowns, applyOgreRegen, processCurseTick } = require("./combat.js");
-const { startFight, endFight, doBotTurn, endBotFight, startDuelGame, startBombGame, handleBotPass, startBotRound } = require("./fights.js");
+const { startFight, endFight, doBotTurn, endBotFight } = require("./fights.js");
 
 let _state = null;
 let _client = null;
@@ -35,7 +35,6 @@ async function handleCommand(interaction) {
       .addFields(
         {name:"🎲 Species",  value:"`/species-roll` `/species` `/switch` `/daily`",inline:false},
         {name:"⚔️ Combat",   value:"`/fight @user` `/fightbot`",inline:false},
-        {name:"💣 Bomb Tag", value:"`/bombtag1v1` `/bombtag1v1bot` `'pass @user`",inline:false},
         {name:"📊 Stats",    value:"`/fightstats` `/botstats` `/history` `/lb` `/fights`",inline:false},
         {name:"🌑 Quests",   value:"`/quest view` `/quest claim` `/awakening`",inline:false},
         {name:"📋 Info",     value:"`/patchnotes` `/guide` `/profile`",inline:false},
@@ -50,7 +49,6 @@ async function handleCommand(interaction) {
       {title:"Species System",content:"Each species has unique stats:\n• **HP** — Health points\n• **ATK** — Damage range\n• **HEAL** — Heal range\n• **ULT** — Ultimate ability cooldown\n\nRarer species are stronger!"},
       {title:"Combat",content:"Fights are turn-based:\n• ⚔️ **ATTACK** — Deal damage\n• 💚 **HEAL** — Recover HP (3-round cooldown)\n• ✨ **ULT** — Species unique ability\n• 🏃 **FORFEIT** — Give up\n\nWin fights for leaderboard points and rolls!"},
       {title:"Quests & Awakenings",content:"• **Reaper Quest** — Defeat bots and players to unlock Reaper\n• **Cyborg Awakening** — 25 wins, 500 damage, 15 ULTs → Mechangel!\n\nUse `/quest view` to track progress."},
-      {title:"Bomb Tag",content:"Fun party game!\n• Use `/bombtag1v1` to challenge someone\n• Use `'pass @user` to pass the bomb\n• Don't be holding it when it explodes!\n\nCheck `/lb` for the bomb tag leaderboard!"},
     ];
     const embed=new EmbedBuilder().setColor(0x0891b2).setTitle(`📖 New Player Guide (1/${steps.length})`).setDescription(`**${steps[0].title}**\n\n${steps[0].content}`);
     const row=new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("guide_next_0").setLabel("NEXT →").setStyle(ButtonStyle.Primary));
@@ -88,48 +86,6 @@ async function handleCommand(interaction) {
       .setTitle("📝 Latest Patch Notes")
       .setDescription(`**Version ${latest.version} - ${latest.date}**\n\n${latest.changes.map(c=>`• ${c}`).join("\n")}`)
       .setFooter({text:"Use /patch to see latest updates"})]});
-  }
-
-  // ── HACK ──────────────────────────────────────────────────────
-  if (commandName === "hack") {
-    const targetUser = options.getUser("user");
-    if (targetUser.id === user.id) return safeReply(interaction,{content:"❌ You cannot hack yourself!",flags:64});
-    if (targetUser.bot) return safeReply(interaction,{content:"❌ You cannot hack a bot! They are already hacked 🤖",flags:64});
-    await safeReply(interaction,{content:`⚠️ **INITIATING HACK ON ${targetUser.username}...**`});
-    const msgs=[
-      `📡 **Accessing mainframe...**`,
-      `🔓 **Bypassing firewall...**`,
-      `📊 **Downloading personal data...**`,
-      `📧 **Email found:** ${targetUser.username.toLowerCase()}${Math.floor(Math.random()*100)}@darkweb.com`,
-      `🔑 **Password hash:** ${Math.random().toString(36).substring(2,15)}${Math.random().toString(36).substring(2,15)}`,
-      `📍 **IP Address:** ${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}`,
-      `💳 **Credit Card:** ${Math.floor(Math.random()*1000)}-${Math.floor(Math.random()*1000)}-${Math.floor(Math.random()*1000)}-${Math.floor(Math.random()*1000)}`,
-      `📸 **Accessing webcam...**`,
-      `🕵️ **Searching browser history...**`,
-      `🔥 **Downloading NSFW content...**`,
-    ];
-    for (const m of msgs) { await interaction.editReply(m); await new Promise(r=>setTimeout(r,1500)); }
-    await new Promise(r=>setTimeout(r,2000));
-    await interaction.editReply(`🎭 **HACK COMPLETE!**\n<@${targetUser.id}> has been totally exposed by <@${user.id}> 😈\n📁 **All data has been uploaded to the dark web!**`);
-  }
-
-  // ── SHIP ──────────────────────────────────────────────────────
-  if (commandName === "ship") {
-    const user1=options.getUser("user1"), user2=options.getUser("user2");
-    const compat=Math.floor(Math.random()*101);
-    const shipName=user1.username.substring(0,Math.floor(user1.username.length/2))+user2.username.substring(Math.floor(user2.username.length/2));
-    let status,color,emoji;
-    if (compat>=90)      { status="💞 **PERFECT MATCH!** 💞";    color=0xff1493; emoji="💘"; }
-    else if (compat>=70) { status="💖 **STRONG CONNECTION** 💖"; color=0xff69b4; emoji="💕"; }
-    else if (compat>=50) { status="💓 **POTENTIAL** 💓";         color=0xffb6c1; emoji="💗"; }
-    else if (compat>=30) { status="💔 **COMPLICATED** 💔";       color=0x808080; emoji="💔"; }
-    else                 { status="💀 **DISASTER** 💀";           color=0x000000; emoji="☠️"; }
-    const barLength=20, filled=Math.floor((compat/100)*barLength);
-    const bar="█".repeat(filled)+"░".repeat(barLength-filled);
-    const embed=new EmbedBuilder().setColor(color).setTitle(`${emoji} Love Ship ${emoji}`)
-      .setDescription(`**${user1.displayName}** 💕 **${user2.displayName}**\n\n**Ship Name:** ${shipName}\n\n**Compatibility:** ${compat}%\n${bar}\n\n${status}\n\n*Brought to you by Cupid's Bot <@${user.id}>*`)
-      .setFooter({text:"Will they last? Only time will tell..."}).setTimestamp();
-    return safeReply(interaction,{embeds:[embed]});
   }
 
   // ── SPECIES ───────────────────────────────────────────────────
@@ -201,7 +157,7 @@ async function handleCommand(interaction) {
         return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(botSpecies.kitsune.color).setTitle(`👤 ${target.displayName}'s Profile`).setThumbnail(target.displayAvatarURL())
           .addFields(
             {name:"🧬 Species",value:"🦊 **Kitsune**",inline:true},{name:"❤️ HP",value:"1,000,000",inline:true},{name:"⚔️ Attack",value:"500-1,000",inline:true},
-            {name:"💚 Heal",value:"200,000-500,000",inline:true},{name:"🎲 Rolls",value:"∞",inline:true},{name:"💣 Bomb Tag Wins",value:"∞",inline:true},
+            {name:"💚 Heal",value:"200,000-500,000",inline:true},{name:"🎲 Rolls",value:"∞",inline:true},
             {name:"🏅 Badges",value:"└ 💪 Omnipotent\n└ 🐛 Bug Creator",inline:false},
             {name:"✨ Passive",value:botSpecies.kitsune.passive,inline:false},{name:"⚡ Active",value:botSpecies.kitsune.active,inline:false},
             {name:"📊 Total Users",value:`${_state.userSpecies.size}`,inline:true},
@@ -213,7 +169,6 @@ async function handleCommand(interaction) {
     }
     const td=_state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,badges:[]};
     const fd=_state.fightStats.get(target.id)||{wins:0,losses:0,streak:0};
-    const bd=_state.leaderboard.get(target.id)||{wins:0};
     const sp=td.species||humanSpecies;
     const wr=fd.wins+fd.losses>0?((fd.wins/(fd.wins+fd.losses))*100).toFixed(1):"0.0";
     const embed=new EmbedBuilder().setColor(sp.color||0x9b59b6).setTitle(`👤 ${target.displayName}'s Profile`).setThumbnail(target.displayAvatarURL())
@@ -221,7 +176,6 @@ async function handleCommand(interaction) {
         {name:"🧬 Species",value:`${sp.emoji} **${sp.name}**`,inline:true},
         {name:"🎲 Rolls",value:`${td.rolls||0}`,inline:true},
         {name:"⚔️ Fight Record",value:`${fd.wins}W - ${fd.losses}L (${wr}%)`,inline:true},
-        {name:"💣 Bomb Tag Wins",value:`${bd.wins}`,inline:true},
         {name:"🔥 Streak",value:`${fd.streak||0} wins`,inline:true},
         {name:"🔘 Requests",value:td.requestsEnabled?"✅ Enabled":"❌ Disabled",inline:true},
       );
@@ -247,7 +201,7 @@ async function handleCommand(interaction) {
     // Store for button handler
     _state.activeRolls.set(user.id, { channelId: channel.id, timestamp: Date.now() });
 
-    // Show current species + buttons — ephemeral, no rolling yet
+    // Show current species — public embed, buttons are ephemeral
     const currentSp = userData.species || humanSpecies;
     const embed = new EmbedBuilder()
       .setColor(currentSp.color || 0x808080)
@@ -256,7 +210,10 @@ async function handleCommand(interaction) {
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`reroll_${user.id}`).setLabel("🔄 REROLL").setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId(`cancel_${user.id}`).setLabel("❌ CANCEL").setStyle(ButtonStyle.Danger));
-    return safeReply(interaction,{embeds:[embed],components:[row],flags:64});
+    // Public embed
+    await channel.send({embeds:[embed]});
+    // Ephemeral buttons only
+    return safeReply(interaction,{content:"Use the buttons below to reroll or cancel:",components:[row],flags:64});
   }
 
   // ── AWAKENING ─────────────────────────────────────────────────
@@ -399,20 +356,6 @@ async function handleCommand(interaction) {
     return safeReply(interaction,{embeds:[embed]});
   }
 
-  // ── LB ────────────────────────────────────────────────────────
-  if (commandName === "lb") {
-    await interaction.deferReply();
-    if (_state.leaderboard.size===0) return interaction.editReply({embeds:[new EmbedBuilder().setColor(0xffd700).setDescription("📊 No stats yet!")]});
-    const sorted=Array.from(_state.leaderboard.entries()).sort((a,b)=>b[1].wins-a[1].wins).slice(0,10);
-    let desc="";
-    for (let i=0;i<sorted.length;i++) {
-      const [uid,s]=sorted[i], m=await guild.members.fetch(uid).catch(()=>null), nm=m?m.displayName:"Unknown";
-      const sp=_state.userSpecies.get(uid)?.species, medal=i===0?"🥇":i===1?"🥈":i===2?"🥉":"🎖️";
-      desc+=`${medal} ${sp?.emoji||"👤"} **${nm}** — ${s.wins} wins\n`;
-    }
-    return interaction.editReply({embeds:[new EmbedBuilder().setColor(0xffd700).setTitle("🏆 Bomb Tag Leaderboard").setDescription(desc)]});
-  }
-
   // ── FIGHTS ────────────────────────────────────────────────────
   if (commandName === "fights") {
     await interaction.deferReply();
@@ -479,65 +422,6 @@ async function handleCommand(interaction) {
     return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(ud.requestsEnabled?0x00ff00:0xff0000).setDescription(ud.requestsEnabled?"✅ You will now receive challenges!":"❌ You will NOT receive challenges.")],flags:64});
   }
 
-  // ── BOMBTAG1V1 ────────────────────────────────────────────────
-  if (commandName === "bombtag1v1") {
-    const gdc=_state.duelChannels.get(guild.id);
-    if (!gdc) return safeReply(interaction,{embeds:[createErrorEmbed("No duel channel set! God must use `/god setduel` first.")],flags:64});
-    if (channel.id!==gdc) return safeReply(interaction,{embeds:[createErrorEmbed(`Go to <#${gdc}> to challenge someone.`)],flags:64});
-    const target=options.getUser("user");
-    if (target.id===user.id) return safeReply(interaction,{embeds:[createErrorEmbed("Can't challenge yourself!")],flags:64});
-    if (target.bot) return safeReply(interaction,{embeds:[createErrorEmbed("Use `/bombtag1v1bot` to challenge a bot!")],flags:64});
-    if (isPlayerInGame(user.id)) return safeReply(interaction,{embeds:[createErrorEmbed("Already in a game!")],flags:64});
-    if (isPlayerInGame(target.id)) return safeReply(interaction,{embeds:[createErrorEmbed("That user is already in a game!")],flags:64});
-    const rc=canSendRequest(user.id,target.id,user.id===_state.ownerId);
-    if (!rc.allowed) return safeReply(interaction,{embeds:[createErrorEmbed(rc.reason)],flags:64});
-    const cid=`${user.id}-${target.id}`;
-    if (_state.challenges.has(cid)) return safeReply(interaction,{embeds:[createErrorEmbed("A challenge already exists!")],flags:64});
-    const row=new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("accept_duel").setLabel("✅ Accept").setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId("decline_duel").setLabel("🏃 Run Away").setStyle(ButtonStyle.Danger));
-    await safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x9b59b6).setTitle("💣 Bomb Tag Challenge!").setDescription(`<@${user.id}> challenged <@${target.id}> to Bomb Tag!\nFirst to **3 rounds** wins!\n\n<@${target.id}>, do you accept?`)],components:[row]});
-    const msg=await interaction.fetchReply();
-    _state.activeRequests.set(user.id,{type:"bombtag",targetId:target.id,timestamp:Date.now()});
-    _state.activeRequests.set(target.id,{type:"bombtag",targetId:user.id,timestamp:Date.now()});
-    _state.challenges.set(cid,{challengerId:user.id,opponentId:target.id,messageId:msg.id,channelId:channel.id,timestamp:Date.now()});
-    setTimeout(()=>{ if(_state.challenges.has(cid)){ _state.challenges.delete(cid); _state.activeRequests.delete(user.id); _state.activeRequests.delete(target.id); msg.edit({embeds:[new EmbedBuilder().setColor(0x808080).setDescription("⏰ Challenge expired.")],components:[]}).catch(()=>{}); } },60000);
-    return;
-  }
-
-  // ── BOMBTAG1V1BOT ─────────────────────────────────────────────
-  if (commandName === "bombtag1v1bot") {
-    const gdc=_state.duelChannels.get(guild.id);
-    if (!gdc) return safeReply(interaction,{embeds:[createErrorEmbed("No duel channel set!")],flags:64});
-    if (channel.id!==gdc) return safeReply(interaction,{embeds:[createErrorEmbed(`Go to <#${gdc}> first.`)],flags:64});
-    const row=new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("bot_easy").setLabel("🧸 Easy").setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId("bot_medium").setLabel("⚔️ Medium").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId("bot_hard").setLabel("👹 Hard").setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId("bot_impossible").setLabel("💀 Impossible").setStyle(ButtonStyle.Danger));
-    return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x9b59b6).setTitle("🤖 Challenge the Bot!").setDescription("Choose your difficulty:")
-      .addFields({name:"🧸 Easy",value:"50% fail · 2s delay",inline:true},{name:"⚔️ Medium",value:"35% fail · 1.5s delay",inline:true},{name:"👹 Hard",value:"20% fail · 1s delay",inline:true},{name:"💀 Impossible",value:"5% fail · 0.5s delay",inline:true})],components:[row]});
-  }
-
-  // ── GAME ──────────────────────────────────────────────────────
-  if (commandName === "game") {
-    const action=options.getString("action");
-    if (!_state.bombGames.has(channel.id)) return safeReply(interaction,{embeds:[createErrorEmbed("No game in this channel!")],flags:64});
-    const game=_state.bombGames.get(channel.id);
-    if (user.id!==game.hostId) return safeReply(interaction,{embeds:[createErrorEmbed("Only the host can do that!")],flags:64});
-    if (action==="start") {
-      if (game.status!=="waiting") return safeReply(interaction,{embeds:[createErrorEmbed("Game already started!")],flags:64});
-      if (game.players.size<2) return safeReply(interaction,{embeds:[createErrorEmbed("Need at least 2 players!")],flags:64});
-      clearTimeout(game.startTimeout); startBombGame(channel,game,"normal");
-      return safeReply(interaction,{embeds:[createSuccessEmbed("Game starting!")],flags:64});
-    }
-    if (action==="cancel"||action==="end") {
-      clearTimeout(game.startTimeout); if(game.bombTimer) clearTimeout(game.bombTimer);
-      _state.bombGames.delete(channel.id); await channel.send("❌ Game ended by host.");
-      return safeReply(interaction,{embeds:[createSuccessEmbed("Game ended!")],flags:64});
-    }
-  }
-
   // ── GOD COMMANDS ──────────────────────────────────────────────
   if (commandName === "god") {
     if (user.id!==_state.ownerId&&user.id!==_state.secondGodId) return safeReply(interaction,{embeds:[createErrorEmbed("Only God can use this!")],flags:64});
@@ -546,104 +430,9 @@ async function handleCommand(interaction) {
     if (sub==="menu") {
       return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xffd700).setTitle("👑 God Commands")
         .addFields(
-          {name:"💀 Divine Powers",value:"`/god nuke @user` `/god rev @user` `/god species-change @user <species>` `/god species-reset @user` `/god rolls-reset @user` `/god quest-reset @user <quest>`",inline:false},
-          {name:"💣 Bomb Tag",value:"`/god bombtag` — normal game\n`/god bombtag1` — locked game\n`/god setduel #channel` — set duel channel\n`/god listduels` — list saved channels",inline:false},
-          {name:"🎲 Species",value:"`/god species-add @user <1-500>` — give rolls\n`/god debug-db` — check database",inline:false}
+          {name:"🧬 Species Management",value:"`/god species-change @user <species>`\n`/god species-reset @user`\n`/god species-add @user <rolls>`",inline:false},
+          {name:"⚙️ Management",value:"`/god rolls-reset @user`\n`/god quest-reset @user <quest>`\n`/god debug-db`",inline:false}
         ).setFooter({text:"Use /god menu to see this again"})]});
-    }
-
-    if (sub==="nuke") {
-      const target=options.getUser("user");
-      const targetMember=await guild.members.fetch(target.id).catch(()=>null);
-      if (!targetMember) return safeReply(interaction,{embeds:[createErrorEmbed("That user is not in this server!")],flags:64});
-      if (!guild.members.me.permissions.has(PermissionsBitField.Flags.ModerateMembers))
-        return safeReply(interaction,{embeds:[createErrorEmbed('I need "Timeout Members" permission!')],flags:64});
-      await safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xff0000).setDescription(`💣 **NUKE LAUNCHED** targeting ${target}!`)],flags:64});
-      const secretNumber=Math.floor(Math.random()*20)+1;
-      let hp=4, guessedNumbers=[];
-      const startTime=Date.now();
-      const getHearts=(n)=>{ let d=""; for(let i=0;i<4;i++) d+=i<n?"❤️":"💔"; return d; };
-      await channel.send(`💣 **NUKE LAUNCHED**\n<@${target.id}> you've been targeted!\n**HP:** ${getHearts(hp)}\n⏰ **20 seconds** to guess a number between **1-20**\n💬 Each wrong guess costs 1 HP and gives a hint!`);
-      _state.activeNukes.set(target.id,{channelId:channel.id,secretNumber,executorId:user.id,safe:false,hp,startTime,targetMember,executorTag:user.tag});
-      const timeout=setTimeout(async()=>{
-        const nd=_state.activeNukes.get(target.id);
-        if (nd&&!nd.safe) {
-          try { await targetMember.timeout(120000,"Nuked by "+user.tag); await channel.send(`💥 **BOOM!**\n<@${target.id}> got nuked by <@${user.id}>! 💀\nThe number was **${secretNumber}**`); _state.activeNukes.delete(target.id); } catch(e) {}
-        }
-      },20000);
-      const collector=channel.createMessageCollector({filter:m=>m.author.id===target.id,time:20000,max:20});
-      collector.on("collect",async(guessMsg)=>{
-        try {
-          const nd=_state.activeNukes.get(target.id); if(!nd||nd.safe) return;
-          const guess=parseInt(guessMsg.content);
-          if (isNaN(guess)||guess<1||guess>20) { await guessMsg.reply("❌ Guess a number between 1-20!"); return; }
-          if (guessedNumbers.includes(guess)) { await guessMsg.reply(`❌ Already guessed ${guess}!`); return; }
-          guessedNumbers.push(guess);
-          if (guess===nd.secretNumber) {
-            nd.safe=true; clearTimeout(timeout);
-            await channel.send(`🎉 **MIRACLE!** <@${target.id}> guessed **${secretNumber}**! Safe... for now...`);
-            _state.activeNukes.delete(target.id); collector.stop("safe");
-          } else {
-            nd.hp--; hp=nd.hp;
-            const hint=guess<secretNumber?"📈 **Higher!**":"📉 **Lower!**";
-            if (hp<=0) { clearTimeout(timeout); try { await targetMember.timeout(120000,"Nuked"); await channel.send(`💥 **BOOM!** <@${target.id}> ran out of HP! The number was **${secretNumber}**`); _state.activeNukes.delete(target.id); collector.stop("dead"); } catch(e){} }
-            else { await guessMsg.reply(`❌ Wrong! ${hint}\n**HP:** ${getHearts(hp)}\nGuessed: ${guessedNumbers.join(", ")}`); }
-          }
-        } catch(e) {}
-      });
-      return;
-    }
-
-    if (sub==="rev") {
-      const target=options.getUser("user");
-      if (target.id===user.id) return safeReply(interaction,{embeds:[createErrorEmbed("Can't reverse yourself!")],flags:64});
-      if (target.bot) return safeReply(interaction,{embeds:[createErrorEmbed("Can't reverse a bot!")],flags:64});
-      if (_state.reversedUsers.has(target.id)) return safeReply(interaction,{embeds:[createErrorEmbed(`<@${target.id}> is already reversed!`)],flags:64});
-      _state.reversedUsers.set(target.id,{channelId:channel.id,messagesLeft:3,executorId:user.id});
-      await safeReply(interaction,{embeds:[createSuccessEmbed(`<@${target.id}>'s next 3 messages will be reversed!`)]});
-      setTimeout(()=>{ if(_state.reversedUsers.has(target.id)) { _state.reversedUsers.delete(target.id); channel.send(`⌛ <@${target.id}>'s reverse has expired.`).catch(()=>{}); } },300000);
-      return;
-    }
-
-    if (sub==="bombtag") {
-      if (_state.bombGames.has(channel.id)) return safeReply(interaction,{embeds:[createErrorEmbed("A game is already in progress!")],flags:64});
-      await safeReply(interaction,{embeds:[createSuccessEmbed("Bomb tag lobby created!")],flags:64});
-      const joinMsg=await channel.send(`🧨 **BOMB TAG GAME** 🧨\n\nReact with 🎉 to join!\n⏰ Game starts in **2 minutes** or host types \`/game start\`\n\n**Players:** None yet`);
-      await joinMsg.react("🎉");
-      const gameData={channelId:channel.id,hostId:user.id,joinMessageId:joinMsg.id,players:new Set(),status:"waiting",currentBombHolder:null,eliminated:[],bombEndTime:null,bombTimer:null,passCollector:null,startTimeout:null,roundActive:false,gameType:"normal",judgeUsed:false,reviveUsed:false};
-      _state.bombGames.set(channel.id,gameData);
-      gameData.startTimeout=setTimeout(()=>{ const g=_state.bombGames.get(channel.id); if(g&&g.status==="waiting") startBombGame(channel,g,"normal"); },120000);
-      const rc=joinMsg.createReactionCollector({filter:(rxn,u)=>rxn.emoji.name==="🎉"&&!u.bot&&rxn.message.id===joinMsg.id,dispose:true});
-      rc.on("collect",(rxn,u)=>{ const g=_state.bombGames.get(channel.id); if(g&&g.status==="waiting"){g.players.add(u.id); joinMsg.edit(joinMsg.content.replace("None yet",Array.from(g.players).map(id=>`<@${id}>`).join("\n"))).catch(()=>{}); } });
-      rc.on("remove",(rxn,u)=>{ const g=_state.bombGames.get(channel.id); if(g&&g.status==="waiting"){g.players.delete(u.id);} });
-      return;
-    }
-
-    if (sub==="bombtag1") {
-      if (_state.bombGames.has(channel.id)) return safeReply(interaction,{embeds:[createErrorEmbed("A game is already in progress!")],flags:64});
-      await safeReply(interaction,{embeds:[createSuccessEmbed("Locked bomb tag lobby created!")],flags:64});
-      try { await channel.permissionOverwrites.edit(guild.roles.everyone,{SendMessages:false}); await channel.permissionOverwrites.edit(user.id,{SendMessages:true}); await channel.permissionOverwrites.edit(_client.user.id,{SendMessages:true}); } catch(e){}
-      const joinMsg=await channel.send(`🔒 **LOCKED BOMB TAG GAME** 🔒\n\nReact with 🎉 to join!\n⏰ Game starts in **2 minutes** or host types \`/game start\`\n\n**Players:** None yet\n\n*Channel is locked. Only players will speak when game starts.*`);
-      await joinMsg.react("🎉");
-      const gameData={channelId:channel.id,hostId:user.id,joinMessageId:joinMsg.id,players:new Set(),status:"waiting",currentBombHolder:null,eliminated:[],bombEndTime:null,bombTimer:null,passCollector:null,startTimeout:null,roundActive:false,gameType:"locked",judgeUsed:false,reviveUsed:false};
-      _state.bombGames.set(channel.id,gameData);
-      gameData.startTimeout=setTimeout(()=>{ const g=_state.bombGames.get(channel.id); if(g&&g.status==="waiting") startBombGame(channel,g,"normal"); },120000);
-      const rc=joinMsg.createReactionCollector({filter:(rxn,u)=>rxn.emoji.name==="🎉"&&!u.bot&&rxn.message.id===joinMsg.id,dispose:true});
-      rc.on("collect",async(rxn,u)=>{ const g=_state.bombGames.get(channel.id); if(g&&g.status==="waiting"){g.players.add(u.id); try{await channel.permissionOverwrites.edit(u.id,{SendMessages:true});}catch(e){} } });
-      rc.on("remove",(rxn,u)=>{ const g=_state.bombGames.get(channel.id); if(g&&g.status==="waiting") g.players.delete(u.id); });
-      return;
-    }
-
-    if (sub==="setduel") {
-      const ch=options.getChannel("channel");
-      _state.duelChannels.set(guild.id,ch.id); await database.saveDuelChannel(guild.id,ch.id);
-      return safeReply(interaction,{embeds:[createSuccessEmbed(`Duel channel set to ${ch}!`)],flags:64});
-    }
-
-    if (sub==="listduels") {
-      let desc="";
-      for (const [gid,cid] of _state.duelChannels.entries()) { const g=_client.guilds.cache.get(gid); desc+=`📌 **${g?.name||gid}**: <#${cid}>\n`; }
-      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xffd700).setTitle("📋 Saved Duel Channels").setDescription(desc||"None set.")],flags:64});
     }
 
     if (sub==="species-add") {
@@ -716,7 +505,6 @@ async function handleButton(interaction) {
       {title:"Species System",content:"HP, ATK, HEAL, ULT cooldown — rarer = stronger! Check `/species`."},
       {title:"Combat",content:"⚔️ ATTACK, 💚 HEAL, ✨ ULT, 🏃 FORFEIT\n\nWin fights for points and rolls!"},
       {title:"Quests",content:"• Reaper Quest: defeat bots and players\n• Cyborg Awakening: 25 wins, 500 dmg, 15 ULTs\n\n`/quest view` to track progress!"},
-      {title:"Bomb Tag",content:"💣 Use `/bombtag1v1` to challenge someone!\nUse `'pass @user` to pass the bomb.\nDon't get caught with it!"},
     ];
     const totalSteps=steps.length;
     const embed=new EmbedBuilder().setColor(0x0891b2).setTitle(`📖 Guide (${step+1}/${totalSteps})`).setDescription(`**${steps[step].title}**\n\n${steps[step].content}`);
@@ -799,8 +587,7 @@ async function handleButton(interaction) {
       return safeReply(interaction,{embeds:[createErrorEmbed("You ran away!")],flags:64});
     }
     await message.edit({embeds:[new EmbedBuilder().setColor(0x00ff00).setDescription(`✅ <@${cd.opponentId}> accepted! Starting...`)],components:[]});
-    const { startDuelGame } = require("./fights.js");
-    startDuelGame(channel,cd.challengerId,cd.opponentId);
+    // Duel game removed
     return safeReply(interaction,{content:"Match accepted!",flags:64});
   }
 
@@ -1096,34 +883,20 @@ const commands = [
   new SlashCommandBuilder().setName("fightstats").setDescription("View fight stats").addUserOption(o=>o.setName("user").setDescription("User to check")),
   new SlashCommandBuilder().setName("history").setDescription("View fight history").addUserOption(o=>o.setName("user").setDescription("User to check")),
   new SlashCommandBuilder().setName("botstats").setDescription("View bot fight stats").addUserOption(o=>o.setName("user").setDescription("User to check")),
-  new SlashCommandBuilder().setName("lb").setDescription("Bomb tag leaderboard"),
   new SlashCommandBuilder().setName("fights").setDescription("Fight leaderboard"),
-  new SlashCommandBuilder().setName("bombtag1v1").setDescription("Challenge a player to bomb tag").addUserOption(o=>o.setName("user").setDescription("Player to challenge").setRequired(true)),
-  new SlashCommandBuilder().setName("bombtag1v1bot").setDescription("Challenge a bot to bomb tag"),
-  new SlashCommandBuilder().setName("game").setDescription("Control a bomb tag game").addStringOption(o=>o.setName("action").setDescription("Action").setRequired(true).addChoices({name:"Start",value:"start"},{name:"Cancel",value:"cancel"},{name:"End",value:"end"})),
   new SlashCommandBuilder().setName("patchnotes").setDescription("View latest patch notes"),
   new SlashCommandBuilder().setName("patch").setDescription("View latest patch notes"),
-  new SlashCommandBuilder().setName("hack").setDescription("Hack someone (totally real)").addUserOption(o=>o.setName("user").setDescription("Target to hack").setRequired(true)),
-  new SlashCommandBuilder().setName("ship").setDescription("Check compatibility between two users")
-    .addUserOption(o=>o.setName("user1").setDescription("First user").setRequired(true))
-    .addUserOption(o=>o.setName("user2").setDescription("Second user").setRequired(true)),
   new SlashCommandBuilder().setName("togglerequests").setDescription("Toggle receiving challenge requests").addStringOption(o=>o.setName("status").setDescription("Enable or disable").setRequired(true).addChoices({name:"Enable",value:"enable"},{name:"Disable",value:"disable"})),
   new SlashCommandBuilder().setName("quest").setDescription("Quest system")
     .addSubcommand(s=>s.setName("view").setDescription("View your quests").addUserOption(o=>o.setName("user").setDescription("User to check")))
     .addSubcommand(s=>s.setName("claim").setDescription("Claim a quest reward").addStringOption(o=>o.setName("quest").setDescription("Quest to claim").setRequired(true).addChoices({name:"Reaper",value:"reaper"}))),
   new SlashCommandBuilder().setName("god").setDescription("God-only commands")
     .addSubcommand(s=>s.setName("menu").setDescription("Show god menu"))
-    .addSubcommand(s=>s.setName("nuke").setDescription("Nuke a user").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)))
-    .addSubcommand(s=>s.setName("rev").setDescription("Reverse a user's messages").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)))
     .addSubcommand(s=>s.setName("species-change").setDescription("Change a user's species").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Species to set").setRequired(true).addChoices({name:"Demi God ⚡",value:"Demi God"},{name:"Demon Lord 🔥",value:"Demon Lord"},{name:"Demon King 👑😈",value:"Demon King"},{name:"Chimera 🎭",value:"Chimera"},{name:"Angel 👼",value:"Angel"},{name:"Demon 😈",value:"Demon"},{name:"Oni 👿",value:"Oni"},{name:"Orc Lord 👑",value:"Orc Lord"},{name:"Kijin 🎭",value:"Kijin"},{name:"Cyborg 🤖",value:"Cyborg"},{name:"High Orc ⚔️",value:"High Orc"},{name:"Ogre 👹",value:"Ogre"},{name:"Goblin 👺",value:"Goblin"},{name:"Orc 🟢",value:"Orc"},{name:"Half-Blood 🩸",value:"Half-Blood"},{name:"Fire Dragon 🔥🐉",value:"Fire Dragon"},{name:"Thunder Dragon ⚡🐉",value:"Thunder Dragon"},{name:"Ice Dragon ❄️🐉",value:"Ice Dragon"},{name:"Earth Dragon 🌍🐉",value:"Earth Dragon"},{name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"God 👑✨",value:"God"},{name:"Human 👤",value:"Human"})))
     .addSubcommand(s=>s.setName("species-reset").setDescription("Reset a user to Human").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)))
     .addSubcommand(s=>s.setName("species-add").setDescription("Give rolls to a user").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)).addIntegerOption(o=>o.setName("amount").setDescription("Amount of rolls").setRequired(true).setMinValue(1).setMaxValue(1000000)))
     .addSubcommand(s=>s.setName("rolls-reset").setDescription("Reset a user's rolls to 0").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)))
     .addSubcommand(s=>s.setName("quest-reset").setDescription("Reset a user's quest").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)).addStringOption(o=>o.setName("quest").setDescription("Quest name").setRequired(true).addChoices({name:"Reaper",value:"reaper"},{name:"All",value:"all"})))
-    .addSubcommand(s=>s.setName("setduel").setDescription("Set the duel channel").addChannelOption(o=>o.setName("channel").setDescription("Channel").setRequired(true)))
-    .addSubcommand(s=>s.setName("listduels").setDescription("List all duel channels"))
-    .addSubcommand(s=>s.setName("bombtag").setDescription("Start a normal bomb tag game"))
-    .addSubcommand(s=>s.setName("bombtag1").setDescription("Start a locked bomb tag game"))
     .addSubcommand(s=>s.setName("debug-db").setDescription("Check database keys")),
 ].map(c=>c.toJSON());
 
