@@ -80,6 +80,58 @@ async function handleCommand(interaction) {
     return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x0891b2).setTitle(`📋 Patch Notes — v${latest.version}`).setDescription(`**Date:** ${latest.date}\n\n${latest.changes.map(c=>`• ${c}`).join("\n")}`).setFooter({text:`v${latest.version} is the latest`})]});
   }
 
+
+  // ── PATCH ─────────────────────────────────────────────────────
+  if (commandName === "patch") {
+    const latest = patchNotes[0];
+    return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x00ff00)
+      .setTitle("📝 Latest Patch Notes")
+      .setDescription(`**Version ${latest.version} - ${latest.date}**\n\n${latest.changes.map(c=>`• ${c}`).join("\n")}`)
+      .setFooter({text:"Use /patch to see latest updates"})]});
+  }
+
+  // ── HACK ──────────────────────────────────────────────────────
+  if (commandName === "hack") {
+    const targetUser = options.getUser("user");
+    if (targetUser.id === user.id) return safeReply(interaction,{content:"❌ You cannot hack yourself!",flags:64});
+    if (targetUser.bot) return safeReply(interaction,{content:"❌ You cannot hack a bot! They are already hacked 🤖",flags:64});
+    await safeReply(interaction,{content:`⚠️ **INITIATING HACK ON ${targetUser.username}...**`});
+    const msgs=[
+      `📡 **Accessing mainframe...**`,
+      `🔓 **Bypassing firewall...**`,
+      `📊 **Downloading personal data...**`,
+      `📧 **Email found:** ${targetUser.username.toLowerCase()}${Math.floor(Math.random()*100)}@darkweb.com`,
+      `🔑 **Password hash:** ${Math.random().toString(36).substring(2,15)}${Math.random().toString(36).substring(2,15)}`,
+      `📍 **IP Address:** ${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}`,
+      `💳 **Credit Card:** ${Math.floor(Math.random()*1000)}-${Math.floor(Math.random()*1000)}-${Math.floor(Math.random()*1000)}-${Math.floor(Math.random()*1000)}`,
+      `📸 **Accessing webcam...**`,
+      `🕵️ **Searching browser history...**`,
+      `🔥 **Downloading NSFW content...**`,
+    ];
+    for (const m of msgs) { await interaction.editReply(m); await new Promise(r=>setTimeout(r,1500)); }
+    await new Promise(r=>setTimeout(r,2000));
+    await interaction.editReply(`🎭 **HACK COMPLETE!**\n<@${targetUser.id}> has been totally exposed by <@${user.id}> 😈\n📁 **All data has been uploaded to the dark web!**`);
+  }
+
+  // ── SHIP ──────────────────────────────────────────────────────
+  if (commandName === "ship") {
+    const user1=options.getUser("user1"), user2=options.getUser("user2");
+    const compat=Math.floor(Math.random()*101);
+    const shipName=user1.username.substring(0,Math.floor(user1.username.length/2))+user2.username.substring(Math.floor(user2.username.length/2));
+    let status,color,emoji;
+    if (compat>=90)      { status="💞 **PERFECT MATCH!** 💞";    color=0xff1493; emoji="💘"; }
+    else if (compat>=70) { status="💖 **STRONG CONNECTION** 💖"; color=0xff69b4; emoji="💕"; }
+    else if (compat>=50) { status="💓 **POTENTIAL** 💓";         color=0xffb6c1; emoji="💗"; }
+    else if (compat>=30) { status="💔 **COMPLICATED** 💔";       color=0x808080; emoji="💔"; }
+    else                 { status="💀 **DISASTER** 💀";           color=0x000000; emoji="☠️"; }
+    const barLength=20, filled=Math.floor((compat/100)*barLength);
+    const bar="█".repeat(filled)+"░".repeat(barLength-filled);
+    const embed=new EmbedBuilder().setColor(color).setTitle(`${emoji} Love Ship ${emoji}`)
+      .setDescription(`**${user1.displayName}** 💕 **${user2.displayName}**\n\n**Ship Name:** ${shipName}\n\n**Compatibility:** ${compat}%\n${bar}\n\n${status}\n\n*Brought to you by Cupid's Bot <@${user.id}>*`)
+      .setFooter({text:"Will they last? Only time will tell..."}).setTimestamp();
+    return safeReply(interaction,{embeds:[embed]});
+  }
+
   // ── SPECIES ───────────────────────────────────────────────────
   if (commandName === "species") {
     const spName = options.getString("species");
@@ -1036,6 +1088,11 @@ const commands = [
   new SlashCommandBuilder().setName("bombtag1v1bot").setDescription("Challenge a bot to bomb tag"),
   new SlashCommandBuilder().setName("game").setDescription("Control a bomb tag game").addStringOption(o=>o.setName("action").setDescription("Action").setRequired(true).addChoices({name:"Start",value:"start"},{name:"Cancel",value:"cancel"},{name:"End",value:"end"})),
   new SlashCommandBuilder().setName("patchnotes").setDescription("View latest patch notes"),
+  new SlashCommandBuilder().setName("patch").setDescription("View latest patch notes"),
+  new SlashCommandBuilder().setName("hack").setDescription("Hack someone (totally real)").addUserOption(o=>o.setName("user").setDescription("Target to hack").setRequired(true)),
+  new SlashCommandBuilder().setName("ship").setDescription("Check compatibility between two users")
+    .addUserOption(o=>o.setName("user1").setDescription("First user").setRequired(true))
+    .addUserOption(o=>o.setName("user2").setDescription("Second user").setRequired(true)),
   new SlashCommandBuilder().setName("togglerequests").setDescription("Toggle receiving challenge requests").addStringOption(o=>o.setName("status").setDescription("Enable or disable").setRequired(true).addChoices({name:"Enable",value:"enable"},{name:"Disable",value:"disable"})),
   new SlashCommandBuilder().setName("quest").setDescription("Quest system")
     .addSubcommand(s=>s.setName("view").setDescription("View your quests").addUserOption(o=>o.setName("user").setDescription("User to check")))
