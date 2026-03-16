@@ -240,8 +240,10 @@ async function handleCommand(interaction) {
 
   // ── SPECIES-ROLL ──────────────────────────────────────────────
   if (commandName === "species-roll") {
+    // Defer ephemerally first so we can edit later from button handler
+    await interaction.deferReply({ flags: 64 });
     let userData=_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0,badges:[]};
-    if ((userData.rolls||0)<1) return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xff0000).setTitle("❌ No Rolls Left").setDescription("Use `/daily` for a free roll, or win fights for a 30% chance!")],flags:64});
+    if ((userData.rolls||0)<1) return interaction.editReply({embeds:[new EmbedBuilder().setColor(0xff0000).setTitle("❌ No Rolls Left").setDescription("Use `/daily` for a free roll, or win fights for a 30% chance!")]});
     const rollResult=getRandomSpecies();
     let newSpecies;
     if (rollResult.isDragon) {
@@ -250,18 +252,17 @@ async function handleCommand(interaction) {
     userData.species=newSpecies; userData.originalSpecies=newSpecies; userData.rolls=(userData.rolls||0)-1;
     _state.userSpecies.set(user.id,userData); await database.saveUserSpecies(user.id,userData);
     const member=await guild.members.fetch(user.id); await assignSpeciesRole(member,newSpecies);
-    const isSame = userData.species?.name===newSpecies.name;
     const rollEmbed=new EmbedBuilder().setColor(newSpecies.color||0x808080)
-      .setTitle(`${newSpecies.emoji} ${isSame?"Same species — bad luck!":"New species rolled!"}`)
+      .setTitle(`${newSpecies.emoji} New species rolled!`)
       .setDescription(`**${user.displayName}** rolled ${newSpecies.emoji} **${newSpecies.name}**!\n\nChance: **${newSpecies.chance||"?"}** | HP: ${newSpecies.hp} | ATK: ${newSpecies.atkMin}–${newSpecies.atkMax} | HEAL: ${newSpecies.healMin}–${newSpecies.healMax}\n\n🎲 Rolls remaining: **${userData.rolls}**`);
     if (userData.rolls>0) {
       const row=new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`reroll_${user.id}`).setLabel("🔄 Reroll").setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId(`cancel_${user.id}`).setLabel("❌ Stop rolling").setStyle(ButtonStyle.Danger));
       _state.activeRolls.set(user.id,{timestamp:Date.now()});
-      await safeReply(interaction,{embeds:[rollEmbed],components:[row],flags:64});
+      await interaction.editReply({embeds:[rollEmbed],components:[row]});
     } else {
-      await safeReply(interaction,{embeds:[rollEmbed.setFooter({text:"No rolls remaining. Use /daily for a free roll!"})],flags:64});
+      await interaction.editReply({embeds:[rollEmbed.setFooter({text:"No rolls remaining. Use /daily for a free roll!"})]});
     }
     return;
   }
@@ -746,12 +747,18 @@ async function handleButton(interaction) {
     userData.species=newSpecies; userData.originalSpecies=newSpecies; userData.rolls=(userData.rolls||0)-1;
     _state.userSpecies.set(user.id,userData); await database.saveUserSpecies(user.id,userData);
     const member=await guild.members.fetch(user.id); await assignSpeciesRole(member,newSpecies);
-    await channel.send({embeds:[new EmbedBuilder().setColor(newSpecies.color||0x808080).setTitle(`${newSpecies.emoji} Rolled: ${newSpecies.name}!`).setDescription(`HP: ${newSpecies.hp} | ATK: ${newSpecies.atkMin}–${newSpecies.atkMax} | Chance: ${newSpecies.chance||"?"}\n🎲 Rolls left: **${userData.rolls}**`)]});
+    // Update the same ephemeral message — no channel spam
+    const rerollEmbed=new EmbedBuilder().setColor(newSpecies.color||0x808080)
+      .setTitle(`${newSpecies.emoji} Rerolled!`)
+      .setDescription(`You rolled ${newSpecies.emoji} **${newSpecies.name}**!\n\nChance: **${newSpecies.chance||"?"}** | HP: ${newSpecies.hp} | ATK: ${newSpecies.atkMin}–${newSpecies.atkMax} | HEAL: ${newSpecies.healMin}–${newSpecies.healMax}\n\n🎲 Rolls remaining: **${userData.rolls}**`);
     if (userData.rolls>0) {
-      return interaction.update({content:"Roll again?",components:[new ActionRowBuilder().addComponents(
+      return interaction.update({embeds:[rerollEmbed],content:null,components:[new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`reroll_${user.id}`).setLabel("🔄 Reroll").setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId(`cancel_${user.id}`).setLabel("❌ Stop").setStyle(ButtonStyle.Danger))]});
-    } else { _state.activeRolls.delete(user.id); return interaction.update({content:"✅ All rolls used!",components:[]}); }
+    } else {
+      _state.activeRolls.delete(user.id);
+      return interaction.update({embeds:[rerollEmbed.setFooter({text:"No rolls remaining. Use /daily for a free roll!"})],content:null,components:[]});
+    }
   }
 
   // ── SWITCH ────────────────────────────────────────────────────
