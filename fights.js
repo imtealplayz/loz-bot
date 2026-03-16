@@ -3,7 +3,7 @@ const { botPersonalities } = require("./constants.js");
 const { humanSpecies } = require("./constants.js");
 const database = require("./database.js");
 const {
-  hpBar, updateLeaderboard, updateFightStats, updateBotStats,
+  hpBar, updateFightStats, updateBotStats,
   updateReaperQuest, updateCyborgProgress, assignSpeciesRole,
 } = require("./helpers.js");
 const {
@@ -51,7 +51,7 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
     if (Math.random()<0.05) { winPoints=2; doubleWin=true; }
     if (Math.random()<0.3)  { rollEarned=true; const ud=_state.userSpecies.get(winnerId)||{species:humanSpecies,rolls:0}; ud.rolls=(ud.rolls||0)+1; _state.userSpecies.set(winnerId,ud); database.saveUserSpecies(winnerId,ud); }
   }
-  updateLeaderboard(winnerId,winPoints);
+  // FIX: only update fightLeaderboard via updateFightStats, not bomb tag leaderboard
   updateFightStats(winnerId,true,loserId,{opponentName:loser.species.name,opponentSpecies:loser.species,hpLeft:winner.currentHp,special:reason==="forfeit"?"😵 forfeit":reason==="counter"?"💥 counter":"",doubleWin,rollEarned});
   updateFightStats(loserId,false,winnerId,{opponentName:winner.species.name,opponentSpecies:winner.species,hpLeft:loser.currentHp,special:reason==="forfeit"?"😵 forfeited":"",doubleWin:false,rollEarned:false});
   updateReaperQuest(winnerId,"player");
@@ -186,7 +186,7 @@ async function endBotFight(channel, fightId, winner, loser, difficulty) {
       case "impossible": winsEarned=5; if(Math.random()<0.9) rollEarned=true; break;
     }
     if (rollEarned) { const ud=_state.userSpecies.get(fight.playerId)||{species:humanSpecies,rolls:0}; ud.rolls=(ud.rolls||0)+1; _state.userSpecies.set(fight.playerId,ud); database.saveUserSpecies(fight.playerId,ud); }
-    if (winsEarned>0) { updateLeaderboard(fight.playerId,winsEarned); updateFightStats(fight.playerId,true,"BOT",{opponentName:fight.botSpecies.name,opponentSpecies:fight.botSpecies,hpLeft:fight.playerHp,special:`🤖 ${difficulty} bot`}); }
+    if (winsEarned>0) { updateFightStats(fight.playerId,true,"BOT",{opponentName:fight.botSpecies.name,opponentSpecies:fight.botSpecies,hpLeft:fight.playerHp,special:`🤖 ${difficulty} bot`}); }
     updateBotStats(fight.playerId,difficulty,true);
   } else {
     updateBotStats(fight.playerId,difficulty,false);
