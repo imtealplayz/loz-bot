@@ -62,6 +62,7 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
   desc+=`${loser.species.emoji}  ${loser.species.name}  — ${hpBar(0,loser.maxHp)}\n\n`;
   if (reason==="timeout")  desc+="⏰ Opponent timed out!\n";
   if (reason==="forfeit")  desc+="😵 Opponent forfeited!\n";
+  if (reason==="counter")  desc+="⚡ Killed by counter-strike!\n";
   if (doubleWin)           desc+="✨ **DOUBLE WIN!** +2 points!\n";
   if (rollEarned)          desc+="🎲 **+1 Species Roll!**\n";
   const endEmbed=new EmbedBuilder().setColor(0x2ecc71).setTitle("⚔️ FIGHT OVER").setDescription(desc);
