@@ -173,10 +173,12 @@ async function doBotTurn(channel, fightId) {
   // Ogre regen for bot
   if (fight.botSpecies.name==="Ogre") { fight.botHp=Math.min(fight.botMaxHp,fight.botHp+5); log.push("👹 Bot Regeneration +5"); }
 
+  // Bot's turn: tick bot's full cooldowns + player's ULT only
   fight.botHealCooldown=Math.max(0,(fight.botHealCooldown||0)-1);
   fight.botUltCooldown=Math.max(0,(fight.botUltCooldown||0)-1);
-  fight.playerHealCooldown=Math.max(0,(fight.playerHealCooldown||0)-1);
+  // Player ULT also ticks on bot's turn (every round rule)
   fight.playerUltCooldown=Math.max(0,(fight.playerUltCooldown||0)-1);
+  // Player heal cooldown does NOT tick on bot's turn (only ticks when player acts)
   fight.round++; fight.log=log.slice(-3);
 
   if (fight.playerHp<=0) { await endBotFight(channel,fightId,"bot","player",fight.difficulty); return; }
