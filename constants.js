@@ -1,18 +1,32 @@
 // ==================== PATCH NOTES ====================
 const patchNotes = [
   {
+    version: "4.3", date: "2026-03-17",
+    changes: [
+      "⚔️ Miss + Counter system restored — attacks can miss, defenders have a 30% chance to counter-strike",
+      "🎭 Chimera ULT overhauled — now copies opponent's species ULT directly, no waiting required",
+      "🎁 New /gift command — send up to 2 rolls per day, receive up to 4 per day",
+      "✨ Awakening Altar — /awakening is now a universal altar for all species awakenings",
+      "🌑 Reaper Quest now has a deadline — quest expires 24 March 2026 at 6PM",
+      "🔒 Cannot reroll species while in an active fight",
+      "👑 God-given species now always becomes your original species",
+      "🤖 Bot fights now show whose fight it is in the footer",
+      "⏰ Bot fights auto-resolve in player's favour if bot is stuck for 60 seconds",
+      "🐛 Fixed ULT cooldown — both players' ULT now ticks every round, spam no longer possible",
+      "🗄️ Migrated to MongoDB — persistent data, no more resets on restart",
+    ],
+  },
+  {
     version: "4.2", date: "2026-03-16",
     changes: [
-      "🐛 Fixed ULT cooldown — both players' ULT now ticks every round, spam no longer possible",
       "🐛 Fixed all 17 combat bugs — passives, burns, possession, Chimera stacks, God retribution all working",
       "⚔️ Fight system overhauled — single embed with buttons attached, no more message spam",
       "🔄 Choice ULTs (Angel, Ice Dragon, Earth Dragon) now swap buttons inline",
       "📊 HP display now updates only after ALL effects fully resolve",
-      "🤖 Bot turn shows 'Bot is thinking...' on the embed during AI delay",
+      "🤖 Bot turn shows Bot is thinking on the embed during AI delay",
       "🗄️ Migrated to MongoDB — persistent data, no more resets on bot restart",
       "📋 /species now shows full ranked species list with roll chances",
       "👑 /god species-add now supports up to 1,000,000 rolls",
-      "🎲 /species-roll reroll menu stays in one message instead of spamming the channel",
     ],
   },
   {
