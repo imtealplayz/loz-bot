@@ -794,14 +794,23 @@ async function handleButton(interaction) {
     if (botC.burn>0) { const bd=botC.burn; botC.currentHp=Math.max(0,botC.currentHp-bd); botC.burnRounds--; if(botC.burnRounds<=0){botC.burn=0;botC.burnRounds=0;} log.push(`🔥 Bot takes ${bd} burn!`); }
     // Ogre regen for player
     const or=applyOgreRegen(playerC); if(or) log.push(or);
-    // FIX: tick BOTH players ULT cooldown every round
-    tickBothUltCooldowns(playerC, botC);
+    // Sync freshly-set cooldown back to combatant object BEFORE ticking
+    // (ULT sets fight.playerUltCooldown directly, but playerC was built before that)
+    playerC.ultCooldown = fight.playerUltCooldown;
+    botC.ultCooldown    = fight.botUltCooldown;
+    botC.healCooldown   = fight.botHealCooldown;
+    // Player turn: tick player full + bot ULT only
+    playerC.healCooldown = Math.max(0, playerC.healCooldown - 1);
+    playerC.ultCooldown  = Math.max(0, playerC.ultCooldown  - 1);
+    botC.ultCooldown     = Math.max(0, botC.ultCooldown     - 1);
 
-    // Sync back
+    // Sync back — including BOTH cooldowns after tickBothUltCooldowns
     fight.playerHp=Math.max(0,playerC.currentHp); fight.botHp=Math.max(0,botC.currentHp);
     fight.playerUltBuff=playerC.ultBuff; fight.playerHealCooldown=playerC.healCooldown; fight.playerUltCooldown=playerC.ultCooldown;
     fight.playerBurn=playerC.burn; fight.playerBurnRounds=playerC.burnRounds; fight.playerCurse=playerC.curse;
     fight.playerBlockHeal=playerC.blockHeal; fight.playerAdaptiveStacks=playerC.adaptiveStacks; fight.playerAttackCounter=playerC.attackCounter;
+    // FIX: sync bot ULT cooldown after tick (was being lost)
+    fight.botUltCooldown=botC.ultCooldown;
     fight.botUltBuff=botC.ultBuff; fight.botBurn=botC.burn; fight.botBurnRounds=botC.burnRounds;
     fight.botBlockHeal=botC.blockHeal; fight.botAdaptiveStacks=botC.adaptiveStacks; fight.botAttackCounter=botC.attackCounter; fight.botStunnedTurns=botC.stunnedTurns||0;
     fight.log=log.slice(-3);
@@ -926,6 +935,9 @@ async function handleButton(interaction) {
     const or=applyOgreRegen(player); if(or) log.push(or);
     // FIX: tick BOTH players ULT cooldown every round
     tickBothUltCooldowns(player, opponent);
+        // FIX: sync opponent ULT cooldown back to fight object
+        if (isP1) fight.player2.ultCooldown=opponent.ultCooldown;
+        else      fight.player1.ultCooldown=opponent.ultCooldown;
 
     if (opponent.currentHp<=0) { await endFight(channel,fightId,user.id,opponent.id,"normal"); return; }
     if (player.currentHp<=0)   { await endFight(channel,fightId,opponent.id,user.id,"normal"); return; }
