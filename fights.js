@@ -155,17 +155,29 @@ async function doBotTurn(channel, fightId) {
     }
     if (botAction==="attack") {
       const result=calculateDamage(botC,playerC);
+      // Apply counter-strike damage to bot (attackerMutations.hpDelta is negative on counter)
       botC.currentHp=Math.max(0,Math.min(botC.maxHp,botC.currentHp+result.attackerMutations.hpDelta));
-      if (result.instantKill) {
+      if (result.missedAttack) {
+        // Bot missed — show miss message clearly
+        log.push(`${result.specialLines[0]||"💨 **Bot MISSED!**"}`);
+        if (playerC.species.name==="God") { const gh=Math.floor(playerC.currentHp*0.2); playerC.currentHp=Math.min(playerC.maxHp,playerC.currentHp+gh); log.push(`👑 **DIVINE RETRIBUTION!** God heals ${gh}!`); }
+        // Check if counter-strike killed the bot
+        if (botC.currentHp<=0) {
+          fight.botHp=0; fight.playerHp=playerC.currentHp; fight.log=log.slice(-3);
+          await endBotFight(channel,fightId,"player","bot",fight.difficulty,"counter");
+          return;
+        }
+      } else if (result.instantKill) {
         playerC.currentHp=0;
+        log.push(`⚔️ ${result.specialLines.join(" ")}  Your HP: 0/${fight.playerMaxHp}`);
       } else {
         playerC.currentHp=Math.max(0,playerC.currentHp-result.damage);
+        if (playerC.species.name==="Chimera"&&result.damage>0) fight.playerAdaptiveStacks=Math.min(3,(fight.playerAdaptiveStacks||0)+1);
+        if (playerC.species.name==="God"&&result.missedAttack) { const gh=Math.floor(playerC.currentHp*0.2); playerC.currentHp=Math.min(playerC.maxHp,playerC.currentHp+gh); log.push(`👑 **DIVINE RETRIBUTION!** God heals ${gh}!`); }
+        log.push(`⚔️ Bot deals **${result.damage}** damage!${result.specialLines.length?` (${result.specialLines.slice(0,2).join(", ")})`:""}  Your HP: ${Math.max(0,playerC.currentHp)}/${fight.playerMaxHp}`);
       }
-      fight.botHp=botC.currentHp; fight.playerHp=playerC.currentHp;
-      if (playerC.species.name==="Chimera"&&result.damage>0) fight.playerAdaptiveStacks=Math.min(3,(fight.playerAdaptiveStacks||0)+1);
-      if (playerC.species.name==="God"&&result.missedAttack) { const gh=Math.floor(playerC.currentHp*0.2); fight.playerHp=Math.min(fight.playerMaxHp,fight.playerHp+gh); log.push(`👑 **DIVINE RETRIBUTION!** God heals ${gh}!`); }
+      fight.botHp=Math.max(0,botC.currentHp); fight.playerHp=Math.max(0,playerC.currentHp);
       fight.botUltBuff=botC.ultBuff; fight.botAdaptiveStacks=botC.adaptiveStacks; fight.botAttackCounter=botC.attackCounter;
-      log.push(`⚔️ Bot deals **${result.damage}** damage!${result.specialLines.length?` (${result.specialLines.slice(0,2).join(", ")})`:""}  Your HP: ${fight.playerHp}/${fight.playerMaxHp}`);
     }
   }
 
@@ -223,7 +235,7 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
     updateFightStats(fight.playerId,false,"BOT",{opponentName:fight.botSpecies.name,opponentSpecies:fight.botSpecies,hpLeft:0,special:`🤖 ${difficulty} loss`});
   }
   const personality=botPersonalities[difficulty], won=winner==="player";
-  const timeoutMsg=reason==="timeout"?"\n⏰ The bot took too long to respond — you win by default!":"";
+  const timeoutMsg=reason==="timeout"?"\n⏰ The bot took too long to respond — you win by default!":reason==="counter"?"\n⚡ Bot was killed by your counter-strike!":"";
   const pName=fight.playerName||`<@${fight.playerId}>`;
   const desc=won
     ?`🏆 **${pName} defeated ${personality.emoji} ${personality.name}!**${timeoutMsg}\n\n${fight.playerSpecies.emoji} ${pName} — ${hpBar(fight.playerHp,fight.playerMaxHp)}\n${fight.botSpecies.emoji} ${personality.name} — ${hpBar(0,fight.botMaxHp)}\n\n+${winsEarned} win${winsEarned!==1?"s":""}!${rollEarned?" 🎲 +1 Roll!":""}`
