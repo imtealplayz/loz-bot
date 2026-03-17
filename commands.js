@@ -368,7 +368,14 @@ async function handleCommand(interaction) {
     const sorted=Array.from(_state.fightLeaderboard.entries()).sort((a,b)=>b[1].wins-a[1].wins).slice(0,10);
     let desc="";
     for (let i=0;i<sorted.length;i++) {
-      const [uid,s]=sorted[i], m=await guild.members.fetch(uid).catch(()=>null), nm=m?m.displayName:"Unknown";
+      const [uid,s]=sorted[i];
+      // Try guild member first, fall back to global user fetch for cross-server players
+      let nm="Unknown";
+      try {
+        const m=await guild.members.fetch(uid).catch(()=>null);
+        if (m) nm=m.displayName;
+        else { const u=await _client.users.fetch(uid).catch(()=>null); if(u) nm=u.username; }
+      } catch(_){}
       const sp=_state.userSpecies.get(uid)?.species, medal=i===0?"🥇":i===1?"🥈":i===2?"🥉":"🎖️";
       desc+=`${medal} ${sp?.emoji||"⚔️"} **${nm}** — ${s.wins} wins\n`;
     }
@@ -806,6 +813,15 @@ async function handleButton(interaction) {
       if (result.instantKill) {
         botC.currentHp=0;
         log.push(`⚔️ ${result.specialLines.join(" ")}`);
+      } else if (result.missedAttack) {
+        // Miss — show clearly, check if counter-strike killed player
+        log.push(`${result.specialLines[0]||"💨 **MISS!**"}`);
+        if (botC.species.name==="God") { const gh=Math.floor(botC.currentHp*0.2); botC.currentHp=Math.min(botC.maxHp,botC.currentHp+gh); log.push(`👑 Bot **Divine Retribution** heals ${gh}!`); }
+        // playerC.currentHp already reduced by counter in attackerMutations above
+        if (playerC.currentHp<=0) {
+          fight.playerHp=0; fight.botHp=botC.currentHp; fight.log=log.slice(-3);
+          await endBotFight(channel,fightId,"bot","player",fight.difficulty); return;
+        }
       } else {
         botC.currentHp=Math.max(0,botC.currentHp-result.damage);
         if (botC.species.name==="Chimera"&&result.damage>0) fight.botAdaptiveStacks=Math.min(3,(fight.botAdaptiveStacks||0)+1);
@@ -954,6 +970,12 @@ async function handleButton(interaction) {
         if (result.instantKill) {
           opponent.currentHp=0;
           log.push(`⚔️ <@${user.id}> — ${result.specialLines.join(" ")}`);
+        } else if (result.missedAttack) {
+          // Miss — show clearly, handle counter-strike death
+          log.push(`${result.specialLines[0]||"💨 **MISS!**"}`);
+          if (opponent.species.name==="God") { const gh=Math.floor(opponent.currentHp*0.2); opponent.currentHp=Math.min(opponent.maxHp,opponent.currentHp+gh); log.push(`👑 **Divine Retribution!** Heals ${gh}!`); }
+          // player.currentHp already reduced by counter in attackerMutations above — check death
+          if (player.currentHp<=0) { await endFight(channel,fightId,opponent.id,user.id,"counter"); return; }
         } else {
           opponent.currentHp=Math.max(0,opponent.currentHp-result.damage);
           if (opponent.species.name==="Chimera"&&result.damage>0) opponent.adaptiveStacks=Math.min(3,(opponent.adaptiveStacks||0)+1);
