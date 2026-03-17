@@ -138,7 +138,11 @@ function updateBotStats(id, diff, won) {
 }
 
 // ==================== QUEST ====================
+const REAPER_EXPIRY = 1774355400000; // 24 March 2026 6PM IST
+
 function updateReaperQuest(id, type) {
+  // Stop counting progress after quest deadline
+  if (Date.now() >= REAPER_EXPIRY) return;
   const uq = _state.questProgress.get(id) || {};
   const q = uq.reaper || { easyBots:0, mediumBots:0, hardBots:0, impossibleBots:0, playerFights:0, completed:false, claimed:false };
   if (q.completed) return;
