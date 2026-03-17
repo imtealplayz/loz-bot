@@ -108,10 +108,18 @@ async function doBotTurn(channel, fightId) {
 
     if (botAction==="heal") {
       if (botC.blockHeal) { botC.blockHeal=false; log.push("👑 **ROYAL COMMAND!** Bot cannot heal!"); botAction="attack"; }
+      else if (botC.currentHp>=botC.maxHp*0.8) { log.push("❌ Bot HP above 80% — too healthy!"); botAction="attack"; }
       else {
-        const h=Math.floor(Math.random()*(botC.species.healMax-botC.species.healMin+1))+botC.species.healMin;
-        fight.botHp=Math.min(fight.botMaxHp,fight.botHp+h); fight.botHealCooldown=3;
-        log.push(`💚 Bot heals for ${h} HP! (${fight.botHp}/${fight.botMaxHp})`);
+        let rawH=Math.floor(Math.random()*(botC.species.healMax-botC.species.healMin+1))+botC.species.healMin;
+        // <15% desperation rule for bots too
+        if (botC.currentHp<botC.maxHp*0.15) {
+          if (Math.random()<0.75) { rawH=Math.floor(rawH*0.5); log.push("💔 Bot's desperate heal only 50%!"); }
+          else { rawH=Math.floor(rawH*1.3); log.push("✨ Bot's miracle heal +30%!"); }
+        }
+        // FIX: update botC.currentHp then sync to fight.botHp
+        botC.currentHp=Math.min(botC.maxHp,botC.currentHp+rawH);
+        fight.botHp=botC.currentHp; fight.botHealCooldown=3;
+        log.push(`💚 Bot heals for ${rawH} HP! (${fight.botHp}/${fight.botMaxHp})`);
       }
     }
     if (botAction==="ult") {
@@ -147,7 +155,11 @@ async function doBotTurn(channel, fightId) {
     if (botAction==="attack") {
       const result=calculateDamage(botC,playerC);
       botC.currentHp=Math.max(0,Math.min(botC.maxHp,botC.currentHp+result.attackerMutations.hpDelta));
-      playerC.currentHp=Math.max(0,playerC.currentHp-result.damage);
+      if (result.instantKill) {
+        playerC.currentHp=0;
+      } else {
+        playerC.currentHp=Math.max(0,playerC.currentHp-result.damage);
+      }
       fight.botHp=botC.currentHp; fight.playerHp=playerC.currentHp;
       if (playerC.species.name==="Chimera"&&result.damage>0) fight.playerAdaptiveStacks=Math.min(3,(fight.playerAdaptiveStacks||0)+1);
       if (playerC.species.name==="God"&&result.missedAttack) { const gh=Math.floor(playerC.currentHp*0.2); fight.playerHp=Math.min(fight.playerMaxHp,fight.playerHp+gh); log.push(`👑 **DIVINE RETRIBUTION!** God heals ${gh}!`); }
@@ -211,9 +223,10 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
   }
   const personality=botPersonalities[difficulty], won=winner==="player";
   const timeoutMsg=reason==="timeout"?"\n⏰ The bot took too long to respond — you win by default!":"";
+  const pName=fight.playerName||`<@${fight.playerId}>`;
   const desc=won
-    ?`🏆 **YOU WIN!**${timeoutMsg}\n\n${fight.playerSpecies.emoji} You — ${hpBar(fight.playerHp,fight.playerMaxHp)}\n${fight.botSpecies.emoji} Bot — ${hpBar(0,fight.botMaxHp)}\n\n+${winsEarned} win${winsEarned!==1?"s":""}!${rollEarned?" 🎲 +1 Roll!":""}`
-    :`💀 **DEFEAT!**\n\n${fight.playerSpecies.emoji} You — ${hpBar(0,fight.playerMaxHp)}\n${fight.botSpecies.emoji} Bot — ${hpBar(fight.botHp,fight.botMaxHp)}\n\nNo rewards.`;
+    ?`🏆 **${pName} defeated ${personality.emoji} ${personality.name}!**${timeoutMsg}\n\n${fight.playerSpecies.emoji} ${pName} — ${hpBar(fight.playerHp,fight.playerMaxHp)}\n${fight.botSpecies.emoji} ${personality.name} — ${hpBar(0,fight.botMaxHp)}\n\n+${winsEarned} win${winsEarned!==1?"s":""}!${rollEarned?" 🎲 +1 Roll!":""}`
+    :`💀 **${pName} lost to ${personality.emoji} ${personality.name}!**\n\n${fight.playerSpecies.emoji} ${pName} — ${hpBar(0,fight.playerMaxHp)}\n${fight.botSpecies.emoji} ${personality.name} — ${hpBar(fight.botHp,fight.botMaxHp)}\n\nNo rewards.`;
   const embed=new EmbedBuilder().setColor(won?0x2ecc71:0xe74c3c).setTitle(`🤖 BOT FIGHT — ${difficulty.toUpperCase()}`).setDescription(desc);
   const msg=_state.fightMessages.get(fightId);
   if (msg) await msg.edit({embeds:[embed],components:[]}).catch(()=>{});
