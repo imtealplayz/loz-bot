@@ -126,7 +126,13 @@ function updateFightStats(id, won, oppId, data={}) {
   ].slice(0,20);
   _state.fightStats.set(id, s);
   database.saveFightStats(id, s);
-  if (won) database.saveFightLeaderboard(id, { wins: s.wins });
+  if (won) {
+    // FIX: update in-memory fightLeaderboard so /fights reflects wins immediately
+    const lb = _state.fightLeaderboard.get(id) || { wins:0 };
+    lb.wins = s.wins;
+    _state.fightLeaderboard.set(id, lb);
+    database.saveFightLeaderboard(id, { wins: s.wins });
+  }
 }
 
 function updateBotStats(id, diff, won) {
