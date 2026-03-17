@@ -49,6 +49,20 @@ function calculateDamage(attacker, defender) {
     return { damage:0, baseDamage:0, specialLines:[`🤖 **MACHINE LEARNING!** Bot counters for ${ctr}!`], attackerMutations, missedAttack:true };
   }
 
+  // ── Miss + Counter chance ────────────────────────────────────────
+  const { failChances } = require('./constants.js');
+  const missRate = failChances[attacker.species.name] || 0.05;
+  if (Math.random() < missRate) {
+    // 30% chance defender counter-strikes on miss
+    if (Math.random() < 0.3) {
+      const avgAtk = Math.floor((defender.species.atkMin + defender.species.atkMax) / 2);
+      const ctr = Math.floor(avgAtk * 0.6);
+      attackerMutations.hpDelta -= ctr;
+      return { damage:0, baseDamage:0, specialLines:[`💨 **MISS!** ${defender.species.emoji} **${defender.species.name}** counter-strikes for **${ctr}**!`], attackerMutations, missedAttack:true };
+    }
+    return { damage:0, baseDamage:0, specialLines:[`💨 **MISS!** The attack whiffed!`], attackerMutations, missedAttack:true };
+  }
+
   const baseDamage = Math.floor(Math.random()*(attacker.species.atkMax-attacker.species.atkMin+1))+attacker.species.atkMin;
   let finalDamage = baseDamage, multiplier = 1;
 
@@ -244,13 +258,17 @@ function applyUltEffect(attacker, defender) {
     }
     case "Archdemon":   attacker.ultBuff={type:"nextAttack",multiplier:2.0,curse:10,curseRounds:3}; msg="👿 **ABYSSAL GATE!**\n2× + 10 curse 3 turns!"; break;
     case "Chimera": {
-      if (defender.lastUltUsed) {
-        attacker.ultBuff=defender.lastUltUsed.buff?{...defender.lastUltUsed.buff}:{type:"nextAttack",multiplier:1.5};
-        msg=`🎭 **MIRROR REALM!**\nCopied ${defender.lastUltUsed.name}!`;
-      } else {
-        attacker.ultBuff={type:"nextAttack",multiplier:1.5};
-        msg="🎭 **MIRROR REALM!**\nNo ULT to copy — 1.5×!";
-      }
+      // Copy opponent's species ULT directly — no waiting, no fallback
+      // Temporarily spoof attacker species to cast defender's ULT
+      const originalSpecies = attacker.species;
+      attacker.species = defender.species;
+      const copied = applyUltEffect(attacker, defender);
+      attacker.species = originalSpecies;
+      // Keep Chimera's own cooldown (set by caller), override any cooldown set inside
+      msg = `🎭 **MIRROR REALM!**\nCopied **${defender.species.name}**'s ULT!\n${copied.message}`;
+      // If copied ULT requires a choice, pass that through
+      requiresChoice = copied.requiresChoice;
+      choiceType = copied.choiceType;
       break;
     }
     default: msg="✨ **ULTIMATE!**";
@@ -336,8 +354,9 @@ function buildBotFightEmbed(fight, logLines=[], phase="playing") {
     `${hpBar(fight.botHp,fight.botMaxHp)}${bBuf.length?`\n${bBuf.join(" | ")}`:""}`+
     statusLine+`\n\n📜 **Round ${fight.round}**\n`+
     (logLines.length?logLines.map(l=>`└ ${l}`).join("\n"):"└ Fight started!");
-  return new EmbedBuilder().setColor(color).setTitle(`🤖 BOT FIGHT — ${fight.difficulty.toUpperCase()}`).setDescription(desc)
-    .setFooter({text:`ULT CD: ${fight.playerUltCooldown} | Heal CD: ${fight.playerHealCooldown}`});
+  return new EmbedBuilder().setColor(color).setTitle(`🤖 BOT FIGHT — ${fight.difficulty.toUpperCase()}`)
+    .setDescription(desc)
+    .setFooter({text:`${fight.playerName||"Player"}'s fight | ULT CD: ${fight.playerUltCooldown} | Heal CD: ${fight.playerHealCooldown}`});
 }
 
 function buildBotFightRow(fightId, fight, phase="playing") {
