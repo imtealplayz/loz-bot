@@ -348,15 +348,15 @@ function buildBotFightEmbed(fight, logLines=[], phase="playing") {
   if ((fight.botBurn||0)>0)       bBuf.push(`🔥 Burn ${fight.botBurn}×${fight.botBurnRounds}`);
   let statusLine=phase==="bot_thinking"?"\n🤖 **Bot is thinking...**":phase==="playing"?"\n🎲 **Your turn!**":phase==="choice"?"\n🎯 **Choose your path!**":"\n🏆 **Fight Over!**";
   const desc=
-    `👤 **You** — ${fight.playerSpecies.emoji} ${fight.playerSpecies.name}\n`+
+    `${fight.playerSpecies.emoji} **${fight.playerSpecies.name}** — <@${fight.playerId}>${fight.playerName?" ("+fight.playerName+")":""}\n`+
     `${hpBar(fight.playerHp,fight.playerMaxHp)}${pBuf.length?`\n${pBuf.join(" | ")}`:""}\n\n`+
     `🤖 **${personality.emoji} ${personality.name}** — ${fight.botSpecies.emoji} ${fight.botSpecies.name}\n`+
     `${hpBar(fight.botHp,fight.botMaxHp)}${bBuf.length?`\n${bBuf.join(" | ")}`:""}`+
     statusLine+`\n\n📜 **Round ${fight.round}**\n`+
     (logLines.length?logLines.map(l=>`└ ${l}`).join("\n"):"└ Fight started!");
-  return new EmbedBuilder().setColor(color).setTitle(`🤖 BOT FIGHT — ${fight.difficulty.toUpperCase()}`)
+  return new EmbedBuilder().setColor(color).setTitle(`🤖 BOT FIGHT — ${fight.difficulty.toUpperCase()} | ${fight.playerName||"Player"}`)
     .setDescription(desc)
-    .setFooter({text:`${fight.playerName||"Player"}'s fight | ULT CD: ${fight.playerUltCooldown} | Heal CD: ${fight.playerHealCooldown}`});
+    .setFooter({text:`ULT CD: ${fight.playerUltCooldown} | Heal CD: ${fight.playerHealCooldown}`});
 }
 
 function buildBotFightRow(fightId, fight, phase="playing") {
