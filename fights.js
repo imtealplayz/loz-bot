@@ -115,19 +115,34 @@ async function doBotTurn(channel, fightId) {
       }
     }
     if (botAction==="ult") {
-      const {message:um,requiresChoice}=applyUltEffect(botC,playerC);
-      if (requiresChoice) {
-        if (botC.species.name==="Angel") {
-          if (botC.currentHp<botC.maxHp*0.4) { const h=Math.floor(playerC.currentHp*0.6); botC.currentHp=Math.min(botC.maxHp,botC.currentHp+h); fight.botHp=botC.currentHp; log.push(`👼 Bot PRAYER — heals ${h} HP!`); }
-          else { botC.ultBuff={type:"nextAttack",multiplier:1.5,angelHeal:true}; log.push("👼 Bot SMITE — 1.5×!"); }
-        } else if (botC.species.name==="Ice Dragon") { botC.ultBuff={type:"nextAttack",multiplier:1.9}; log.push("❄️ Bot GLACIAL SPIKE — 1.9×!"); }
-        else if (botC.species.name==="Earth Dragon") { botC.ultBuff={type:"nextAttack",multiplier:1.2}; log.push("🌍 Bot TERRA STRIKE — 1.2×!"); }
+      // Chimera bot copies player's species ULT directly
+      if (botC.species.name==="Chimera") {
+        const savedSpecies=botC.species;
+        botC.species=playerC.species;
+        const copied=applyUltEffect(botC,playerC);
+        botC.species=savedSpecies;
+        // Chimera keeps its own cooldown (15)
+        fight.botUltCooldown=15;
+        fight.botUltBuff=botC.ultBuff;
+        fight.botLastUltUsed=botC.lastUltUsed;
+        log.push(`🎭 Bot Chimera copies **${playerC.species.name}**'s ULT!\n${copied.message}`);
+        if (["God","Mechangel","Cyborg"].includes(playerC.species.name)) { fight.botHp=botC.currentHp; fight.playerHp=playerC.currentHp; }
+        if (playerC.species.name==="Ogre") playerC.stunnedTurns=1;
       } else {
-        log.push(`✨ Bot uses ULT! ${um}`);
-        if (["God","Mechangel","Cyborg"].includes(botC.species.name)) { fight.botHp=botC.currentHp; fight.playerHp=playerC.currentHp; }
-        if (botC.species.name==="Ogre") playerC.stunnedTurns=1;
+        const {message:um,requiresChoice}=applyUltEffect(botC,playerC);
+        if (requiresChoice) {
+          if (botC.species.name==="Angel") {
+            if (botC.currentHp<botC.maxHp*0.4) { const h=Math.floor(playerC.currentHp*0.6); botC.currentHp=Math.min(botC.maxHp,botC.currentHp+h); fight.botHp=botC.currentHp; log.push(`👼 Bot PRAYER — heals ${h} HP!`); }
+            else { botC.ultBuff={type:"nextAttack",multiplier:1.5,angelHeal:true}; log.push("👼 Bot SMITE — 1.5×!"); }
+          } else if (botC.species.name==="Ice Dragon") { botC.ultBuff={type:"nextAttack",multiplier:1.9}; log.push("❄️ Bot GLACIAL SPIKE — 1.9×!"); }
+          else if (botC.species.name==="Earth Dragon") { botC.ultBuff={type:"nextAttack",multiplier:1.2}; log.push("🌍 Bot TERRA STRIKE — 1.2×!"); }
+        } else {
+          log.push(`✨ Bot uses ULT! ${um}`);
+          if (["God","Mechangel","Cyborg"].includes(botC.species.name)) { fight.botHp=botC.currentHp; fight.playerHp=playerC.currentHp; }
+          if (botC.species.name==="Ogre") playerC.stunnedTurns=1;
+        }
+        fight.botUltCooldown=botC.species.ultCooldown; fight.botUltBuff=botC.ultBuff; fight.botLastUltUsed=botC.lastUltUsed;
       }
-      fight.botUltCooldown=botC.species.ultCooldown; fight.botUltBuff=botC.ultBuff; fight.botLastUltUsed=botC.lastUltUsed;
     }
     if (botAction==="attack") {
       const result=calculateDamage(botC,playerC);
@@ -168,11 +183,11 @@ async function doBotTurn(channel, fightId) {
   if (fight.botHp<=0)    { await endBotFight(channel,fightId,"player","bot",fight.difficulty); return; }
 
   if (msg) await msg.edit({embeds:[buildBotFightEmbed(fight,fight.log||[],"playing")],components:[buildBotFightRow(fightId,fight)]}).catch(()=>{});
-  fight.timeout=setTimeout(()=>{ if(_state.activeBotFights.has(fightId)) endBotFight(channel,fightId,"bot","player",fight.difficulty); },120000);
+  fight.timeout=setTimeout(()=>{ if(_state.activeBotFights.has(fightId)) endBotFight(channel,fightId,"player","bot",fight.difficulty,"timeout"); },60000);
 }
 
 // ==================== END BOT FIGHT ====================
-async function endBotFight(channel, fightId, winner, loser, difficulty) {
+async function endBotFight(channel, fightId, winner, loser, difficulty, reason='normal') {
   const fight = _state.activeBotFights.get(fightId);
   if (!fight) return;
   if (fight.timeout) clearTimeout(fight.timeout);
@@ -193,8 +208,9 @@ async function endBotFight(channel, fightId, winner, loser, difficulty) {
     updateFightStats(fight.playerId,false,"BOT",{opponentName:fight.botSpecies.name,opponentSpecies:fight.botSpecies,hpLeft:0,special:`🤖 ${difficulty} loss`});
   }
   const personality=botPersonalities[difficulty], won=winner==="player";
+  const timeoutMsg=reason==="timeout"?"\n⏰ The bot took too long to respond — you win by default!":"";
   const desc=won
-    ?`🏆 **YOU WIN!**\n\n${fight.playerSpecies.emoji} You — ${hpBar(fight.playerHp,fight.playerMaxHp)}\n${fight.botSpecies.emoji} Bot — ${hpBar(0,fight.botMaxHp)}\n\n+${winsEarned} win${winsEarned!==1?"s":""}!${rollEarned?" 🎲 +1 Roll!":""}`
+    ?`🏆 **YOU WIN!**${timeoutMsg}\n\n${fight.playerSpecies.emoji} You — ${hpBar(fight.playerHp,fight.playerMaxHp)}\n${fight.botSpecies.emoji} Bot — ${hpBar(0,fight.botMaxHp)}\n\n+${winsEarned} win${winsEarned!==1?"s":""}!${rollEarned?" 🎲 +1 Roll!":""}`
     :`💀 **DEFEAT!**\n\n${fight.playerSpecies.emoji} You — ${hpBar(0,fight.playerMaxHp)}\n${fight.botSpecies.emoji} Bot — ${hpBar(fight.botHp,fight.botMaxHp)}\n\nNo rewards.`;
   const embed=new EmbedBuilder().setColor(won?0x2ecc71:0xe74c3c).setTitle(`🤖 BOT FIGHT — ${difficulty.toUpperCase()}`).setDescription(desc);
   const msg=_state.fightMessages.get(fightId);
