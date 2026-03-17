@@ -194,25 +194,25 @@ async function handleCommand(interaction) {
 
   // ── SPECIES-ROLL ──────────────────────────────────────────────
   if (commandName === "species-roll") {
+    // Block rolling during active fights
+    if (isPlayerInFight(user.id)||isPlayerInBotFight(user.id)) return safeReply(interaction,{embeds:[createErrorEmbed("You can't reroll during an active fight!")],flags:64});
     // New users start with 1 roll
     let userData=_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:1,requestsEnabled:true,lastSwitch:0,badges:[]};
     if ((userData.rolls||0)<1) return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xff0000).setTitle("❌ No Rolls Left").setDescription("Use `/daily` for a free roll, or win fights for a 30% chance!")],flags:64});
 
-    // Store for button handler
-    _state.activeRolls.set(user.id, { channelId: channel.id, timestamp: Date.now() });
-
-    // Show current species — public embed, buttons are ephemeral
+    // Send public embed and store message ID for editing later
     const currentSp = userData.species || humanSpecies;
     const embed = new EmbedBuilder()
       .setColor(currentSp.color || 0x808080)
       .setTitle("🎲 Species Roll")
       .setDescription(`**Current species:** ${currentSp.emoji} **${currentSp.name}**\n\n🎲 Rolls available: **${userData.rolls}**\n\nPress **REROLL** to roll for a new species, or **CANCEL** to keep your current one.`);
+    const pubMsg = await channel.send({embeds:[embed]});
+    // Store message ref so button handler can edit it
+    _state.activeRolls.set(user.id, { channelId: channel.id, messageId: pubMsg.id, timestamp: Date.now() });
+    // Ephemeral buttons only
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`reroll_${user.id}`).setLabel("🔄 REROLL").setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId(`cancel_${user.id}`).setLabel("❌ CANCEL").setStyle(ButtonStyle.Danger));
-    // Public embed
-    await channel.send({embeds:[embed]});
-    // Ephemeral buttons only
     return safeReply(interaction,{content:"Use the buttons below to reroll or cancel:",components:[row],flags:64});
   }
 
@@ -220,36 +220,40 @@ async function handleCommand(interaction) {
   if (commandName === "awakening") {
     const { awakeningRequirements } = require("./constants.js");
     const userData=_state.userSpecies.get(user.id);
-    if (!userData) return safeReply(interaction,{embeds:[createErrorEmbed("No species yet!")],flags:64});
+    if (!userData) return safeReply(interaction,{embeds:[createErrorEmbed("You need a species first! Use `/species-roll`.")],flags:64});
     if (!userData.awakening) userData.awakening={};
-    if (!userData.awakening.cyborg) userData.awakening.cyborg={wins:0,damageDealt:0,ultUses:0,awakened:false};
-    if (userData.species.name!=="Cyborg") {
-      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x00ffff).setTitle("⚡ AWAKENING CHAMBER").setDescription("*You enter the chamber...*\n\n❌ No compatible cybernetic lifeform detected.\n❌ Requires a Cyborg host.\n\n*The screens power down.*").setFooter({text:"Only Cyborg can awaken to Mechangel"})],flags:64});
-    }
-    const prog=userData.awakening.cyborg, req=awakeningRequirements.cyborg;
-    const wPct=Math.min(Math.floor((prog.wins/req.wins)*100),100);
-    const dPct=Math.min(Math.floor((prog.damageDealt/req.damageDealt)*100),100);
-    const uPct=Math.min(Math.floor((prog.ultUses/req.ultUses)*100),100);
+
+    const sp = userData.species?.name;
     const bar=(p)=>{ const f=Math.floor(p/10); return "█".repeat(f)+"░".repeat(10-f); };
-    const ready=prog.wins>=req.wins&&prog.damageDealt>=req.damageDealt&&prog.ultUses>=req.ultUses&&!prog.awakened;
-    if (ready) {
-      const embed=new EmbedBuilder().setColor(0x00ffff).setTitle("⚡ AWAKENING PROTOCOL - READY ⚡").setDescription(
-        "`[████████████████░░] 90% - SYSTEM INTEGRATION COMPLETE`\n\n*Your cybernetic systems glow with ethereal light...*\n\n**» AWAKENING REQUIREMENTS MET «**\n"+
-        "├ Neural Interface: ██████████ 100%\n├ Power Core: ██████████ 100%\n└ Angelic Matrix: ██████████ 100%\n\n"+
-        "**Your Cyborg is ready to transcend to ⚡ Mechangel!**\n\nUpon awakening:\n├ +15 HP (140 total)\n├ +3-4 Attack (15-23)\n├ +2-4 Heal (10-18)\n"+
-        "├ New Passive: Quantum Processing — every 2 attacks = 1.4×\n└ New ULT: System Restoration — heal 40% + 20% reduction 2 turns\n\n🎁 **Reward:** +5 Species Rolls");
-      const row=new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("awaken_cyborg").setLabel("⚡ INITIATE AWAKENING").setStyle(ButtonStyle.Success));
-      return safeReply(interaction,{embeds:[embed],components:[row],flags:64});
-    } else if (prog.awakened) {
-      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x00ffff).setTitle("⚡ MECHANGEL - AWAKENED ⚡").setDescription("`[██████████████████] 100% - DIVINE MACHINE ACTIVE`\n\n*Your form has already transcended.*\n\n**» CURRENT STATUS «**\n├ Form: ⚡ Mechangel\n└ Status: Fully Awakened\n\n*The machine spirit recognizes its ascended master.*").setFooter({text:"You have achieved your final form"})],flags:64});
-    } else {
-      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x00ffff).setTitle("⚡ CYBORG AWAKENING PROTOCOL").setDescription(
-        "`[SYSTEM BOOTING...]`\n\n**» AWAKENING REQUIREMENTS «**\n\n"+
-        `⚔️ **Combat Data:** ${prog.wins}/${req.wins} wins\n└ ${bar(wPct)} ${wPct}%\n\n`+
-        `💥 **Damage Output:** ${prog.damageDealt.toLocaleString()}/${req.damageDealt.toLocaleString()} damage\n└ ${bar(dPct)} ${dPct}%\n\n`+
-        `⚡ **ULT Sync:** ${prog.ultUses}/${req.ultUses} ULT uses\n└ ${bar(uPct)} ${uPct}%\n\n`+
-        "*Continue fighting to complete the awakening.*").setFooter({text:"25 wins • 500 damage • 15 ULTs required"})],flags:64});
+
+    // ── Cyborg / Mechangel ──────────────────────────────────────
+    if (sp==="Cyborg"||sp==="Mechangel") {
+      if (!userData.awakening.cyborg) userData.awakening.cyborg={wins:0,damageDealt:0,ultUses:0,awakened:false};
+      const prog=userData.awakening.cyborg, req=awakeningRequirements.cyborg;
+      const wPct=Math.min(Math.floor((prog.wins/req.wins)*100),100);
+      const dPct=Math.min(Math.floor((prog.damageDealt/req.damageDealt)*100),100);
+      const uPct=Math.min(Math.floor((prog.ultUses/req.ultUses)*100),100);
+      if (prog.awakened) {
+        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x00ffff).setTitle("✨ AWAKENING ALTAR — TRANSCENDED")
+          .setDescription("*You stand before the altar, your form already reborn.*\n\n**Current Form:** ⚡ Mechangel\n**Status:** ✅ Fully Awakened\n\n*The altar hums in recognition of its ascended champion.*")
+          .setFooter({text:"You have reached your final form"})],flags:64});
+      }
+      const ready=prog.wins>=req.wins&&prog.damageDealt>=req.damageDealt&&prog.ultUses>=req.ultUses;
+      if (ready) {
+        const embed=new EmbedBuilder().setColor(0x00ffff).setTitle("✨ AWAKENING ALTAR — READY")
+          .setDescription("*The altar pulses with blinding light. Your trials are complete.*\n\n**» ALL REQUIREMENTS MET «**\n├ ✅ Combat Trials: Complete\n├ ✅ Damage Output: Complete\n└ ✅ ULT Mastery: Complete\n\n**Upon awakening to ⚡ Mechangel:**\n├ +15 HP (140 total)\n├ +3-4 Attack (15-23)\n├ New Passive: Quantum Processing\n└ New ULT: System Restoration\n\n🎁 **Reward:** +5 Species Rolls");
+        const row=new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("awaken_cyborg").setLabel("✨ STEP INTO THE ALTAR").setStyle(ButtonStyle.Success));
+        return safeReply(interaction,{embeds:[embed],components:[row],flags:64});
+      }
+      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x00ffff).setTitle("✨ AWAKENING ALTAR")
+        .setDescription(`*The altar awaits your worthiness. Prove yourself in battle.*\n\n**» YOUR PROGRESS «**\n\n⚔️ **Combat Trials:** ${prog.wins}/${req.wins} wins\n└ ${bar(wPct)} ${wPct}%\n\n💥 **Damage Output:** ${prog.damageDealt.toLocaleString()}/${req.damageDealt.toLocaleString()} dmg\n└ ${bar(dPct)} ${dPct}%\n\n⚡ **ULT Mastery:** ${prog.ultUses}/${req.ultUses} ULT uses\n└ ${bar(uPct)} ${uPct}%`)
+        .setFooter({text:"25 wins • 500 damage • 15 ULTs to unlock your true form"})],flags:64});
     }
+
+    // ── No awakening available for this species ─────────────────
+    return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x2d2d2d).setTitle("✨ AWAKENING ALTAR")
+      .setDescription(`*You approach the altar, but it remains silent.*\n\n${userData.species?.emoji||"👤"} **${sp||"Unknown"}** does not yet have an awakening path.\n\nAwakenings are rare transformations granted to species who have proven their worth through relentless battle.\n\n*Check back as new awakenings are discovered.*`)
+      .setFooter({text:"Currently: Cyborg → Mechangel"})],flags:64});
   }
 
   // ── FIGHT ─────────────────────────────────────────────────────
@@ -297,7 +301,7 @@ async function handleCommand(interaction) {
       botSpecies:bSpecies, botHp:bSpecies.hp, botMaxHp:bSpecies.hp,
       botHealCooldown:0, botUltCooldown:0, botUltBuff:null, botAdaptiveStacks:0, botAttackCounter:0,
       botBurn:0, botBurnRounds:0, botCurse:0, botBlockHeal:false, botStunnedTurns:0, botLastUltUsed:null,
-      round:1, difficulty, botPersonality:personality, timeout:null, log:[],
+      round:1, difficulty, botPersonality:personality, timeout:null, log:[], playerName:user.displayName||user.username,
     };
     _state.activeBotFights.set(fightId,fight); _state.activeBotFights.set(user.id,fightId);
     const embed=buildBotFightEmbed(fight,["⚔️ Fight started! Your turn!"],"playing");
@@ -391,10 +395,19 @@ async function handleCommand(interaction) {
       const qd=_state.questProgress.get(target.id)||{};
       const r=qd.reaper||{easyBots:0,mediumBots:0,hardBots:0,impossibleBots:0,playerFights:0,completed:false,claimed:false};
       const bar=(c,m)=>{ const f=Math.round((c/m)*10); return "█".repeat(f)+"░".repeat(10-f)+` ${c}/${m}`; };
+      const now=Date.now();
+      const REAPER_EXPIRY=1742816400000;
+      const expired=now>=REAPER_EXPIRY&&!r.claimed;
       const embed=new EmbedBuilder().setColor(0x9b59b6).setTitle(`📋 Quests — ${target.displayName}`).setDescription("Complete quests to unlock exclusive species!");
-      const rs=r.claimed?"✅ CLAIMED":r.completed?"🎁 CLAIM READY":"🔄 In Progress";
-      embed.addFields({name:`🌑 Reaper Quest — ${rs}`,value:r.completed&&r.claimed?"Reaper unlocked! Use `/switch`!":r.completed?"Use `/quest claim quest:reaper` to claim!":
-        `🧸 Easy Bots: ${bar(r.easyBots,35)}\n⚔️ Medium Bots: ${bar(r.mediumBots,25)}\n👹 Hard Bots: ${bar(r.hardBots,15)}\n💀 Impossible: ${bar(r.impossibleBots,5)}\n👤 Player Fights: ${bar(r.playerFights,15)}`,inline:false});
+      let rstatus, rvalue;
+      if (r.claimed) { rstatus="✅ CLAIMED"; rvalue="Reaper unlocked! Use `/switch` to equip."; }
+      else if (expired) { rstatus="⌛ EXPIRED"; rvalue=`The Reaper Quest has ended.\n\n*The Reaper has returned to the shadows.*\n\nDeadline was: **24 March 2026 at 6:00 PM**`; }
+      else if (r.completed) { rstatus="🎁 CLAIM READY"; rvalue="Use `/quest claim quest:reaper` to claim!"; }
+      else {
+        rstatus="🔄 In Progress";
+        rvalue=`⏰ **Quest ends:** <t:${Math.floor(REAPER_EXPIRY/1000)}:R>\n*(Deadline: **24 March 2026 at 6:00 PM**)*\n\n🧸 Easy Bots: ${bar(r.easyBots,35)}\n⚔️ Medium Bots: ${bar(r.mediumBots,25)}\n👹 Hard Bots: ${bar(r.hardBots,15)}\n💀 Impossible: ${bar(r.impossibleBots,5)}\n👤 Player Fights: ${bar(r.playerFights,15)}`;
+      }
+      embed.addFields({name:`🌑 Reaper Quest — ${rstatus}`,value:rvalue,inline:false});
       return safeReply(interaction,{embeds:[embed]});
     }
     if (sub==="claim") {
@@ -403,6 +416,7 @@ async function handleCommand(interaction) {
         const qd=_state.questProgress.get(user.id)||{};
         const r=qd.reaper||{easyBots:0,mediumBots:0,hardBots:0,impossibleBots:0,playerFights:0,completed:false,claimed:false};
         if (r.claimed) return safeReply(interaction,{embeds:[createErrorEmbed("Already claimed! Use `/switch` to equip.")],flags:64});
+        if (Date.now()>=1742816400000&&!r.claimed) return safeReply(interaction,{embeds:[createErrorEmbed("The Reaper Quest has expired. The window to claim has closed.")],flags:64});
         if (!r.completed) return safeReply(interaction,{embeds:[createErrorEmbed("Quest not complete yet! Check `/quest view`.")],flags:64});
         r.claimed=true; qd.reaper=r; _state.questProgress.set(user.id,qd); database.saveQuestProgress(user.id,"reaper",r);
         const ud=_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0};
@@ -412,6 +426,63 @@ async function handleCommand(interaction) {
         return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x2f4f4f).setTitle("🌑 Reaper Unlocked!").setDescription("Use `/switch` to equip Reaper!")]});
       }
     }
+  }
+
+
+  // ── GIFT ──────────────────────────────────────────────────────
+  if (commandName === "gift") {
+    const target = options.getUser("user");
+    const amount = options.getInteger("amount");
+    if (target.id===user.id) return safeReply(interaction,{embeds:[createErrorEmbed("You can't gift rolls to yourself!")],flags:64});
+    if (target.bot) return safeReply(interaction,{embeds:[createErrorEmbed("You can't gift rolls to a bot!")],flags:64});
+
+    // Reset time: midnight IST = 18:30 UTC previous day
+    const now = Date.now();
+    function getMidnightISTToday() {
+      const d = new Date();
+      // IST is UTC+5:30, midnight IST = 18:30 UTC previous day
+      d.setUTCHours(18,30,0,0);
+      if (Date.now() < d.getTime()) d.setUTCDate(d.getUTCDate()-1);
+      return d.getTime();
+    }
+    const resetTime = getMidnightISTToday();
+
+    const senderData = _state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:1,requestsEnabled:true,lastSwitch:0};
+    const receiverData = _state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:1,requestsEnabled:true,lastSwitch:0};
+
+    // Init gift tracking
+    if (!senderData.giftSent) senderData.giftSent={count:0,resetAt:resetTime};
+    if (!receiverData.giftReceived) receiverData.giftReceived={count:0,resetAt:resetTime};
+
+    // Reset if past reset time
+    if (senderData.giftSent.resetAt < resetTime) senderData.giftSent={count:0,resetAt:resetTime};
+    if (receiverData.giftReceived.resetAt < resetTime) receiverData.giftReceived={count:0,resetAt:resetTime};
+
+    // Check limits
+    const senderRemaining = 2 - (senderData.giftSent.count||0);
+    const receiverRemaining = 4 - (receiverData.giftReceived.count||0);
+
+    if (senderRemaining<=0) return safeReply(interaction,{embeds:[createErrorEmbed(`You've used all your gift rolls for today! Resets at midnight.`)],flags:64});
+    if (receiverRemaining<=0) return safeReply(interaction,{embeds:[createErrorEmbed(`<@${target.id}> has already received the maximum rolls they can receive today.`)],flags:64});
+    if ((senderData.rolls||0)<amount) return safeReply(interaction,{embeds:[createErrorEmbed(`You only have **${senderData.rolls||0}** rolls. You can't gift more than you have.`)],flags:64});
+
+    const actualAmount = Math.min(amount, senderRemaining, receiverRemaining);
+
+    // Transfer rolls
+    senderData.rolls=(senderData.rolls||0)-actualAmount;
+    receiverData.rolls=(receiverData.rolls||0)+actualAmount;
+    senderData.giftSent.count=(senderData.giftSent.count||0)+actualAmount;
+    receiverData.giftReceived.count=(receiverData.giftReceived.count||0)+actualAmount;
+
+    _state.userSpecies.set(user.id,senderData);
+    _state.userSpecies.set(target.id,receiverData);
+    database.saveUserSpecies(user.id,senderData).catch(()=>{});
+    database.saveUserSpecies(target.id,receiverData).catch(()=>{});
+
+    const embed = new EmbedBuilder().setColor(0x00ff99)
+      .setTitle("🎁 Rolls Gifted!")
+      .setDescription(`<@${user.id}> gifted **${actualAmount}** roll${actualAmount!==1?"s":""}  to <@${target.id}>!\n\n📊 **Your rolls remaining:** ${senderData.rolls}\n📤 **Gifts sent today:** ${senderData.giftSent.count}/2\n\n*Resets at midnight.*`);
+    return safeReply(interaction,{embeds:[embed]});
   }
 
   // ── TOGGLEREQUESTS ────────────────────────────────────────────
@@ -449,7 +520,8 @@ async function handleCommand(interaction) {
       if (!newSp) return safeReply(interaction,{embeds:[createErrorEmbed("Unknown species! Pick one from the dropdown.")],flags:64});
       const ud=_state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0,badges:[]};
       // Only overwrite originalSpecies if currently Human
-      if (!ud.originalSpecies||ud.originalSpecies.name==="Human") ud.originalSpecies=newSp;
+      // God-given species always becomes the new original
+      ud.originalSpecies=newSp;
       ud.species=newSp;
       _state.userSpecies.set(target.id,ud); database.saveUserSpecies(target.id,ud);
       const member=await guild.members.fetch(target.id).catch(()=>null);
@@ -536,22 +608,33 @@ async function handleButton(interaction) {
     const resultEmbed=new EmbedBuilder()
       .setColor(newSpecies.color||0x808080)
       .setTitle(`${newSpecies.emoji} ${newSpecies.name}`)
-      .setDescription(`You rolled ${newSpecies.emoji} **${newSpecies.name}**!\n\nChance: **${newSpecies.chance||"?"}** | HP: **${newSpecies.hp}** | ATK: **${newSpecies.atkMin}–${newSpecies.atkMax}** | HEAL: **${newSpecies.healMin}–${newSpecies.healMax}**\n\n🎲 Rolls remaining: **${userData.rolls}**`);
+      .setDescription(`<@${user.id}> rolled ${newSpecies.emoji} **${newSpecies.name}**!\n\nChance: **${newSpecies.chance||"?"}** | HP: **${newSpecies.hp}** | ATK: **${newSpecies.atkMin}–${newSpecies.atkMax}** | HEAL: **${newSpecies.healMin}–${newSpecies.healMax}**\n\n🎲 Rolls remaining: **${userData.rolls}**`);
 
-    // Update embed immediately — this responds to Discord right away, no timeout
+    // Grab messageId BEFORE potentially deleting activeRolls
+    const rollData = _state.activeRolls.get(user.id);
+    const pubMsgId = rollData?.messageId;
+
+    // Respond to button immediately (no timeout)
     if (userData.rolls>0) {
       await interaction.update({
-        embeds:[resultEmbed],
+        content:"Use the buttons below to reroll or cancel:",
         components:[new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId(`reroll_${user.id}`).setLabel("🔄 REROLL").setStyle(ButtonStyle.Success),
           new ButtonBuilder().setCustomId(`cancel_${user.id}`).setLabel("❌ CANCEL").setStyle(ButtonStyle.Danger))]
       });
     } else {
       _state.activeRolls.delete(user.id);
-      await interaction.update({embeds:[resultEmbed.setFooter({text:"No rolls remaining — use /daily for a free roll!"})],components:[]});
+      await interaction.update({content:"✅ No rolls remaining — use `/daily` for a free roll.",components:[]});
     }
 
-    // Do the slow stuff AFTER responding so Discord never times out
+    // Edit the public embed to show the rolled result
+    if (pubMsgId) {
+      channel.messages.fetch(pubMsgId).then(pubMsg=>{
+        if (pubMsg) pubMsg.edit({embeds:[resultEmbed]}).catch(()=>{});
+      }).catch(()=>{});
+    }
+
+    // Slow stuff after responding
     database.saveUserSpecies(user.id,userData).catch(console.error);
     guild.members.fetch(user.id).then(member=>assignSpeciesRole(member,newSpecies)).catch(()=>{});
   }
@@ -886,6 +969,9 @@ const commands = [
   new SlashCommandBuilder().setName("fights").setDescription("Fight leaderboard"),
   new SlashCommandBuilder().setName("patchnotes").setDescription("View latest patch notes"),
   new SlashCommandBuilder().setName("patch").setDescription("View latest patch notes"),
+  new SlashCommandBuilder().setName("gift").setDescription("Gift species rolls to another player")
+    .addUserOption(o=>o.setName("user").setDescription("Player to gift rolls to").setRequired(true))
+    .addIntegerOption(o=>o.setName("amount").setDescription("Number of rolls to gift").setRequired(true).setMinValue(1).setMaxValue(2)),
   new SlashCommandBuilder().setName("togglerequests").setDescription("Toggle receiving challenge requests").addStringOption(o=>o.setName("status").setDescription("Enable or disable").setRequired(true).addChoices({name:"Enable",value:"enable"},{name:"Disable",value:"disable"})),
   new SlashCommandBuilder().setName("quest").setDescription("Quest system")
     .addSubcommand(s=>s.setName("view").setDescription("View your quests").addUserOption(o=>o.setName("user").setDescription("User to check")))
