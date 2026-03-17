@@ -90,9 +90,15 @@ function calculateDamage(attacker, defender) {
       if (attacker.species.name==="Angel"&&ub.angelHeal) { const h=Math.floor(attacker.currentHp*0.35); attackerMutations.hpDelta+=h; specialLines.push(`👼 Divine Blessing +${h}`); }
       if (attacker.species.name==="Reaper"&&ub.type==="reaperKill") {
         if (defender.currentHp<defender.maxHp*0.2) {
-          defender.currentHp=0; specialLines.push("💀 **DEATH'S JUDGMENT — INSTANT KILL!**"); attacker.ultBuff=null;
-          attacker.currentHp=Math.max(1,Math.min(attacker.maxHp,attacker.currentHp+attackerMutations.hpDelta));
-          return { damage:defender.maxHp, baseDamage, specialLines, attackerMutations:{hpDelta:0} };
+          // Instant kill — set defender HP to 0, return flag so caller handles win
+          const killDmg=defender.currentHp;
+          defender.currentHp=0;
+          specialLines.push("💀 **DEATH'S JUDGMENT — INSTANT KILL!**");
+          attacker.ultBuff=null;
+          // 50% life steal on instant kill
+          const lifeSteal=Math.floor(killDmg*0.5);
+          attacker.currentHp=Math.min(attacker.maxHp,attacker.currentHp+lifeSteal);
+          return { damage:killDmg, baseDamage, specialLines, attackerMutations:{hpDelta:0}, instantKill:true };
         } else { multiplier*=1.7; ub._reaperUltHeal=true; specialLines.push("🌑 Reaper ULT ×1.7 + 50% life steal"); }
       }
       if (ub.healSelf&&ub.healAmount) { attackerMutations.hpDelta+=ub.healAmount; specialLines.push(`🩸 Heal +${ub.healAmount}`); }
