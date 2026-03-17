@@ -38,7 +38,8 @@ async function handleCommand(interaction) {
         {name:"📊 Stats",    value:"`/fightstats` `/botstats` `/history` `/lb` `/fights`",inline:false},
         {name:"🌑 Quests",   value:"`/quest view` `/quest claim` `/awakening`",inline:false},
         {name:"📋 Info",     value:"`/patchnotes` `/guide` `/profile`",inline:false},
-      ).setFooter({text:"Use /guide for a full tutorial"});
+      ).setFooter({text:"Use /guide for a full tutorial"})
+        .addFields({name:"💬 Need Help?",value:"Want any help or have any issues? Join the [Support Server](https://discord.gg/TKBYpjqnPC)!",inline:false});
     return safeReply(interaction,{embeds:[embed]});
   }
 
@@ -462,8 +463,22 @@ async function handleCommand(interaction) {
     const senderRemaining = 2 - (senderData.giftSent.count||0);
     const receiverRemaining = 4 - (receiverData.giftReceived.count||0);
 
-    if (senderRemaining<=0) return safeReply(interaction,{embeds:[createErrorEmbed(`You've used all your gift rolls for today! Resets at midnight.`)],flags:64});
-    if (receiverRemaining<=0) return safeReply(interaction,{embeds:[createErrorEmbed(`<@${target.id}> has already received the maximum rolls they can receive today.`)],flags:64});
+    if ((senderData.rolls||0)<5) return safeReply(interaction,{embeds:[createErrorEmbed(`You need at least **5 rolls** to gift. You only have **${senderData.rolls||0}**.`)],flags:64});
+    if (senderRemaining<=0) {
+      // Calculate time until next reset (midnight IST = 18:30 UTC)
+      const nextReset = resetTime + 86400000;
+      const msLeft = nextReset - now;
+      const hLeft = Math.floor(msLeft/3600000);
+      const mLeft = Math.floor((msLeft%3600000)/60000);
+      return safeReply(interaction,{embeds:[createErrorEmbed(`You've used all your gift rolls for today! Resets in **${hLeft}h ${mLeft}m**.`)],flags:64});
+    }
+    if (receiverRemaining<=0) {
+      const nextReset2 = (receiverData.giftReceived.resetAt||resetTime) + 86400000;
+      const msLeft2 = nextReset2 - now;
+      const hLeft2 = Math.floor(msLeft2/3600000);
+      const mLeft2 = Math.floor((msLeft2%3600000)/60000);
+      return safeReply(interaction,{embeds:[createErrorEmbed(`<@${target.id}> has already received the maximum rolls they can receive today. Resets in **${hLeft2}h ${mLeft2}m**.`)],flags:64});
+    }
     if ((senderData.rolls||0)<amount) return safeReply(interaction,{embeds:[createErrorEmbed(`You only have **${senderData.rolls||0}** rolls. You can't gift more than you have.`)],flags:64});
 
     const actualAmount = Math.min(amount, senderRemaining, receiverRemaining);
@@ -752,13 +767,18 @@ async function handleButton(interaction) {
     if (action==="heal") {
       if (playerC.blockHeal) { playerC.blockHeal=false; log.push("🚫 **ROYAL COMMAND!** You can't heal!"); }
       else if (playerC.healCooldown>0) { log.push(`❌ Heal on cooldown for ${playerC.healCooldown} more rounds!`); }
-      else if (playerC.currentHp>=playerC.maxHp*0.8) { log.push("❌ Already too healthy to heal!"); }
+      else if (playerC.currentHp>=playerC.maxHp*0.8) { log.push("❌ HP above 80% — too healthy to heal!"); }
       else {
         let mult=1;
         if (playerC.ultBuff?.type==="iceHealBoost") { mult=1.5; playerC.ultBuff=null; log.push("❄️ Glacial Spike boosts heal!"); }
-        const h=Math.floor((Math.floor(Math.random()*(playerC.species.healMax-playerC.species.healMin+1))+playerC.species.healMin)*mult);
-        const actualH=playerC.curse>0?Math.floor(h*0.5):h;
-        if (playerC.curse>0) log.push(`👿 Curse halves heal! ${h}→${actualH}`);
+        let rawH=Math.floor((Math.floor(Math.random()*(playerC.species.healMax-playerC.species.healMin+1))+playerC.species.healMin)*mult);
+        // Low HP desperation rule: <15% HP
+        if (playerC.currentHp<playerC.maxHp*0.15) {
+          if (Math.random()<0.75) { rawH=Math.floor(rawH*0.5); log.push("💔 **Shaking hands!** Desperate heal only 50% effective!"); }
+          else { rawH=Math.floor(rawH*1.3); log.push("✨ **Miracle heal!** +30% bonus from desperation!"); }
+        }
+        const actualH=playerC.curse>0?Math.floor(rawH*0.5):rawH;
+        if (playerC.curse>0) log.push(`👿 Curse halves heal! ${rawH}→${actualH}`);
         playerC.currentHp=Math.min(playerC.maxHp,playerC.currentHp+actualH); playerC.healCooldown=3;
         log.push(`💚 You heal for **${actualH} HP**! (${playerC.currentHp}/${playerC.maxHp})`);
       }
@@ -783,11 +803,16 @@ async function handleButton(interaction) {
     } else if (action==="attack") {
       const result=calculateDamage(playerC,botC);
       playerC.currentHp=Math.max(0,Math.min(playerC.maxHp,playerC.currentHp+result.attackerMutations.hpDelta));
-      botC.currentHp=Math.max(0,botC.currentHp-result.damage);
-      if (botC.species.name==="Chimera"&&result.damage>0) fight.botAdaptiveStacks=Math.min(3,(fight.botAdaptiveStacks||0)+1);
-      if (botC.species.name==="God"&&result.missedAttack) { const gh=Math.floor(botC.currentHp*0.2); botC.currentHp=Math.min(botC.maxHp,botC.currentHp+gh); log.push(`👑 Bot **Divine Retribution** heals ${gh}!`); }
+      if (result.instantKill) {
+        botC.currentHp=0;
+        log.push(`⚔️ ${result.specialLines.join(" ")}`);
+      } else {
+        botC.currentHp=Math.max(0,botC.currentHp-result.damage);
+        if (botC.species.name==="Chimera"&&result.damage>0) fight.botAdaptiveStacks=Math.min(3,(fight.botAdaptiveStacks||0)+1);
+        if (botC.species.name==="God"&&result.missedAttack) { const gh=Math.floor(botC.currentHp*0.2); botC.currentHp=Math.min(botC.maxHp,botC.currentHp+gh); log.push(`👑 Bot **Divine Retribution** heals ${gh}!`); }
+        log.push(`⚔️ You deal **${result.damage}** damage!${result.specialLines.length?` (${result.specialLines.slice(0,2).join(", ")})`:""}`);
+      }
       fight.playerLastUltUsed=playerC.lastUltUsed;
-      log.push(`⚔️ You deal **${result.damage}** damage!${result.specialLines.length?` (${result.specialLines.slice(0,2).join(", ")})`:""}`);
     }
 
     // Burn tick on bot
@@ -900,14 +925,18 @@ async function handleButton(interaction) {
     } else if (action==="heal") {
       if (player.blockHeal) { player.blockHeal=false; log.push(`🚫 <@${user.id}> **cannot heal** — Royal Command!`); fight.currentTurn=opponent.id; fight.round++; }
       else if (player.healCooldown>0) { log.push(`❌ <@${user.id}>'s heal on cooldown for ${player.healCooldown} more rounds!`); fight.currentTurn=opponent.id; fight.round++; }
-      else if (player.currentHp>=player.maxHp*0.8) { log.push(`❌ <@${user.id}> too healthy to heal!`); fight.currentTurn=opponent.id; fight.round++; }
+      else if (player.currentHp>=player.maxHp*0.8) { log.push(`❌ <@${user.id}> HP above 80% — too healthy to heal!`); fight.currentTurn=opponent.id; fight.round++; }
       else {
         let mult=1;
         if (player.ultBuff?.type==="iceHealBoost") { mult=1.5; player.ultBuff=null; }
         if (player.ultBuff?.type==="earthHealBoost") { mult*=1.2; player.ultBuff=null; }
-        const h=Math.floor((Math.floor(Math.random()*(player.species.healMax-player.species.healMin+1))+player.species.healMin)*mult);
-        const actualH=player.curse>0?Math.floor(h*0.5):h;
-        if (player.curse>0) { processCurseTick(player); log.push(`👿 Curse halves heal! ${h}→${actualH}`); }
+        let rawH=Math.floor((Math.floor(Math.random()*(player.species.healMax-player.species.healMin+1))+player.species.healMin)*mult);
+        if (player.currentHp<player.maxHp*0.15) {
+          if (Math.random()<0.75) { rawH=Math.floor(rawH*0.5); log.push(`💔 **Shaking hands!** <@${user.id}>'s desperate heal only 50%!`); }
+          else { rawH=Math.floor(rawH*1.3); log.push(`✨ **Miracle heal!** <@${user.id}> gets +30% bonus!`); }
+        }
+        const actualH=player.curse>0?Math.floor(rawH*0.5):rawH;
+        if (player.curse>0) { processCurseTick(player); log.push(`👿 Curse halves heal! ${rawH}→${actualH}`); }
         player.currentHp=Math.min(player.maxHp,player.currentHp+actualH); player.healCooldown=3;
         log.push(`💚 <@${user.id}> heals for **${actualH} HP**! (${player.currentHp}/${player.maxHp})`);
         fight.currentTurn=opponent.id; fight.round++;
@@ -922,10 +951,15 @@ async function handleButton(interaction) {
       } else {
         const result=calculateDamage(player,opponent);
         player.currentHp=Math.max(0,Math.min(player.maxHp,player.currentHp+result.attackerMutations.hpDelta));
-        opponent.currentHp=Math.max(0,opponent.currentHp-result.damage);
-        if (opponent.species.name==="Chimera"&&result.damage>0) opponent.adaptiveStacks=Math.min(3,(opponent.adaptiveStacks||0)+1);
-        if (opponent.species.name==="God"&&result.missedAttack) { const gh=Math.floor(opponent.currentHp*0.2); opponent.currentHp=Math.min(opponent.maxHp,opponent.currentHp+gh); log.push(`👑 **Divine Retribution!** ${opponent.species.name} heals ${gh}!`); }
-        log.push(`⚔️ <@${user.id}> deals **${result.damage}** damage!${result.specialLines.length?` (${result.specialLines.slice(0,2).join(", ")})`:""}`);
+        if (result.instantKill) {
+          opponent.currentHp=0;
+          log.push(`⚔️ <@${user.id}> — ${result.specialLines.join(" ")}`);
+        } else {
+          opponent.currentHp=Math.max(0,opponent.currentHp-result.damage);
+          if (opponent.species.name==="Chimera"&&result.damage>0) opponent.adaptiveStacks=Math.min(3,(opponent.adaptiveStacks||0)+1);
+          if (opponent.species.name==="God"&&result.missedAttack) { const gh=Math.floor(opponent.currentHp*0.2); opponent.currentHp=Math.min(opponent.maxHp,opponent.currentHp+gh); log.push(`👑 **Divine Retribution!** ${opponent.species.name} heals ${gh}!`); }
+          log.push(`⚔️ <@${user.id}> deals **${result.damage}** damage!${result.specialLines.length?` (${result.specialLines.slice(0,2).join(", ")})`:""}`);
+        }
         fight.currentTurn=opponent.id; fight.round++;
       }
     }
