@@ -151,23 +151,31 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
     await ensureConnected();
     console.log("📂 Loading data from MongoDB...");
 
-    // Use lean() to get plain JS objects, avoiding mongoose schema stripping
-    const users = await User.find({}).lean();
+    const users = await User.find({});
+    let loadedWithSpecies = 0, loadedWithRolls = 0;
     for (const u of users) {
-      const uid = u.userId;
-      delete u._id; delete u.__v; delete u.userId;
-      userSpecies.set(uid, u);
+      const obj = u.toObject();
+      const uid = obj.userId;
+      // Build clean data object explicitly
+      const d = {
+        species:         obj.species         || null,
+        originalSpecies: obj.originalSpecies || null,
+        questSpecies:    obj.questSpecies    || {},
+        rolls:           obj.rolls           || 0,
+        requestsEnabled: obj.requestsEnabled !== false,
+        lastSwitch:      obj.lastSwitch      || 0,
+        awakening:       obj.awakening       || {},
+        badges:          obj.badges          || [],
+      };
+      userSpecies.set(uid, d);
+      if (d.species && d.species.name) loadedWithSpecies++;
+      if (d.rolls > 0) loadedWithRolls++;
     }
-    const withSpecies = users.filter(u=>u.species && u.species.name).length;
-    const withRolls = users.filter(u=>u.rolls>0).length;
-    console.log(`✅ Loaded ${users.length} users — ${withSpecies} have species, ${withRolls} have rolls`);
-    // Always log first user with species so we can verify structure
-    const sampleWithSpecies = users.find(u=>u.species && u.species.name);
-    if (sampleWithSpecies) {
-      console.log(`🔍 Sample loaded user: id=${sampleWithSpecies.userId} species=${sampleWithSpecies.species.name} rolls=${sampleWithSpecies.rolls}`);
-      // Verify it's actually in the map
-      const check = userSpecies.get(sampleWithSpecies.userId);
-      console.log(`🔍 Map check: found=${!!check} species=${check?.species?.name} rolls=${check?.rolls}`);
+    console.log(`✅ Loaded ${users.length} users — ${loadedWithSpecies} have species, ${loadedWithRolls} have rolls`);
+    // Verify first user with species loaded correctly
+    const sampleEntry = [...userSpecies.entries()].find(([,v]) => v.species && v.species.name);
+    if (sampleEntry) {
+      console.log(`🔍 Map check: id=${sampleEntry[0]} species=${sampleEntry[1].species.name} rolls=${sampleEntry[1].rolls}`);
     }
 
     const lb = await Leaderboard.find({});
@@ -178,11 +186,10 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
     for (const f of flb) fightLeaderboard.set(f.userId, { wins:f.wins });
     console.log(`✅ Loaded ${flb.length} fight leaderboard entries`);
 
-    const fs = await FightStats.find({}).lean();
+    const fs = await FightStats.find({});
     for (const f of fs) {
-      const uid = f.userId;
-      delete f._id; delete f.__v; delete f.userId;
-      fightStats.set(uid, f);
+      const obj = f.toObject();
+      fightStats.set(obj.userId, { wins:obj.wins||0, losses:obj.losses||0, streak:obj.streak||0, history:obj.history||[] });
     }
     console.log(`✅ Loaded ${fs.length} fight stats`);
 
@@ -190,11 +197,12 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
     for (const d of dc) dailyClaims.set(d.userId, { lastClaim:d.lastClaim, streak:d.streak });
     console.log(`✅ Loaded ${dc.length} daily claims`);
 
-    const bs = await BotStats.find({}).lean();
+    const bs = await BotStats.find({});
     for (const b of bs) {
-      const uid = b.userId;
-      delete b._id; delete b.__v; delete b.userId;
-      botStats.set(uid, b);
+      const obj = b.toObject();
+      const uid = obj.userId;
+      delete obj._id; delete obj.__v; delete obj.userId;
+      botStats.set(uid, obj);
     }
     console.log(`✅ Loaded ${bs.length} bot stat entries`);
 
