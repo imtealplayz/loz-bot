@@ -20,9 +20,12 @@ const questProgress   = new Collection();
 const activeRequests  = new Map();
 const duelChannels    = new Collection();
 
+const disabledChannels = new Set();
+
 module.exports = {
   cooldowns, challenges, leaderboard, fightLeaderboard, fightStats,
   duelCooldowns, userSpecies, botStats, activeRolls, activeFights,
   fightChallenges, fightCooldowns, dailyClaims, activeBotFights,
   fightMessages, questProgress, activeRequests, duelChannels,
+  disabledChannels,
 };
