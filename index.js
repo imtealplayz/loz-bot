@@ -73,6 +73,24 @@ client.on("messageCreate", async (message) => {
     const args = message.content.slice(prefix.length).trim().split(/ +/);
     const command = args.shift().toLowerCase();
 
+    // ── 'disable all ──────────────────────────────────────────────
+    if (command === "disable" && args[0] === "all") {
+      if (!message.member?.permissions.has(PermissionsBitField.Flags.Administrator))
+        return message.reply("❌ You need Administrator permission to use this!");
+      state.disabledChannels.add(message.channel.id);
+      return message.reply(`🔒 **LOZ disabled in <#${message.channel.id}>.**
+Users can no longer use LOZ commands here. Use \`'enable all\` to re-enable.`);
+    }
+
+    // ── 'enable all ───────────────────────────────────────────────
+    if (command === "enable" && args[0] === "all") {
+      if (!message.member?.permissions.has(PermissionsBitField.Flags.Administrator))
+        return message.reply("❌ You need Administrator permission to use this!");
+      state.disabledChannels.delete(message.channel.id);
+      return message.reply(`🔓 **LOZ enabled in <#${message.channel.id}>.**
+Users can use LOZ commands here again.`);
+    }
+
     // ── 'disintegrate ─────────────────────────────────────────────
     if (command === "disintegrate") {
       if (message.author.id !== ownerId) return message.reply("❌ Only God can use this command!");
@@ -106,6 +124,12 @@ client.on("messageCreate", async (message) => {
 // ==================== INTERACTION CREATE ====================
 client.on("interactionCreate", async (interaction) => {
   try {
+    // Block commands in disabled channels
+    if (state.disabledChannels.has(interaction.channelId)) {
+      if (interaction.isCommand() || interaction.isButton()) {
+        return interaction.reply({ content: "🔒 LOZ commands are disabled in this channel.", ephemeral: true }).catch(()=>{});
+      }
+    }
     if (interaction.isCommand()) await handleCommand(interaction);
     else if (interaction.isButton()) await handleButton(interaction);
   } catch (e) {
