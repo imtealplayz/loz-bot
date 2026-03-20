@@ -697,16 +697,7 @@ async function handleButton(interaction) {
   }
 
   // ── BOT DIFFICULTY ────────────────────────────────────────────
-  if (customId.startsWith("bot_")) {
-    const diff=customId.split("_")[1];
-    if (isPlayerInGame(user.id)) return safeReply(interaction,{embeds:[createErrorEmbed("Already in a game!")],flags:64});
-    const personality=botPersonalities[diff];
-    const gd={channelId:channel.id,players:new Set([user.id,"BOT"]),status:"playing",currentBombHolder:null,eliminated:[],bombEndTime:null,bombTimer:null,passCollector:null,roundActive:false,gameType:"bot",mode:"bot",scores:{[user.id]:0,BOT:0},roundNumber:0,targetScore:3,botDifficulty:diff,botFailRate:personality.passFailRate,botReactionDelay:personality.reactionDelay,hostId:user.id,judgeUsed:false};
-    _state.bombGames.set(channel.id,gd);
-    await interaction.update({embeds:[new EmbedBuilder().setColor(personality.color).setTitle("💣 Bot Match Started!").setDescription(`<@${user.id}> vs ${personality.emoji} **${personality.name}**\nFirst to **3 rounds** wins!\n\n*${personality.description}*\n\nUse \`'pass\` to pass the bomb!`)],components:[]});
-    setTimeout(()=>startBotRound(channel,gd),3000);
-    return;
-  }
+
 
   // ── FIGHT ACCEPT/REJECT ───────────────────────────────────────
   if (customId.startsWith("fight_accept_")||customId.startsWith("fight_reject_")) {
