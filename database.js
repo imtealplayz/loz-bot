@@ -151,12 +151,20 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
     await ensureConnected();
     console.log("📂 Loading data from MongoDB...");
 
-    const users = await User.find({});
+    // Use lean() to get plain JS objects, avoiding mongoose schema stripping
+    const users = await User.find({}).lean();
     for (const u of users) {
-      const d = u.toObject(); delete d._id; delete d.__v; delete d.userId;
-      userSpecies.set(u.userId, d);
+      const { _id, __v, userId, ...d } = u;
+      userSpecies.set(userId, d);
     }
-    console.log(`✅ Loaded ${users.length} users`);
+    const withSpecies = users.filter(u=>u.species && u.species.name).length;
+    const withRolls = users.filter(u=>u.rolls>0).length;
+    console.log(`✅ Loaded ${users.length} users — ${withSpecies} have species, ${withRolls} have rolls`);
+    if (withSpecies === 0 && users.length > 0) {
+      console.warn("⚠️ WARNING: Users loaded but ALL have null species — check DB collection");
+      // Log first user raw to debug
+      console.log("🔍 Sample user raw:", JSON.stringify(users[0]));
+    }
 
     const lb = await Leaderboard.find({});
     for (const l of lb) leaderboard.set(l.userId, { wins:l.wins });
@@ -166,10 +174,10 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
     for (const f of flb) fightLeaderboard.set(f.userId, { wins:f.wins });
     console.log(`✅ Loaded ${flb.length} fight leaderboard entries`);
 
-    const fs = await FightStats.find({});
+    const fs = await FightStats.find({}).lean();
     for (const f of fs) {
-      const d = f.toObject(); delete d._id; delete d.__v; delete d.userId;
-      fightStats.set(f.userId, d);
+      const { _id, __v, userId, ...d } = f;
+      fightStats.set(userId, d);
     }
     console.log(`✅ Loaded ${fs.length} fight stats`);
 
@@ -177,10 +185,10 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
     for (const d of dc) dailyClaims.set(d.userId, { lastClaim:d.lastClaim, streak:d.streak });
     console.log(`✅ Loaded ${dc.length} daily claims`);
 
-    const bs = await BotStats.find({});
+    const bs = await BotStats.find({}).lean();
     for (const b of bs) {
-      const d = b.toObject(); delete d._id; delete d.__v; delete d.userId;
-      botStats.set(b.userId, d);
+      const { _id, __v, userId, ...d } = b;
+      botStats.set(userId, d);
     }
     console.log(`✅ Loaded ${bs.length} bot stat entries`);
 
