@@ -78,8 +78,7 @@ function getDragonSubtype() {
 
 // ==================== GAME STATE CHECKS ====================
 function isPlayerInGame(id) {
-  for (const g of _state.bombGames.values())
-    if (g.players?.has(id) && g.status === "playing") return true;
+  // Bomb tag removed — always returns false
   return false;
 }
 function isPlayerInFight(id) {
