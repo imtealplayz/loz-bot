@@ -1,35 +1,17 @@
 const mongoose = require("mongoose");
-const fs = require("fs");
-const path = require("path");
 
 // ==================== CONNECT ====================
 let connected = false;
-let connectionPromise = null;
-
 async function connect() {
   if (connected) return;
-  if (connectionPromise) return connectionPromise;
-  connectionPromise = mongoose.connect(process.env.MONGODB_URI)
-    .then(() => { connected = true; console.log("✅ MongoDB connected!"); })
-    .catch(e => { console.error("❌ MongoDB connection failed:", e.message); connectionPromise = null; });
-  return connectionPromise;
-}
-
-// Always call this before any DB operation
-async function ensureConnected() {
-  if (connected) return;
-  await connect();
-  // Extra safety: wait until mongoose is actually ready
-  let attempts = 0;
-  while (mongoose.connection.readyState !== 1 && attempts < 50) {
-    await new Promise(r => setTimeout(r, 200));
-    attempts++;
-  }
-  if (mongoose.connection.readyState !== 1) {
-    throw new Error("MongoDB failed to connect after 10 seconds");
+  try {
+    await mongoose.connect(process.env.MONGODB_URI);
+    connected = true;
+    console.log("✅ MongoDB connected!");
+  } catch (e) {
+    console.error("❌ MongoDB connection failed:", e.message);
   }
 }
-
 connect();
 
 // ==================== SCHEMAS ====================
@@ -150,15 +132,13 @@ async function saveDuelChannel(guildId, channelId) {
 // ==================== LOAD FUNCTIONS ====================
 async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStats, dailyClaims, botStats) {
   try {
-    await ensureConnected();
     console.log("📂 Loading data from MongoDB...");
 
     const users = await User.find({});
-    let loadedWithSpecies = 0, loadedWithRolls = 0;
+    let withSpecies = 0, withRolls = 0;
     for (const u of users) {
       const obj = u.toObject();
       const uid = obj.userId;
-      // Build clean data object explicitly
       const d = {
         species:         obj.species         || null,
         originalSpecies: obj.originalSpecies || null,
@@ -170,16 +150,10 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
         badges:          obj.badges          || [],
       };
       userSpecies.set(uid, d);
-      if (d.species && d.species.name) loadedWithSpecies++;
-      if (d.rolls > 0) loadedWithRolls++;
+      if (d.species && d.species.name) withSpecies++;
+      if (d.rolls > 0) withRolls++;
     }
-    console.log(`✅ Loaded ${users.length} users — ${loadedWithSpecies} have species, ${loadedWithRolls} have rolls`);
-    // Verify first user with species loaded correctly
-    const sampleEntry = [...userSpecies.entries()].find(([,v]) => v.species && v.species.name);
-    if (sampleEntry) {
-      console.log(`🔍 Map check: id=${sampleEntry[0]} species=${sampleEntry[1].species.name} rolls=${sampleEntry[1].rolls}`);
-    }
-
+    console.log(`✅ Loaded ${users.length} users — ${withSpecies} have species, ${withRolls} have rolls`);
 
     const lb = await Leaderboard.find({});
     for (const l of lb) leaderboard.set(l.userId, { wins:l.wins });
@@ -191,8 +165,8 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
 
     const fs = await FightStats.find({});
     for (const f of fs) {
-      const obj = f.toObject();
-      fightStats.set(obj.userId, { wins:obj.wins||0, losses:obj.losses||0, streak:obj.streak||0, history:obj.history||[] });
+      const d = f.toObject(); delete d._id; delete d.__v; delete d.userId;
+      fightStats.set(f.userId, d);
     }
     console.log(`✅ Loaded ${fs.length} fight stats`);
 
@@ -202,10 +176,8 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
 
     const bs = await BotStats.find({});
     for (const b of bs) {
-      const obj = b.toObject();
-      const uid = obj.userId;
-      delete obj._id; delete obj.__v; delete obj.userId;
-      botStats.set(uid, obj);
+      const d = b.toObject(); delete d._id; delete d.__v; delete d.userId;
+      botStats.set(b.userId, d);
     }
     console.log(`✅ Loaded ${bs.length} bot stat entries`);
 
@@ -225,20 +197,19 @@ async function loadAllQuestProgress(questProgress, userSpecies) {
       questProgress.set(q.userId, existing);
     }
     console.log(`✅ Loaded quest progress for ${questProgress.size} users`);
-
-    // Sync completed quests back to userSpecies so switch works
+    // Sync completed reaper quest back to userSpecies so /switch works
     if (userSpecies) {
       for (const [uid, qp] of questProgress.entries()) {
         const ud = userSpecies.get(uid);
         if (!ud) continue;
         if (!ud.questSpecies) ud.questSpecies = {};
-        // If reaper quest is completed and claimed, mark as unlocked
         if (qp.reaper?.completed && qp.reaper?.claimed) {
-          ud.questSpecies.reaper = { unlocked: true, equipped: false };
+          if (!ud.questSpecies.reaper?.unlocked) {
+            ud.questSpecies.reaper = { unlocked:true, equipped:false };
+            userSpecies.set(uid, ud);
+          }
         }
-        userSpecies.set(uid, ud);
       }
-      console.log("✅ Quest species synced to user data");
     }
     return true;
   } catch(e) {
@@ -288,51 +259,11 @@ async function deleteUser(userId) {
   console.log(`🗑️ Deleted all data for user ${userId}`);
 }
 
-// ==================== BACKUP SYSTEM ====================
-const BACKUP_DIR = path.join(__dirname, "backups");
-
-async function createBackup(userSpecies, fightStats, dailyClaims, botStats, questProgress) {
-  try {
-    if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const backup = {
-      timestamp,
-      users: {},
-      fightStats: {},
-      dailyClaims: {},
-      botStats: {},
-      questProgress: {},
-    };
-    for (const [id, d] of userSpecies.entries()) backup.users[id] = d;
-    for (const [id, d] of fightStats.entries()) backup.fightStats[id] = d;
-    for (const [id, d] of dailyClaims.entries()) backup.dailyClaims[id] = d;
-    for (const [id, d] of botStats.entries()) backup.botStats[id] = d;
-    for (const [id, d] of questProgress.entries()) backup.questProgress[id] = d;
-
-    const filename = path.join(BACKUP_DIR, `backup-${timestamp}.json`);
-    fs.writeFileSync(filename, JSON.stringify(backup, null, 2));
-
-    // Keep only last 5 backups
-    const files = fs.readdirSync(BACKUP_DIR)
-      .filter(f => f.startsWith("backup-"))
-      .sort();
-    while (files.length > 5) {
-      fs.unlinkSync(path.join(BACKUP_DIR, files.shift()));
-    }
-    console.log(`✅ Backup saved: ${filename}`);
-    return filename;
-  } catch(e) {
-    console.error("❌ Backup failed:", e.message);
-    return null;
-  }
-}
-
 // ==================== EXPORTS ====================
 module.exports = {
-  ensureConnected,
   saveUserSpecies, saveLeaderboard, saveFightLeaderboard,
   saveFightStats, saveBotStats, saveDailyClaim,
   saveQuestProgress, saveDuelChannel,
   loadAllData, loadAllQuestProgress, loadDuelChannel,
-  listAllKeys, deleteUser, createBackup,
+  listAllKeys, deleteUser,
 };
