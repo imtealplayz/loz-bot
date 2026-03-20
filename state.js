@@ -5,6 +5,7 @@ const cooldowns       = new Collection();
 const leaderboard     = new Collection();
 const fightLeaderboard= new Collection();
 const fightStats      = new Collection();
+const duelCooldowns   = new Collection();
 const userSpecies     = new Collection();
 const botStats        = new Collection();
 const activeFights    = new Map();
@@ -18,7 +19,7 @@ const activeRequests  = new Map();
 
 module.exports = {
   cooldowns, leaderboard, fightLeaderboard, fightStats,
-  userSpecies, botStats, activeFights, fightChallenges,
+  duelCooldowns, userSpecies, botStats, activeFights, fightChallenges,
   fightCooldowns, dailyClaims, activeBotFights, fightMessages,
   questProgress, activeRequests,
 };
