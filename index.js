@@ -5,7 +5,7 @@ const {
 const database = require("./database.js"); // MongoDB
 const state    = require("./state.js");
 const { setState: setHelperState, assignSpeciesRole } = require("./helpers.js");
-const { setState: setFightState }   = require("./fights.js");
+const { setState: setFightState } = require("./fights.js");
 const { setState: setCommandState, setClient, handleCommand, handleButton, commands } = require("./commands.js");
 const { disintegrationMessages } = require("./constants.js");
 
@@ -69,96 +69,9 @@ client.on("messageCreate", async (message) => {
     if (message.content.startsWith(`<@${client.user.id}>`) || message.content.startsWith(`<@!${client.user.id}>`))
       return message.reply(`👋 **${client.user.username}** here!\nUse \`/guide\` to learn how to play or \`/help\` for all commands. Start with \`/species-roll\`! 🎲`);
 
-    // Reversed users
-    if (state.reversedUsers.has(message.author.id)) {
-      const rd = state.reversedUsers.get(message.author.id);
-      if (rd.messagesLeft > 0 && message.channel.id === rd.channelId) {
-        try {
-          const rev = message.content.split("").reverse().join("");
-          await message.delete();
-          await message.channel.send(`🔁 **<@${message.author.id}>:** ${rev}`);
-          rd.messagesLeft--;
-          if (rd.messagesLeft <= 0) { state.reversedUsers.delete(message.author.id); await message.channel.send(`✅ <@${message.author.id}> is back to normal!`); }
-        } catch(e) {}
-      }
-    }
-
     if (!message.content.startsWith(prefix)) return;
     const args = message.content.slice(prefix.length).trim().split(/ +/);
     const command = args.shift().toLowerCase();
-
-    // ── 'pass ────────────────────────────────────────────────────
-    if (command === "pass") {
-      if (!state.bombGames.has(message.channel.id)) return;
-      const game = state.bombGames.get(message.channel.id);
-      if (game.status !== "playing" || !game.roundActive) { await message.react("❌"); return; }
-      if (game.mode === "bot") {
-        if (message.author.id !== game.currentBombHolder) { await message.react("❌"); return; }
-        const timeLeft = Math.max(0, Math.ceil((game.bombEndTime - Date.now()) / 1000));
-        if (Math.random() < game.botFailRate) {
-          await message.react("❌"); await message.channel.send(`😵 **PASS FAILED!** You fumbled the bomb! ⏰ **${timeLeft}s left**`);
-        } else {
-          game.currentBombHolder = "BOT"; await message.react("✅");
-          await message.channel.send(`✅ <@${message.author.id}> passed to the bot! ⏰ **${timeLeft}s left**`);
-          const { handleBotPass } = require("./fights.js");
-          setTimeout(() => { if(game.status==="playing"&&game.currentBombHolder==="BOT"&&game.roundActive) handleBotPass(message.channel, game); }, game.botReactionDelay);
-        }
-        return;
-      }
-      if (message.author.id !== game.currentBombHolder) { await message.react("❌"); return; }
-      const targetUser = message.mentions.users.first();
-      if (!targetUser || !game.players.has(targetUser.id) || targetUser.id === message.author.id || game.eliminated.includes(targetUser.id)) { await message.react("❌"); return; }
-      const failChance = game.mode === "duel" ? Math.random() < 0.35 : Math.random() < 0.1;
-      const tl = Math.max(0, Math.ceil((game.bombEndTime - Date.now()) / 1000));
-      if (failChance) { await message.react("❌"); await message.channel.send(`😵 **PASS FAILED!** You still have the bomb! ⏰ **${tl}s left**`); }
-      else { game.currentBombHolder = targetUser.id; await message.react("✅"); await message.channel.send(`✅ <@${message.author.id}> passed to <@${targetUser.id}>! ⏰ **${tl}s left**`); }
-    }
-
-    // ── 'judge ────────────────────────────────────────────────────
-    if (command === "judge") {
-      if (message.author.id !== ownerId) return message.reply("❌ Only God can use this command!");
-      const targetUser = message.mentions.users.first();
-      if (!targetUser) return message.reply("❌ Mention a user to judge!");
-      if (!state.bombGames.has(message.channel.id)) return message.reply("❌ No bomb game in this channel!");
-      const game = state.bombGames.get(message.channel.id);
-      if (game.judgeUsed) return message.reply("❌ Judge already used this game!");
-      game.judgeUsed = true;
-      const opponentId = Array.from(game.players).find(id => id !== message.author.id) || targetUser.id;
-      const shuffled = [...disintegrationMessages].sort(() => 0.5 - Math.random()).slice(0, 6);
-      for (const m of shuffled) {
-        await message.channel.send(m.replace(/%attacker%/g, message.author.id).replace(/%defender%/g, opponentId));
-        await new Promise(r => setTimeout(r, 800));
-      }
-      await message.channel.send("🏆 **GOD WINS BY DIVINE JUDGMENT!**");
-      state.bombGames.delete(message.channel.id);
-    }
-
-    // ── 'revive ───────────────────────────────────────────────────
-    if (command === "revive") {
-      if (message.author.id !== ownerId) return message.reply("❌ Only God can use this command!");
-      const targetUser = message.mentions.users.first();
-      if (!targetUser) return message.reply("❌ Mention a user to revive!");
-      if (!state.bombGames.has(message.channel.id)) return message.reply("❌ No bomb game in this channel!");
-      const game = state.bombGames.get(message.channel.id);
-      if (game.mode === "duel" || game.mode === "bot") return message.reply("❌ Revive only works in normal bomb tag!");
-      if (!game.eliminated.includes(targetUser.id)) return message.reply("❌ That user is not eliminated!");
-      if (game.reviveUsed) return message.reply("❌ Revive already used this game!");
-      game.reviveUsed = true;
-      game.eliminated = game.eliminated.filter(id => id !== targetUser.id);
-      game.players.add(targetUser.id);
-      if (game.gameType === "locked") {
-        await message.channel.permissionOverwrites.edit(targetUser.id, { SendMessages: true }).catch(() => {});
-      }
-      const msgs = [
-        "✨ *A gentle light begins to glow...*",
-        "🌙 The moon dims as divine energy gathers...",
-        "💫 Golden particles swirl together, forming a shape...",
-        `👁️ **THE EYE OF CREATION OPENS** 👁️\nIt gazes upon the void where <@${targetUser.id}> once stood.`,
-        "💞 A heartbeat echoes through the heavens...",
-        `💫 **DIVINE MERCY** 💫\n<@${message.author.id}> speaks: "Rise, my child. Your purpose is not yet fulfilled."\n\n<@${targetUser.id}> reforms from pure light!\n✅ <@${targetUser.id}> has been revived!`,
-      ];
-      for (const m of msgs) { await message.channel.send(m); await new Promise(r => setTimeout(r, 800)); }
-    }
 
     // ── 'disintegrate ─────────────────────────────────────────────
     if (command === "disintegrate") {
