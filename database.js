@@ -2,29 +2,33 @@ const mongoose = require("mongoose");
 
 // ==================== CONNECT ====================
 let connected = false;
+let connectionPromise = null;
+
 async function connect() {
   if (connected) return;
-  try {
-    await mongoose.connect(process.env.MONGODB_URI);
-    connected = true;
-    console.log("✅ MongoDB connected!");
-  } catch (e) {
-    console.error("❌ MongoDB connection failed:", e.message);
-  }
+  if (connectionPromise) return connectionPromise;
+  connectionPromise = mongoose.connect(process.env.MONGODB_URI)
+    .then(() => { connected = true; console.log("✅ MongoDB connected!"); })
+    .catch(e => { console.error("❌ MongoDB connection failed:", e.message); connectionPromise = null; });
+  return connectionPromise;
 }
-connect();
 
-// Await connection before any DB operations
+// Always call this before any DB operation
 async function ensureConnected() {
   if (connected) return;
-  // Wait up to 10s for connection
-  for (let i = 0; i < 100; i++) {
-    if (connected) return;
-    await new Promise(r => setTimeout(r, 100));
-  }
-  // Last attempt
   await connect();
+  // Extra safety: wait until mongoose is actually ready
+  let attempts = 0;
+  while (mongoose.connection.readyState !== 1 && attempts < 50) {
+    await new Promise(r => setTimeout(r, 200));
+    attempts++;
+  }
+  if (mongoose.connection.readyState !== 1) {
+    throw new Error("MongoDB failed to connect after 10 seconds");
+  }
 }
+
+connect();
 
 // ==================== SCHEMAS ====================
 const userSchema = new mongoose.Schema({
@@ -144,6 +148,7 @@ async function saveDuelChannel(guildId, channelId) {
 // ==================== LOAD FUNCTIONS ====================
 async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStats, dailyClaims, botStats) {
   try {
+    await ensureConnected();
     console.log("📂 Loading data from MongoDB...");
 
     const users = await User.find({});
