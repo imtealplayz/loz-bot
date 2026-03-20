@@ -5,7 +5,7 @@ const {
 const database = require("./database.js"); // MongoDB
 const state    = require("./state.js");
 const { setState: setHelperState, assignSpeciesRole } = require("./helpers.js");
-const { setState: setFightState } = require("./fights.js");
+const { setState: setFightState }   = require("./fights.js");
 const { setState: setCommandState, setClient, handleCommand, handleButton, commands } = require("./commands.js");
 const { disintegrationMessages } = require("./constants.js");
 
@@ -43,9 +43,6 @@ process.on("uncaughtException",  e => console.error("Uncaught exception:", e));
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
-  // Ensure MongoDB is connected before loading data
-  await database.ensureConnected();
-
   const success = await database.loadAllData(
     state.userSpecies, state.leaderboard, state.fightLeaderboard,
     state.fightStats, state.dailyClaims, state.botStats,
@@ -59,13 +56,6 @@ client.once("ready", async () => {
   await database.loadAllQuestProgress(state.questProgress, state.userSpecies);
 
   console.log(success ? "✅ Database loaded" : "⚠️ Database loaded with issues");
-
-  // Create backup of all loaded data
-  await database.createBackup(
-    state.userSpecies, state.fightStats, state.dailyClaims,
-    state.botStats, state.questProgress
-  );
-
   client.user.setPresence({ activities:[{name:"loz-bot | /help", type:2}], status:"dnd" });
   console.log(`🎉 Bot ready with ${state.userSpecies.size} users!`);
 });
@@ -79,9 +69,6 @@ client.on("messageCreate", async (message) => {
     if (message.content.startsWith(`<@${client.user.id}>`) || message.content.startsWith(`<@!${client.user.id}>`))
       return message.reply(`👋 **${client.user.username}** here!\nUse \`/guide\` to learn how to play or \`/help\` for all commands. Start with \`/species-roll\`! 🎲`);
 
-    if (!message.content.startsWith(prefix)) return;
-    const args = message.content.slice(prefix.length).trim().split(/ +/);
-    const command = args.shift().toLowerCase();
 
     // ── 'disintegrate ─────────────────────────────────────────────
     if (command === "disintegrate") {
