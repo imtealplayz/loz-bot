@@ -56,9 +56,16 @@ client.once("ready", async () => {
     if (sc) { state.duelChannels.set(guild.id, sc); console.log(`📋 Loaded duel channel for ${guild.name}`); }
   }
 
-  await database.loadAllQuestProgress(state.questProgress);
+  await database.loadAllQuestProgress(state.questProgress, state.userSpecies);
 
   console.log(success ? "✅ Database loaded" : "⚠️ Database loaded with issues");
+
+  // Create backup of all loaded data
+  await database.createBackup(
+    state.userSpecies, state.fightStats, state.dailyClaims,
+    state.botStats, state.questProgress
+  );
+
   client.user.setPresence({ activities:[{name:"loz-bot | /help", type:2}], status:"dnd" });
   console.log(`🎉 Bot ready with ${state.userSpecies.size} users!`);
 });
