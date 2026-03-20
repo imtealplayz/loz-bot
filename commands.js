@@ -171,6 +171,7 @@ async function handleCommand(interaction) {
     const td=_state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,badges:[]};
     const fd=_state.fightStats.get(target.id)||{wins:0,losses:0,streak:0};
     const sp=td.species||humanSpecies;
+    console.log(`🔍 Profile check: userId=${target.id} mapSize=${_state.userSpecies.size} found=${!!_state.userSpecies.get(target.id)} species=${sp?.name} rolls=${td.rolls}`);
     const wr=fd.wins+fd.losses>0?((fd.wins/(fd.wins+fd.losses))*100).toFixed(1):"0.0";
     const embed=new EmbedBuilder().setColor(sp.color||0x9b59b6).setTitle(`👤 ${target.displayName}'s Profile`).setThumbnail(target.displayAvatarURL())
       .addFields(
