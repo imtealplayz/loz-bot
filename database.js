@@ -1,4 +1,6 @@
 const mongoose = require("mongoose");
+const fs = require("fs");
+const path = require("path");
 
 // ==================== CONNECT ====================
 let connected = false;
@@ -177,10 +179,7 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
     if (sampleEntry) {
       console.log(`🔍 Map check: id=${sampleEntry[0]} species=${sampleEntry[1].species.name} rolls=${sampleEntry[1].rolls}`);
     }
-    // Log ALL users with their userId, species and rolls for diagnosis
-    for (const [uid, d] of userSpecies.entries()) {
-      console.log(`🗂️ User: ${uid} | species=${d.species?.name||"null"} | rolls=${d.rolls}`);
-    }
+
 
     const lb = await Leaderboard.find({});
     for (const l of lb) leaderboard.set(l.userId, { wins:l.wins });
@@ -217,7 +216,7 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
   }
 }
 
-async function loadAllQuestProgress(questProgress) {
+async function loadAllQuestProgress(questProgress, userSpecies) {
   try {
     const quests = await Quest.find({});
     for (const q of quests) {
@@ -226,6 +225,21 @@ async function loadAllQuestProgress(questProgress) {
       questProgress.set(q.userId, existing);
     }
     console.log(`✅ Loaded quest progress for ${questProgress.size} users`);
+
+    // Sync completed quests back to userSpecies so switch works
+    if (userSpecies) {
+      for (const [uid, qp] of questProgress.entries()) {
+        const ud = userSpecies.get(uid);
+        if (!ud) continue;
+        if (!ud.questSpecies) ud.questSpecies = {};
+        // If reaper quest is completed and claimed, mark as unlocked
+        if (qp.reaper?.completed && qp.reaper?.claimed) {
+          ud.questSpecies.reaper = { unlocked: true, equipped: false };
+        }
+        userSpecies.set(uid, ud);
+      }
+      console.log("✅ Quest species synced to user data");
+    }
     return true;
   } catch(e) {
     console.error("❌ loadAllQuestProgress error:", e.message);
@@ -274,6 +288,45 @@ async function deleteUser(userId) {
   console.log(`🗑️ Deleted all data for user ${userId}`);
 }
 
+// ==================== BACKUP SYSTEM ====================
+const BACKUP_DIR = path.join(__dirname, "backups");
+
+async function createBackup(userSpecies, fightStats, dailyClaims, botStats, questProgress) {
+  try {
+    if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const backup = {
+      timestamp,
+      users: {},
+      fightStats: {},
+      dailyClaims: {},
+      botStats: {},
+      questProgress: {},
+    };
+    for (const [id, d] of userSpecies.entries()) backup.users[id] = d;
+    for (const [id, d] of fightStats.entries()) backup.fightStats[id] = d;
+    for (const [id, d] of dailyClaims.entries()) backup.dailyClaims[id] = d;
+    for (const [id, d] of botStats.entries()) backup.botStats[id] = d;
+    for (const [id, d] of questProgress.entries()) backup.questProgress[id] = d;
+
+    const filename = path.join(BACKUP_DIR, `backup-${timestamp}.json`);
+    fs.writeFileSync(filename, JSON.stringify(backup, null, 2));
+
+    // Keep only last 5 backups
+    const files = fs.readdirSync(BACKUP_DIR)
+      .filter(f => f.startsWith("backup-"))
+      .sort();
+    while (files.length > 5) {
+      fs.unlinkSync(path.join(BACKUP_DIR, files.shift()));
+    }
+    console.log(`✅ Backup saved: ${filename}`);
+    return filename;
+  } catch(e) {
+    console.error("❌ Backup failed:", e.message);
+    return null;
+  }
+}
+
 // ==================== EXPORTS ====================
 module.exports = {
   ensureConnected,
@@ -281,5 +334,5 @@ module.exports = {
   saveFightStats, saveBotStats, saveDailyClaim,
   saveQuestProgress, saveDuelChannel,
   loadAllData, loadAllQuestProgress, loadDuelChannel,
-  listAllKeys, deleteUser,
+  listAllKeys, deleteUser, createBackup,
 };
