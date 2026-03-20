@@ -63,13 +63,17 @@ async function handleCommand(interaction) {
       const tl=86400000-(now-ud.lastClaim), h=Math.floor(tl/3600000), m=Math.floor((tl%3600000)/60000);
       return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xff8c00).setTitle("⏰ Daily Already Claimed").setDescription(`Come back in **${h}h ${m}m**!\n🔥 Streak: **${ud.streak||0} days**`)],flags:64});
     }
-    let userData=_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0};
+    const existingUser = _state.userSpecies.get(user.id);
+    let userData = existingUser || {species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0};
     const streak=ud?(ud.streak||0)+1:1;
     _state.dailyClaims.set(user.id,{lastClaim:now,streak});
     database.saveDailyClaim(user.id,{lastClaim:now,streak});
     userData.rolls=(userData.rolls||0)+1;
     if (streak===7) userData.rolls+=1;
-    _state.userSpecies.set(user.id,userData); database.saveUserSpecies(user.id,userData);
+    // Only save if user already had data OR species map is populated (bot fully loaded)
+    if (existingUser || _state.userSpecies.size > 0) {
+      _state.userSpecies.set(user.id,userData); database.saveUserSpecies(user.id,userData);
+    }
     return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x00ff00).setTitle("📅 Daily Bonus Claimed!").setDescription(`+1 species roll! 🎲\nYou now have **${userData.rolls}** rolls.\n\n🔥 **${streak} Day Streak!**${streak===7?"\n🎉 **WEEK BONUS! +1 extra roll!**":""}`)]} );
   }
 
@@ -171,7 +175,7 @@ async function handleCommand(interaction) {
     const td=_state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,badges:[]};
     const fd=_state.fightStats.get(target.id)||{wins:0,losses:0,streak:0};
     const sp=td.species||humanSpecies;
-    console.log(`🔍 Profile check: userId=${target.id} mapSize=${_state.userSpecies.size} found=${!!_state.userSpecies.get(target.id)} species=${sp?.name} rolls=${td.rolls}`);
+
     const wr=fd.wins+fd.losses>0?((fd.wins/(fd.wins+fd.losses))*100).toFixed(1):"0.0";
     const embed=new EmbedBuilder().setColor(sp.color||0x9b59b6).setTitle(`👤 ${target.displayName}'s Profile`).setThumbnail(target.displayAvatarURL())
       .addFields(
