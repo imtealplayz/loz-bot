@@ -14,6 +14,18 @@ async function connect() {
 }
 connect();
 
+// Await connection before any DB operations
+async function ensureConnected() {
+  if (connected) return;
+  // Wait up to 10s for connection
+  for (let i = 0; i < 100; i++) {
+    if (connected) return;
+    await new Promise(r => setTimeout(r, 100));
+  }
+  // Last attempt
+  await connect();
+}
+
 // ==================== SCHEMAS ====================
 const userSchema = new mongoose.Schema({
   userId:          { type:String, required:true, unique:true },
@@ -233,6 +245,7 @@ async function deleteUser(userId) {
 
 // ==================== EXPORTS ====================
 module.exports = {
+  ensureConnected,
   saveUserSpecies, saveLeaderboard, saveFightLeaderboard,
   saveFightStats, saveBotStats, saveDailyClaim,
   saveQuestProgress, saveDuelChannel,
