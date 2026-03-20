@@ -63,13 +63,17 @@ async function handleCommand(interaction) {
       const tl=86400000-(now-ud.lastClaim), h=Math.floor(tl/3600000), m=Math.floor((tl%3600000)/60000);
       return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xff8c00).setTitle("⏰ Daily Already Claimed").setDescription(`Come back in **${h}h ${m}m**!\n🔥 Streak: **${ud.streak||0} days**`)],flags:64});
     }
-    let userData=_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0};
+    const existingUser = _state.userSpecies.get(user.id);
+    let userData = existingUser || {species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0};
     const streak=ud?(ud.streak||0)+1:1;
     _state.dailyClaims.set(user.id,{lastClaim:now,streak});
     database.saveDailyClaim(user.id,{lastClaim:now,streak});
     userData.rolls=(userData.rolls||0)+1;
     if (streak===7) userData.rolls+=1;
-    _state.userSpecies.set(user.id,userData); database.saveUserSpecies(user.id,userData);
+    // Only save if user already had data OR species map is populated (bot fully loaded)
+    if (existingUser || _state.userSpecies.size > 0) {
+      _state.userSpecies.set(user.id,userData); database.saveUserSpecies(user.id,userData);
+    }
     return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x00ff00).setTitle("📅 Daily Bonus Claimed!").setDescription(`+1 species roll! 🎲\nYou now have **${userData.rolls}** rolls.\n\n🔥 **${streak} Day Streak!**${streak===7?"\n🎉 **WEEK BONUS! +1 extra roll!**":""}`)]} );
   }
 
@@ -171,6 +175,7 @@ async function handleCommand(interaction) {
     const td=_state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,badges:[]};
     const fd=_state.fightStats.get(target.id)||{wins:0,losses:0,streak:0};
     const sp=td.species||humanSpecies;
+
     const wr=fd.wins+fd.losses>0?((fd.wins/(fd.wins+fd.losses))*100).toFixed(1):"0.0";
     const embed=new EmbedBuilder().setColor(sp.color||0x9b59b6).setTitle(`👤 ${target.displayName}'s Profile`).setThumbnail(target.displayAvatarURL())
       .addFields(
@@ -274,7 +279,8 @@ async function handleCommand(interaction) {
     const row=new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`fight_accept_${user.id}_${target.id}`).setLabel("✅ Accept").setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId(`fight_reject_${user.id}_${target.id}`).setLabel("❌ Reject").setStyle(ButtonStyle.Danger));
-    const embed=new EmbedBuilder().setColor(0xff4500).setTitle("⚔️ Fight Challenge!").setDescription(`${cd.species.emoji} **${cd.species.name}** <@${user.id}>\nvs\n${od.species.emoji} **${od.species.name}** <@${target.id}>\n\n<@${target.id}>, do you accept?`);
+    const cdSp=cd.species||humanSpecies, odSp=od.species||humanSpecies;
+    const embed=new EmbedBuilder().setColor(0xff4500).setTitle("⚔️ Fight Challenge!").setDescription(`${cdSp.emoji} **${cdSp.name}** <@${user.id}>\nvs\n${odSp.emoji} **${odSp.name}** <@${target.id}>\n\n<@${target.id}>, do you accept?`);
     await safeReply(interaction,{embeds:[embed],components:[row]});
     const msg=await interaction.fetchReply();
     _state.activeRequests.set(user.id,{type:"fight",targetId:target.id,timestamp:Date.now()});
@@ -295,7 +301,7 @@ async function handleCommand(interaction) {
     const fightId=`bot-${user.id}-${Date.now()}`;
     const fight={
       fightId, playerId:user.id, playerSpecies:playerData.species,
-      playerHp:playerData.species.hp, playerMaxHp:playerData.species.hp,
+      playerHp:(playerData.species||humanSpecies).hp, playerMaxHp:(playerData.species||humanSpecies).hp,
       playerHealCooldown:0, playerUltCooldown:0, playerUltBuff:null,
       playerAdaptiveStacks:0, playerAttackCounter:0, playerBurn:0, playerBurnRounds:0,
       playerCurse:0, playerBlockHeal:false, playerPossession:false, playerStunnedTurns:0, playerLastUltUsed:null,
@@ -317,19 +323,20 @@ async function handleCommand(interaction) {
   if (commandName === "switch") {
     await interaction.deferReply({flags:64});
     const userData=_state.userSpecies.get(user.id);
-    if (!userData) return interaction.editReply({embeds:[createErrorEmbed("No species yet! Use `/species-roll` first.")]});
+    if (!userData||!userData.species) return interaction.editReply({embeds:[createErrorEmbed("No species yet! Use `/species-roll` first.")]});
     const now=Date.now(), threeH=3*60*60*1000;
     if (user.id!==_state.ownerId&&user.id!==_state.secondGodId&&userData.lastSwitch&&now-userData.lastSwitch<threeH) {
       const tl=threeH-(now-userData.lastSwitch), h=Math.floor(tl/3600000), m=Math.floor((tl%3600000)/60000);
       return interaction.editReply({embeds:[createErrorEmbed(`Switch available in **${h}h ${m}m**!`)]});
     }
+    const sp=userData.species||humanSpecies;
     const row=new ActionRowBuilder();
-    row.addComponents(new ButtonBuilder().setCustomId("switch_current").setLabel(`✅ ${userData.species.name} (Current)`).setStyle(ButtonStyle.Success).setDisabled(true));
-    if (userData.originalSpecies?.name!==userData.species.name) row.addComponents(new ButtonBuilder().setCustomId("switch_original").setLabel(userData.originalSpecies.name).setStyle(ButtonStyle.Primary));
-    if (userData.questSpecies?.reaper?.unlocked&&userData.species.name!=="Reaper") row.addComponents(new ButtonBuilder().setCustomId("switch_reaper").setLabel("🌑 Reaper").setStyle(ButtonStyle.Primary));
-    if (userData.questSpecies?.archdemon?.unlocked&&userData.species.name!=="Archdemon") row.addComponents(new ButtonBuilder().setCustomId("switch_archdemon").setLabel("👿 Archdemon").setStyle(ButtonStyle.Danger));
+    row.addComponents(new ButtonBuilder().setCustomId("switch_current").setLabel(`✅ ${sp.name} (Current)`).setStyle(ButtonStyle.Success).setDisabled(true));
+    if (userData.originalSpecies?.name&&userData.originalSpecies.name!==sp.name) row.addComponents(new ButtonBuilder().setCustomId("switch_original").setLabel(userData.originalSpecies.name).setStyle(ButtonStyle.Primary));
+    if (userData.questSpecies?.reaper?.unlocked&&sp.name!=="Reaper") row.addComponents(new ButtonBuilder().setCustomId("switch_reaper").setLabel("🌑 Reaper").setStyle(ButtonStyle.Primary));
+    if (userData.questSpecies?.archdemon?.unlocked&&sp.name!=="Archdemon") row.addComponents(new ButtonBuilder().setCustomId("switch_archdemon").setLabel("👿 Archdemon").setStyle(ButtonStyle.Danger));
     const embed=new EmbedBuilder().setColor(0x9b59b6).setTitle("🔄 Class Switch")
-      .setDescription(`**Current:** ${userData.species.emoji} ${userData.species.name}\n**Original:** ${userData.originalSpecies?.emoji||"👤"} ${userData.originalSpecies?.name||"Human"}\n🌑 Reaper: ${userData.questSpecies?.reaper?.unlocked?"✅ Unlocked":"❌ Locked"}\n👿 Archdemon: ${userData.questSpecies?.archdemon?.unlocked?"✅ Unlocked":"❌ Locked"}\n\n⏰ Cooldown: 3 hours`);
+      .setDescription(`**Current:** ${sp.emoji} ${sp.name}\n**Original:** ${userData.originalSpecies?.emoji||"👤"} ${userData.originalSpecies?.name||"Human"}\n🌑 Reaper: ${userData.questSpecies?.reaper?.unlocked?"✅ Unlocked":"❌ Locked"}\n👿 Archdemon: ${userData.questSpecies?.archdemon?.unlocked?"✅ Unlocked":"❌ Locked"}\n\n⏰ Cooldown: 3 hours`);
     return interaction.editReply({embeds:[embed],components:[row]});
   }
 
@@ -565,7 +572,7 @@ async function handleCommand(interaction) {
       const target=options.getUser("user");
       const ud=_state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0,badges:[]};
       const old=ud.rolls||0; ud.rolls=0; _state.userSpecies.set(target.id,ud); database.saveUserSpecies(target.id,ud);
-      return safeReply(interaction,{embeds:[createSuccessEmbed(`Reset **${old}** rolls for <@${target.id}> to 0. Species stays **${ud.species.name}**.`)],flags:64});
+      return safeReply(interaction,{embeds:[createSuccessEmbed(`Reset **${old}** rolls for <@${target.id}> to 0. Species stays **${ud.species?.name||"Human"}**.`)],flags:64});
     }
 
     if (sub==="quest-reset") {
@@ -999,7 +1006,7 @@ async function handleButton(interaction) {
   // ── AWAKENING BUTTON ──────────────────────────────────────────
   if (customId==="awaken_cyborg") {
     const ud=_state.userSpecies.get(user.id);
-    if (!ud||ud.species.name!=="Cyborg") return interaction.update({content:"❌ Not a Cyborg!",components:[]});
+    if (!ud||!ud.species||ud.species.name!=="Cyborg") return interaction.update({content:"❌ Not a Cyborg!",components:[]});
     if (!isCyborgReadyForAwakening(ud)) return interaction.update({content:"❌ Requirements not met yet!",components:[]});
     const mech=getSpeciesByName("Mechangel");
     ud.species=mech; ud.originalSpecies=mech; ud.awakening.cyborg.awakened=true; ud.rolls=(ud.rolls||0)+5;
