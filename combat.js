@@ -88,9 +88,10 @@ function calculateDamage(attacker, defender) {
       if (attacker.species.name==="Orc"&&ub.recoil) { const r=Math.floor(finalDamage*multiplier*ub.recoil); attackerMutations.hpDelta-=r; specialLines.push(`💥 Recoil -${r}`); }
       if (attacker.species.name==="Bot"&&ub.recoil) { const r=Math.floor(finalDamage*multiplier*ub.recoil); attackerMutations.hpDelta-=r; specialLines.push(`🤖 Overheat -${r}`); }
       if (attacker.species.name==="Angel"&&ub.angelHeal) { const h=Math.floor(attacker.currentHp*0.35); attackerMutations.hpDelta+=h; specialLines.push(`👼 Divine Blessing +${h}`); }
-      if (attacker.species.name==="Reaper"&&ub.type==="reaperKill") {
+      // FIX: ub.type is always "nextAttack" so check species name only
+      if (attacker.species.name==="Reaper") {
         if (defender.currentHp<defender.maxHp*0.2) {
-          // Instant kill — set defender HP to 0, return flag so caller handles win
+          // Instant kill — defender below 20% HP
           const killDmg=defender.currentHp;
           defender.currentHp=0;
           specialLines.push("💀 **DEATH'S JUDGMENT — INSTANT KILL!**");
