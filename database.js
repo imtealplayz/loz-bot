@@ -177,6 +177,10 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
     if (sampleEntry) {
       console.log(`🔍 Map check: id=${sampleEntry[0]} species=${sampleEntry[1].species.name} rolls=${sampleEntry[1].rolls}`);
     }
+    // Log ALL users with their userId, species and rolls for diagnosis
+    for (const [uid, d] of userSpecies.entries()) {
+      console.log(`🗂️ User: ${uid} | species=${d.species?.name||"null"} | rolls=${d.rolls}`);
+    }
 
     const lb = await Leaderboard.find({});
     for (const l of lb) leaderboard.set(l.userId, { wins:l.wins });
