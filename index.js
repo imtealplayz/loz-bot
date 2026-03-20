@@ -43,6 +43,9 @@ process.on("uncaughtException",  e => console.error("Uncaught exception:", e));
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
+  // Ensure MongoDB is connected before loading data
+  await database.ensureConnected();
+
   const success = await database.loadAllData(
     state.userSpecies, state.leaderboard, state.fightLeaderboard,
     state.fightStats, state.dailyClaims, state.botStats,
