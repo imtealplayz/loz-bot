@@ -154,8 +154,9 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
     // Use lean() to get plain JS objects, avoiding mongoose schema stripping
     const users = await User.find({}).lean();
     for (const u of users) {
-      const { _id, __v, userId, ...d } = u;
-      userSpecies.set(userId, d);
+      const uid = u.userId;
+      delete u._id; delete u.__v; delete u.userId;
+      userSpecies.set(uid, u);
     }
     const withSpecies = users.filter(u=>u.species && u.species.name).length;
     const withRolls = users.filter(u=>u.rolls>0).length;
@@ -179,8 +180,9 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
 
     const fs = await FightStats.find({}).lean();
     for (const f of fs) {
-      const { _id, __v, userId, ...d } = f;
-      fightStats.set(userId, d);
+      const uid = f.userId;
+      delete f._id; delete f.__v; delete f.userId;
+      fightStats.set(uid, f);
     }
     console.log(`✅ Loaded ${fs.length} fight stats`);
 
@@ -190,8 +192,9 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
 
     const bs = await BotStats.find({}).lean();
     for (const b of bs) {
-      const { _id, __v, userId, ...d } = b;
-      botStats.set(userId, d);
+      const uid = b.userId;
+      delete b._id; delete b.__v; delete b.userId;
+      botStats.set(uid, b);
     }
     console.log(`✅ Loaded ${bs.length} bot stat entries`);
 
