@@ -160,10 +160,13 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
     const withSpecies = users.filter(u=>u.species && u.species.name).length;
     const withRolls = users.filter(u=>u.rolls>0).length;
     console.log(`✅ Loaded ${users.length} users — ${withSpecies} have species, ${withRolls} have rolls`);
-    if (withSpecies === 0 && users.length > 0) {
-      console.warn("⚠️ WARNING: Users loaded but ALL have null species — check DB collection");
-      // Log first user raw to debug
-      console.log("🔍 Sample user raw:", JSON.stringify(users[0]));
+    // Always log first user with species so we can verify structure
+    const sampleWithSpecies = users.find(u=>u.species && u.species.name);
+    if (sampleWithSpecies) {
+      console.log(`🔍 Sample loaded user: id=${sampleWithSpecies.userId} species=${sampleWithSpecies.species.name} rolls=${sampleWithSpecies.rolls}`);
+      // Verify it's actually in the map
+      const check = userSpecies.get(sampleWithSpecies.userId);
+      console.log(`🔍 Map check: found=${!!check} species=${check?.species?.name} rolls=${check?.rolls}`);
     }
 
     const lb = await Leaderboard.find({});
