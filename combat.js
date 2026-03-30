@@ -74,7 +74,7 @@ function calculateDamage(attacker, defender) {
   }
   if (attacker.species.name==="Reaper") { multiplier*=1.1; specialLines.push("🌑 Soul Reaper +10%"); }
   if (attacker.species.name==="Archdemon") { multiplier*=1.15; finalDamage+=5; specialLines.push("👿 Lord of Darkness +15% +5"); }
-  if (attacker.species.name==="Orc Lord") { const d=Math.floor(defender.maxHp*0.15); finalDamage+=d; specialLines.push(`👑 Despair +${d}`); }
+  if (attacker.species.name==="Orc Lord") { const d=Math.floor(defender.maxHp*0.075); finalDamage+=d; specialLines.push(`👑 Despair +${d}`); }
   if (attacker.species.name==="Mechangel") {
     attacker.attackCounter=(attacker.attackCounter||0)+1;
     if (attacker.attackCounter%2===0) { multiplier*=1.4; specialLines.push("⚡ Quantum Processing ×1.4"); }
@@ -83,25 +83,30 @@ function calculateDamage(attacker, defender) {
   // ULT buff consumption
   if (attacker.ultBuff) {
     const ub = attacker.ultBuff;
+    // ── Reaper instant kill — own branch, NOT inside nextAttack ──────
+    if (ub.type==="reaperKill") {
+      if (defender.currentHp<defender.maxHp*0.2) {
+        // Below 20% — instant kill
+        const killDmg=defender.currentHp;
+        defender.currentHp=0;
+        specialLines.push("💀 **DEATH'S JUDGMENT — INSTANT KILL!**");
+        attacker.ultBuff=null;
+        const lifeSteal=Math.floor(killDmg*0.5);
+        attacker.currentHp=Math.min(attacker.maxHp,attacker.currentHp+lifeSteal);
+        return { damage:killDmg, baseDamage, specialLines, attackerMutations:{hpDelta:0}, instantKill:true };
+      } else {
+        // Above 20% — 1.7× damage attack + 50% life steal
+        multiplier*=1.7;
+        ub._reaperUltHeal=true;
+        ub.type="nextAttack"; // convert to nextAttack so it processes below
+        specialLines.push("🌑 Reaper ULT ×1.7 + 50% life steal");
+      }
+    }
     if (ub.type==="nextAttack" && ub.multiplier) {
       multiplier*=ub.multiplier; specialLines.push(`✨ ULT ×${ub.multiplier}`);
       if (attacker.species.name==="Orc"&&ub.recoil) { const r=Math.floor(finalDamage*multiplier*ub.recoil); attackerMutations.hpDelta-=r; specialLines.push(`💥 Recoil -${r}`); }
       if (attacker.species.name==="Bot"&&ub.recoil) { const r=Math.floor(finalDamage*multiplier*ub.recoil); attackerMutations.hpDelta-=r; specialLines.push(`🤖 Overheat -${r}`); }
       if (attacker.species.name==="Angel"&&ub.angelHeal) { const h=Math.floor(attacker.currentHp*0.35); attackerMutations.hpDelta+=h; specialLines.push(`👼 Divine Blessing +${h}`); }
-      // FIX: ub.type is always "nextAttack" so check species name only
-      if (attacker.species.name==="Reaper") {
-        if (defender.currentHp<defender.maxHp*0.2) {
-          // Instant kill — defender below 20% HP
-          const killDmg=defender.currentHp;
-          defender.currentHp=0;
-          specialLines.push("💀 **DEATH'S JUDGMENT — INSTANT KILL!**");
-          attacker.ultBuff=null;
-          // 50% life steal on instant kill
-          const lifeSteal=Math.floor(killDmg*0.5);
-          attacker.currentHp=Math.min(attacker.maxHp,attacker.currentHp+lifeSteal);
-          return { damage:killDmg, baseDamage, specialLines, attackerMutations:{hpDelta:0}, instantKill:true };
-        } else { multiplier*=1.7; ub._reaperUltHeal=true; specialLines.push("🌑 Reaper ULT ×1.7 + 50% life steal"); }
-      }
       if (ub.healSelf&&ub.healAmount) { attackerMutations.hpDelta+=ub.healAmount; specialLines.push(`🩸 Heal +${ub.healAmount}`); }
       if (ub.curse&&ub.curseRounds) { defender.curse=(defender.curse||0)+ub.curse; defender.curseRounds=ub.curseRounds; specialLines.push(`👿 Curse applied`); }
       if (ub.burn&&ub.burnRounds) { defender.burn=(defender.burn||0)+ub.burn; defender.burnRounds=Math.max(defender.burnRounds||0,ub.burnRounds); specialLines.push(`🔥 Burn +${ub.burn}`); }
