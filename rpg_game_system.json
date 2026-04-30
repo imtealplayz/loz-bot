@@ -6,14 +6,124 @@
       "description": "A small, green-skinned creature known for its mischievous nature."
     },
     {
+      "name": "Forest Sprite",
+      "rarity": "common",
+      "description": "Tiny, ethereal beings that guard ancient woodlands."
+    },
+    {
+      "name": "Cave Dweller",
+      "rarity": "common",
+      "description": "A hunched creature adapted to subterranean life, with keen night vision."
+    },
+    {
+      "name": "Desert Nomad",
+      "rarity": "common",
+      "description": "Resilient beings that traverse vast sands, masters of survival."
+    },
+    {
+      "name": "River Folk",
+      "rarity": "common",
+      "description": "Amphibious humanoids with smooth skin, living in harmony with rivers."
+    },
+    {
+      "name": "Mountain Clan",
+      "rarity": "common",
+      "description": "Sturdy humanoids with a strong build, accustomed to high altitudes."
+    },
+    {
+      "name": "Swamp Beast",
+      "rarity": "common",
+      "description": "A creature covered in moss and mud, blending seamlessly with its murky habitat."
+    },
+    {
+      "name": "Plains Runner",
+      "rarity": "common",
+      "description": "Swift and agile humanoids, known for their incredible speed across open fields."
+    },
+    {
+      "name": "Ice Golem",
+      "rarity": "common",
+      "description": "A construct of living ice, slow but incredibly durable."
+    },
+    {
+      "name": "Fire Imp",
+      "rarity": "common",
+      "description": "Small, mischievous creatures made of living flame, often found near volcanoes."
+    },
+    {
+      "name": "Wind Whisperer",
+      "rarity": "common",
+      "description": "Ethereal beings that communicate through gusts of wind, rarely seen."
+    },
+    {
+      "name": "Stonekin",
+      "rarity": "common",
+      "description": "Humanoids with rocky skin, known for their unwavering resolve."
+    },
+    {
+      "name": "Shadow Stalker",
+      "rarity": "common",
+      "description": "Creatures of pure shadow, moving silently and unseen in the dark."
+    },
+    {
+      "name": "Deep Sea Diver",
+      "rarity": "common",
+      "description": "Beings adapted to immense pressure and darkness of the ocean depths."
+    },
+    {
+      "name": "Sky Sentinel",
+      "rarity": "common",
+      "description": "Winged humanoids that patrol the skies, protectors of the upper realms."
+    },
+    {
       "name": "Elf",
       "rarity": "rare",
       "description": "An agile and wise being with a deep connection to nature."
     },
     {
+      "name": "Griffin",
+      "rarity": "rare",
+      "description": "A majestic beast with the body of a lion and the head and wings of an eagle."
+    },
+    {
+      "name": "Unicorn",
+      "rarity": "rare",
+      "description": "A mythical horse with a single, spiraling horn, known for its purity."
+    },
+    {
+      "name": "Phoenix",
+      "rarity": "rare",
+      "description": "A legendary bird that regenerates from its own ashes, symbolizing rebirth."
+    },
+    {
+      "name": "Werewolf",
+      "rarity": "rare",
+      "description": "A humanoid with the ability to shapeshift into a wolf-like creature under the full moon."
+    },
+    {
+      "name": "Vampire",
+      "rarity": "rare",
+      "description": "An undead being that subsists on the blood of the living, possessing supernatural strength."
+    },
+    {
+      "name": "Naga",
+      "rarity": "rare",
+      "description": "Serpentine humanoids with enchanting voices, dwelling in ancient ruins."
+    },
+    {
+      "name": "Minotaur",
+      "rarity": "rare",
+      "description": "A powerful creature with the head of a bull and the body of a man, known for its labyrinthine homes."
+    },
+    {
       "name": "Dragon",
       "rarity": "epic",
       "description": "A powerful and ancient beast, capable of breathing fire."
+    },
+    {
+      "name": "Lich",
+      "rarity": "epic",
+      "description": "An undead sorcerer who has achieved immortality through dark magic, commanding legions of the dead."
     }
   ],
   "crate_rewards": {
