@@ -1,178 +1,498 @@
 {
   "species": [
     {
-      "name": "Goblin",
+      "name": "Common Species 1",
       "rarity": "common",
-      "description": "A small, green-skinned creature known for its mischievous nature."
+      "description": "A common creature often found in various habitats.",
+      "stats": {
+        "hp": 108,
+        "atk": 17,
+        "heal": 7
+      },
+      "rollChance": 0.097,
+      "passive": {
+        "name": "Common Passive 1",
+        "description": "A simple passive effect."
+      },
+      "ultimate": {
+        "name": "Common Ultimate 1",
+        "description": "A basic ultimate ability."
+      }
     },
     {
-      "name": "Forest Sprite",
+      "name": "Common Species 2",
       "rarity": "common",
-      "description": "Tiny, ethereal beings that guard ancient woodlands."
+      "description": "A common creature often found in various habitats.",
+      "stats": {
+        "hp": 107,
+        "atk": 18,
+        "heal": 9
+      },
+      "rollChance": 0.088,
+      "passive": {
+        "name": "Common Passive 2",
+        "description": "A simple passive effect."
+      },
+      "ultimate": {
+        "name": "Common Ultimate 2",
+        "description": "A basic ultimate ability."
+      }
     },
     {
-      "name": "Cave Dweller",
+      "name": "Common Species 3",
       "rarity": "common",
-      "description": "A hunched creature adapted to subterranean life, with keen night vision."
+      "description": "A common creature often found in various habitats.",
+      "stats": {
+        "hp": 104,
+        "atk": 11,
+        "heal": 9
+      },
+      "rollChance": 0.076,
+      "passive": {
+        "name": "Common Passive 3",
+        "description": "A simple passive effect."
+      },
+      "ultimate": {
+        "name": "Common Ultimate 3",
+        "description": "A basic ultimate ability."
+      }
     },
     {
-      "name": "Desert Nomad",
+      "name": "Common Species 4",
       "rarity": "common",
-      "description": "Resilient beings that traverse vast sands, masters of survival."
+      "description": "A common creature often found in various habitats.",
+      "stats": {
+        "hp": 106,
+        "atk": 13,
+        "heal": 8
+      },
+      "rollChance": 0.075,
+      "passive": {
+        "name": "Common Passive 4",
+        "description": "A simple passive effect."
+      },
+      "ultimate": {
+        "name": "Common Ultimate 4",
+        "description": "A basic ultimate ability."
+      }
     },
     {
-      "name": "River Folk",
+      "name": "Common Species 5",
       "rarity": "common",
-      "description": "Amphibious humanoids with smooth skin, living in harmony with rivers."
+      "description": "A common creature often found in various habitats.",
+      "stats": {
+        "hp": 103,
+        "atk": 14,
+        "heal": 7
+      },
+      "rollChance": 0.07,
+      "passive": {
+        "name": "Common Passive 5",
+        "description": "A simple passive effect."
+      },
+      "ultimate": {
+        "name": "Common Ultimate 5",
+        "description": "A basic ultimate ability."
+      }
     },
     {
-      "name": "Mountain Clan",
+      "name": "Common Species 6",
       "rarity": "common",
-      "description": "Sturdy humanoids with a strong build, accustomed to high altitudes."
+      "description": "A common creature often found in various habitats.",
+      "stats": {
+        "hp": 119,
+        "atk": 17,
+        "heal": 6
+      },
+      "rollChance": 0.094,
+      "passive": {
+        "name": "Common Passive 6",
+        "description": "A simple passive effect."
+      },
+      "ultimate": {
+        "name": "Common Ultimate 6",
+        "description": "A basic ultimate ability."
+      }
     },
     {
-      "name": "Swamp Beast",
+      "name": "Common Species 7",
       "rarity": "common",
-      "description": "A creature covered in moss and mud, blending seamlessly with its murky habitat."
+      "description": "A common creature often found in various habitats.",
+      "stats": {
+        "hp": 101,
+        "atk": 19,
+        "heal": 9
+      },
+      "rollChance": 0.093,
+      "passive": {
+        "name": "Common Passive 7",
+        "description": "A simple passive effect."
+      },
+      "ultimate": {
+        "name": "Common Ultimate 7",
+        "description": "A basic ultimate ability."
+      }
     },
     {
-      "name": "Plains Runner",
+      "name": "Common Species 8",
       "rarity": "common",
-      "description": "Swift and agile humanoids, known for their incredible speed across open fields."
+      "description": "A common creature often found in various habitats.",
+      "stats": {
+        "hp": 102,
+        "atk": 19,
+        "heal": 8
+      },
+      "rollChance": 0.092,
+      "passive": {
+        "name": "Common Passive 8",
+        "description": "A simple passive effect."
+      },
+      "ultimate": {
+        "name": "Common Ultimate 8",
+        "description": "A basic ultimate ability."
+      }
     },
     {
-      "name": "Ice Golem",
+      "name": "Common Species 9",
       "rarity": "common",
-      "description": "A construct of living ice, slow but incredibly durable."
+      "description": "A common creature often found in various habitats.",
+      "stats": {
+        "hp": 116,
+        "atk": 12,
+        "heal": 9
+      },
+      "rollChance": 0.09,
+      "passive": {
+        "name": "Common Passive 9",
+        "description": "A simple passive effect."
+      },
+      "ultimate": {
+        "name": "Common Ultimate 9",
+        "description": "A basic ultimate ability."
+      }
     },
     {
-      "name": "Fire Imp",
+      "name": "Common Species 10",
       "rarity": "common",
-      "description": "Small, mischievous creatures made of living flame, often found near volcanoes."
+      "description": "A common creature often found in various habitats.",
+      "stats": {
+        "hp": 115,
+        "atk": 16,
+        "heal": 6
+      },
+      "rollChance": 0.06,
+      "passive": {
+        "name": "Common Passive 10",
+        "description": "A simple passive effect."
+      },
+      "ultimate": {
+        "name": "Common Ultimate 10",
+        "description": "A basic ultimate ability."
+      }
     },
     {
-      "name": "Wind Whisperer",
+      "name": "Common Species 11",
       "rarity": "common",
-      "description": "Ethereal beings that communicate through gusts of wind, rarely seen."
+      "description": "A common creature often found in various habitats.",
+      "stats": {
+        "hp": 118,
+        "atk": 16,
+        "heal": 8
+      },
+      "rollChance": 0.055,
+      "passive": {
+        "name": "Common Passive 11",
+        "description": "A simple passive effect."
+      },
+      "ultimate": {
+        "name": "Common Ultimate 11",
+        "description": "A basic ultimate ability."
+      }
     },
     {
-      "name": "Stonekin",
+      "name": "Common Species 12",
       "rarity": "common",
-      "description": "Humanoids with rocky skin, known for their unwavering resolve."
+      "description": "A common creature often found in various habitats.",
+      "stats": {
+        "hp": 110,
+        "atk": 15,
+        "heal": 7
+      },
+      "rollChance": 0.082,
+      "passive": {
+        "name": "Common Passive 12",
+        "description": "A simple passive effect."
+      },
+      "ultimate": {
+        "name": "Common Ultimate 12",
+        "description": "A basic ultimate ability."
+      }
     },
     {
-      "name": "Shadow Stalker",
+      "name": "Common Species 13",
       "rarity": "common",
-      "description": "Creatures of pure shadow, moving silently and unseen in the dark."
+      "description": "A common creature often found in various habitats.",
+      "stats": {
+        "hp": 105,
+        "atk": 13,
+        "heal": 10
+      },
+      "rollChance": 0.065,
+      "passive": {
+        "name": "Common Passive 13",
+        "description": "A simple passive effect."
+      },
+      "ultimate": {
+        "name": "Common Ultimate 13",
+        "description": "A basic ultimate ability."
+      }
     },
     {
-      "name": "Deep Sea Diver",
+      "name": "Common Species 14",
       "rarity": "common",
-      "description": "Beings adapted to immense pressure and darkness of the ocean depths."
+      "description": "A common creature often found in various habitats.",
+      "stats": {
+        "hp": 95,
+        "atk": 10,
+        "heal": 9
+      },
+      "rollChance": 0.098,
+      "passive": {
+        "name": "Common Passive 14",
+        "description": "A simple passive effect."
+      },
+      "ultimate": {
+        "name": "Common Ultimate 14",
+        "description": "A basic ultimate ability."
+      }
     },
     {
-      "name": "Sky Sentinel",
+      "name": "Common Species 15",
       "rarity": "common",
-      "description": "Winged humanoids that patrol the skies, protectors of the upper realms."
+      "description": "A common creature often found in various habitats.",
+      "stats": {
+        "hp": 90,
+        "atk": 11,
+        "heal": 8
+      },
+      "rollChance": 0.085,
+      "passive": {
+        "name": "Common Passive 15",
+        "description": "A simple passive effect."
+      },
+      "ultimate": {
+        "name": "Common Ultimate 15",
+        "description": "A basic ultimate ability."
+      }
     },
     {
-      "name": "Elf",
+      "name": "Rare Species 1",
       "rarity": "rare",
-      "description": "An agile and wise being with a deep connection to nature."
+      "description": "A rare creature with unique traits and abilities.",
+      "stats": {
+        "hp": 175,
+        "atk": 30,
+        "heal": 19
+      },
+      "rollChance": 0.025,
+      "passive": {
+        "name": "Rare Passive 1",
+        "description": "A more potent passive effect."
+      },
+      "ultimate": {
+        "name": "Rare Ultimate 1",
+        "description": "A powerful ultimate ability."
+      }
     },
     {
-      "name": "Griffin",
+      "name": "Rare Species 2",
       "rarity": "rare",
-      "description": "A majestic beast with the body of a lion and the head and wings of an eagle."
+      "description": "A rare creature with unique traits and abilities.",
+      "stats": {
+        "hp": 179,
+        "atk": 30,
+        "heal": 19
+      },
+      "rollChance": 0.025,
+      "passive": {
+        "name": "Rare Passive 2",
+        "description": "A more potent passive effect."
+      },
+      "ultimate": {
+        "name": "Rare Ultimate 2",
+        "description": "A powerful ultimate ability."
+      }
     },
     {
-      "name": "Unicorn",
+      "name": "Rare Species 3",
       "rarity": "rare",
-      "description": "A mythical horse with a single, spiraling horn, known for its purity."
+      "description": "A rare creature with unique traits and abilities.",
+      "stats": {
+        "hp": 137,
+        "atk": 27,
+        "heal": 17
+      },
+      "rollChance": 0.029,
+      "passive": {
+        "name": "Rare Passive 3",
+        "description": "A more potent passive effect."
+      },
+      "ultimate": {
+        "name": "Rare Ultimate 3",
+        "description": "A powerful ultimate ability."
+      }
     },
     {
-      "name": "Phoenix",
+      "name": "Rare Species 4",
       "rarity": "rare",
-      "description": "A legendary bird that regenerates from its own ashes, symbolizing rebirth."
+      "description": "A rare creature with unique traits and abilities.",
+      "stats": {
+        "hp": 165,
+        "atk": 23,
+        "heal": 16
+      },
+      "rollChance": 0.02,
+      "passive": {
+        "name": "Rare Passive 4",
+        "description": "A more potent passive effect."
+      },
+      "ultimate": {
+        "name": "Rare Ultimate 4",
+        "description": "A powerful ultimate ability."
+      }
     },
     {
-      "name": "Werewolf",
+      "name": "Rare Species 5",
       "rarity": "rare",
-      "description": "A humanoid with the ability to shapeshift into a wolf-like creature under the full moon."
+      "description": "A rare creature with unique traits and abilities.",
+      "stats": {
+        "hp": 146,
+        "atk": 20,
+        "heal": 18
+      },
+      "rollChance": 0.03,
+      "passive": {
+        "name": "Rare Passive 5",
+        "description": "A more potent passive effect."
+      },
+      "ultimate": {
+        "name": "Rare Ultimate 5",
+        "description": "A powerful ultimate ability."
+      }
     },
     {
-      "name": "Vampire",
+      "name": "Rare Species 6",
       "rarity": "rare",
-      "description": "An undead being that subsists on the blood of the living, possessing supernatural strength."
+      "description": "A rare creature with unique traits and abilities.",
+      "stats": {
+        "hp": 133,
+        "atk": 25,
+        "heal": 16
+      },
+      "rollChance": 0.039,
+      "passive": {
+        "name": "Rare Passive 6",
+        "description": "A more potent passive effect."
+      },
+      "ultimate": {
+        "name": "Rare Ultimate 6",
+        "description": "A powerful ultimate ability."
+      }
     },
     {
-      "name": "Naga",
+      "name": "Rare Species 7",
       "rarity": "rare",
-      "description": "Serpentine humanoids with enchanting voices, dwelling in ancient ruins."
+      "description": "A rare creature with unique traits and abilities.",
+      "stats": {
+        "hp": 141,
+        "atk": 29,
+        "heal": 13
+      },
+      "rollChance": 0.031,
+      "passive": {
+        "name": "Rare Passive 7",
+        "description": "A more potent passive effect."
+      },
+      "ultimate": {
+        "name": "Rare Ultimate 7",
+        "description": "A powerful ultimate ability."
+      }
     },
     {
-      "name": "Minotaur",
+      "name": "Rare Species 8",
       "rarity": "rare",
-      "description": "A powerful creature with the head of a bull and the body of a man, known for its labyrinthine homes."
+      "description": "A rare creature with unique traits and abilities.",
+      "stats": {
+        "hp": 137,
+        "atk": 35,
+        "heal": 13
+      },
+      "rollChance": 0.037,
+      "passive": {
+        "name": "Rare Passive 8",
+        "description": "A more potent passive effect."
+      },
+      "ultimate": {
+        "name": "Rare Ultimate 8",
+        "description": "A powerful ultimate ability."
+      }
     },
     {
-      "name": "Dragon",
+      "name": "Epic Species 1",
       "rarity": "epic",
-      "description": "A powerful and ancient beast, capable of breathing fire."
+      "description": "A legendary creature of immense power and rarity.",
+      "stats": {
+        "hp": 239,
+        "atk": 49,
+        "heal": 24
+      },
+      "rollChance": 0.0012,
+      "passive": {
+        "name": "Epic Passive 1",
+        "description": "A game-changing passive effect."
+      },
+      "ultimate": {
+        "name": "Epic Ultimate 1",
+        "description": "A devastating ultimate ability."
+      }
     },
     {
-      "name": "Lich",
+      "name": "Epic Species 2",
       "rarity": "epic",
-      "description": "An undead sorcerer who has achieved immortality through dark magic, commanding legions of the dead."
-    }
-  ],
-  "crate_rewards": {
-    "possible_rewards": [
-      "coins",
-      "rolls",
-      "species"
-    ],
-    "drop_chances": {
-      "coins": "60%",
-      "rolls": "30%",
-      "species": "10%"
-    }
-  },
-  "fight_system": {
-    "win_probability": "50%",
-    "reward_ranges": {
-      "coins": "10-100"
-    },
-    "crate_drop_chance": "25%"
-  },
-  "items": [
-    {
-      "name": "Health Potion",
-      "type": "consumable",
-      "effect": "Restores a small amount of health."
+      "description": "A legendary creature of immense power and rarity.",
+      "stats": {
+        "hp": 219,
+        "atk": 57,
+        "heal": 20
+      },
+      "rollChance": 0.0044,
+      "passive": {
+        "name": "Epic Passive 2",
+        "description": "A game-changing passive effect."
+      },
+      "ultimate": {
+        "name": "Epic Ultimate 2",
+        "description": "A devastating ultimate ability."
+      }
     },
     {
-      "name": "Sword of Power",
-      "type": "weapon",
-      "effect": "Increases attack damage."
-    },
-    {
-      "name": "Shield of Defense",
-      "type": "armor",
-      "effect": "Increases defense."
+      "name": "Epic Species 3",
+      "rarity": "epic",
+      "description": "A legendary creature of immense power and rarity.",
+      "stats": {
+        "hp": 223,
+        "atk": 59,
+        "heal": 29
+      },
+      "rollChance": 0.0055,
+      "passive": {
+        "name": "Epic Passive 3",
+        "description": "A game-changing passive effect."
+      },
+      "ultimate": {
+        "name": "Epic Ultimate 3",
+        "description": "A devastating ultimate ability."
+      }
     }
-  ],
-  "ui_labels": {
-    "button_names": {
-      "fight": "Fight",
-      "open_crate": "Open Crate",
-      "inventory": "Inventory",
-      "shop": "Shop"
-    },
-    "messages": {
-      "win": "You won the fight!",
-      "lose": "You lost the fight.",
-      "rewards": "You received {amount} coins and a {item}!"
-    }
-  }
+  ]
 }
