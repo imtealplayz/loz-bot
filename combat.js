@@ -304,6 +304,10 @@ function getBuffLine(p) {
   return parts.length?parts.join(" | "):"";
 }
 
+function cleanLogLine(line) {
+  return String(line).replace(/^[\p{Extended_Pictographic}\uFE0F\u200D]+\s*/u,"");
+}
+
 function buildFightEmbed(fight, logLines=[], phase="playing") {
   const p1=fight.player1, p2=fight.player2;
   const turnPlayer=fight.currentTurn===fight.player1Id?p1:p2;
@@ -320,7 +324,7 @@ function buildFightEmbed(fight, logLines=[], phase="playing") {
     `**${p2.species.name}** — <@${fight.player2Id}>\n`+
     `${hpBar(p2.currentHp,p2.maxHp)}${p2Buffs?`\n${p2Buffs}`:""}\n`+
     statusLine+`\n\n**Round ${fight.round}**\n`+
-    (logLines.length?logLines.join("\n"):"Fight started.");
+    (logLines.length?logLines.map(cleanLogLine).join("\n"):"Fight started.");
   return new EmbedBuilder().setColor(color).setTitle(`LOZ Fight · Round ${fight.round}`).setDescription(desc)
     .setFooter({text:`ULT CDs — ${p1.species.name}: ${p1.ultCooldown} | ${p2.species.name}: ${p2.ultCooldown}`});
 }
@@ -365,7 +369,7 @@ function buildBotFightEmbed(fight, logLines=[], phase="playing") {
     `**${personality.name}** — ${fight.botSpecies.emoji} ${fight.botSpecies.name}\n`+
     `${hpBar(fight.botHp,fight.botMaxHp)}${bBuf.length?`\n${bBuf.join(" | ")}`:""}`+
     statusLine+`\n\n**Round ${fight.round}**\n`+
-    (logLines.length?logLines.join("\n"):"Fight started.");
+    (logLines.length?logLines.map(cleanLogLine).join("\n"):"Fight started.");
   return new EmbedBuilder().setColor(color).setTitle(`${fight.playerName||"Player"} vs ${personality.name}`)
     .setDescription(desc)
     .setFooter({text:`ULT CD: ${fight.playerUltCooldown} | Heal CD: ${fight.playerHealCooldown}`});
