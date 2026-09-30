@@ -983,13 +983,15 @@ async function handleButton(interaction) {
 
   // ── AWAKENING BUTTON ──────────────────────────────────────────
   if (customId==="awaken_cyborg") {
+    await interaction.deferUpdate();
     const ud=_state.userSpecies.get(user.id);
     if (!ud||!ud.species||ud.species.name!=="Cyborg") return interaction.editReply({content:"Not a Cyborg.",components:[]});
     if (!isCyborgReadyForAwakening(ud)) return interaction.editReply({content:"Requirements are not met yet.",components:[]});
-    await interaction.deferUpdate();
+    const awakenedData={...ud,awakening:{...ud.awakening,cyborg:{...ud.awakening.cyborg}}};
     const mech=getSpeciesByName("Mechangel");
-    ud.species=mech; ud.originalSpecies=mech; ud.awakening.cyborg.awakened=true; ud.rolls=(ud.rolls||0)+5;
-    _state.userSpecies.set(user.id,ud); await database.saveUserSpecies(user.id,ud);
+    awakenedData.species=mech; awakenedData.originalSpecies=mech; awakenedData.awakening.cyborg.awakened=true; awakenedData.rolls=(awakenedData.rolls||0)+5;
+    await database.saveUserSpecies(user.id,awakenedData);
+    _state.userSpecies.set(user.id,awakenedData);
     const member=await guild.members.fetch(user.id); await assignSpeciesRole(member,mech);
     return interaction.editReply({embeds:[new EmbedBuilder().setColor(0x00ffff).setTitle("Mechangel awakening complete")
       .setDescription("🤖 **Cyborg → ⚡ Mechangel**\n\n+15 HP · New passive: Quantum Processing · New ULT: System Restoration\n\n🎁 +5 Species Rolls!\n\n*Machine and angel, fused as one.*")],components:[]});
