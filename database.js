@@ -267,6 +267,13 @@ async function loadAllQuestProgress(questProgress, userSpecies) {
   }
 }
 
+async function loadAllDuelChannels(duelChannels) {
+  assertConnected();
+  const channels = await DuelChannel.find({});
+  for (const entry of channels) duelChannels.set(entry.guildId, entry.channelId);
+  return channels.length;
+}
+
 async function loadDuelChannel(guildId) {
   assertConnected();
   const doc = await DuelChannel.findOne({ guildId });
