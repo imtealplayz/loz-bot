@@ -530,6 +530,7 @@ async function handleCommand(interaction) {
       const newSp=getSpeciesByName(spname);
       if (!newSp) return safeReply(interaction,{embeds:[createErrorEmbed("Unknown species! Pick one from the dropdown.")],flags:64});
       const ud=_state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0,badges:[]};
+      await interaction.deferReply();
       // Only overwrite originalSpecies if currently Human
       // God-given species always becomes the new original
       ud.originalSpecies=newSp;
@@ -542,6 +543,7 @@ async function handleCommand(interaction) {
 
     if (sub==="species-reset") {
       const target=options.getUser("user");
+      await interaction.deferReply();
       const member=await guild.members.fetch(target.id).catch(()=>null);
       const ud=_state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0,badges:[]};
       if (ud.species?.roleName&&member) { const old=member.roles.cache.find(r=>r.name===ud.species.roleName); if(old) await member.roles.remove(old); }
@@ -567,6 +569,7 @@ async function handleCommand(interaction) {
     }
 
     if (sub==="debug-db") {
+      await interaction.deferReply({flags:64});
       try {
         const counts = await database.listAllKeys();
         const lines = Object.entries(counts).map(([k,v])=>`• **${k}**: ${v} records`).join("\n");
