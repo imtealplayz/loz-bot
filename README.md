@@ -14,6 +14,7 @@ LOZ is the foundation for a larger Discord RPG system. Its core gameplay is driv
 - Discord command handling
 - MongoDB-backed data
 - Extensible helpers and constants for game rules
+- A single probability table drives both species rolls and the `/species` odds display
 
 ## Stack
 
@@ -26,10 +27,11 @@ LOZ is the foundation for a larger Discord RPG system. Its core gameplay is driv
 
 ```bash
 npm install
+npm test
 node index.js
 ```
 
-Configure the Discord token and MongoDB connection in `.env` using the variables expected by the project.
+Set `TOKEN`, `CLIENT_ID`, and `MONGODB_URI` in the process environment before starting the bot. Startup stops if any value is missing or MongoDB cannot connect.
 
 ## Project structure
 
