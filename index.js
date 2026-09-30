@@ -44,10 +44,6 @@ process.on("uncaughtException",  e => console.error("Uncaught exception:", e));
 // deliver commands until this startup sequence completes.
 client.once("ready", async () => {
   try {
-    for (const guild of client.guilds.cache.values()) {
-      const sc = await database.loadDuelChannel(guild.id);
-      if (sc) state.duelChannels.set(guild.id, sc);
-    }
     client.user.setPresence({ activities:[{name:"LOZ RPG | /help", type:2}], status:"dnd" });
     console.log(`Bot ready as ${client.user.tag} with ${state.userSpecies.size} users.`);
   } catch (error) {
@@ -165,6 +161,7 @@ async function start() {
     state.fightStats, state.dailyClaims, state.botStats,
   );
   await database.loadAllQuestProgress(state.questProgress, state.userSpecies);
+  await database.loadAllDuelChannels(state.duelChannels);
 
   const rest = new REST({ version:"10" }).setToken(TOKEN);
   await rest.put(Routes.applicationCommands(CLIENT_ID), { body:commands });
