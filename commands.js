@@ -103,7 +103,7 @@ async function handleCommand(interaction) {
     if (!spName) {
       const lines=speciesRollTable.map((entry,index) => {
         const name=entry.isDragon?"Dragon (random subtype)":entry.name;
-        const percent=entry.probabilityPercent.toFixed(6);
+        const percent=entry.displayProbabilityPercent.toFixed(6);
         return `**${String(index+1).padStart(2,"0")}. ${name}** — ${percent}%`;
       });
       lines.push("", "Reaper — quest unlock only", "Archdemon — special event only", "Mechangel — awakening only");
@@ -613,14 +613,17 @@ async function handleButton(interaction) {
       return interaction.editReply({embeds:[new EmbedBuilder().setColor(0x808080).setDescription("Reroll cancelled. Your current species is unchanged.")],components:[]});
     }
     const userData={...(_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:1,requestsEnabled:true,lastSwitch:0})};
-    if ((userData.rolls||0)<1) return interaction.editReply({embeds:[new EmbedBuilder().setColor(0xff0000).setDescription("No rolls left. Use `/daily` for a free roll.")],components:[]});
+    if ((userData.rolls||0)<1) {
+      _state.activeRolls.delete(user.id);
+      return interaction.editReply({embeds:[new EmbedBuilder().setColor(0xff0000).setDescription("No rolls left. Use `/daily` for a free roll.")],components:[]});
+    }
 
     // Roll the species BEFORE any async work so result is instant
     const rollResult=getRandomSpecies();
     const newSpecies=rollResult.isDragon?getDragonSubtype():rollResult;
     userData.species=newSpecies; userData.originalSpecies=newSpecies; userData.rolls=(userData.rolls||0)-1;
     const rollEntry=speciesRollTable.find(entry => entry.name===newSpecies.name || (entry.isDragon&&newSpecies.name.endsWith(" Dragon")));
-    const chance=rollEntry?rollEntry.probabilityPercent.toFixed(6)+"%":"Special unlock";
+    const chance=rollEntry?rollEntry.displayProbabilityPercent.toFixed(6)+"%":"Special unlock";
     const resultEmbed=new EmbedBuilder()
       .setColor(newSpecies.color||0x808080)
       .setTitle(newSpecies.name)
