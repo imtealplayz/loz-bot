@@ -14,6 +14,7 @@ const ownerId     = "926063716057894953";
 const secondGodId = "1445387368830992455";
 const TOKEN       = process.env.TOKEN;
 const CLIENT_ID   = process.env.CLIENT_ID;
+const MONGODB_URI = process.env.MONGODB_URI;
 const prefix      = "'";
 
 // Attach owner IDs to state so helpers/commands can read them
@@ -39,25 +40,22 @@ setClient(client);
 process.on("unhandledRejection", e => console.error("Unhandled rejection:", e));
 process.on("uncaughtException",  e => console.error("Uncaught exception:", e));
 
-// ==================== READY EVENT ====================
+// MongoDB and all persistent player data are loaded before login. Discord cannot
+// deliver commands until this startup sequence completes.
 client.once("ready", async () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-
-  const success = await database.loadAllData(
-    state.userSpecies, state.leaderboard, state.fightLeaderboard,
-    state.fightStats, state.dailyClaims, state.botStats,
-  );
-
-  for (const guild of client.guilds.cache.values()) {
-    const sc = await database.loadDuelChannel(guild.id);
-    if (sc) { state.duelChannels.set(guild.id, sc); console.log(`📋 Loaded duel channel for ${guild.name}`); }
+  try {
+    for (const guild of client.guilds.cache.values()) {
+      const sc = await database.loadDuelChannel(guild.id);
+      if (sc) state.duelChannels.set(guild.id, sc);
+    }
+    client.user.setPresence({ activities:[{name:"LOZ RPG | /help", type:2}], status:"dnd" });
+    console.log(`Bot ready as ${client.user.tag} with ${state.userSpecies.size} users.`);
+  } catch (error) {
+    console.error("Discord startup initialization failed:", error);
+    client.destroy();
+    await database.disconnect().catch(() => {});
+    process.exitCode = 1;
   }
-
-  await database.loadAllQuestProgress(state.questProgress, state.userSpecies);
-
-  console.log(success ? "✅ Database loaded" : "⚠️ Database loaded with issues");
-  client.user.setPresence({ activities:[{name:"loz-bot | /help", type:2}], status:"dnd" });
-  console.log(`🎉 Bot ready with ${state.userSpecies.size} users!`);
 });
 
 // ==================== MESSAGE CREATE (prefix commands) ====================
@@ -108,8 +106,8 @@ Users can use LOZ commands here again.`);
       }
       await message.channel.send("🏆 **GOD WINS BY DIVINE INTERVENTION!**");
       const { updateFightStats } = require("./helpers.js");
-      updateFightStats(message.author.id, true, opponentId, { opponentName:activeFight.player1Id===opponentId?activeFight.player1.species.name:activeFight.player2.species.name, hpLeft:999, special:"💀 disintegration" });
-      updateFightStats(opponentId, false, message.author.id, { opponentName:activeFight.player1Id===message.author.id?activeFight.player1.species.name:activeFight.player2.species.name, hpLeft:0, special:"💀 disintegrated" });
+      await updateFightStats(message.author.id, true, opponentId, { opponentName:activeFight.player1Id===opponentId?activeFight.player1.species.name:activeFight.player2.species.name, hpLeft:999, special:"💀 disintegration" });
+      await updateFightStats(opponentId, false, message.author.id, { opponentName:activeFight.player1Id===message.author.id?activeFight.player1.species.name:activeFight.player2.species.name, hpLeft:0, special:"💀 disintegrated" });
       state.fightCooldowns.set(message.author.id, Date.now()+60000);
       state.fightCooldowns.set(opponentId, Date.now()+60000);
       const fightMsg = state.fightMessages.get(fightId);
@@ -154,15 +152,28 @@ client.on("guildMemberAdd", async (member) => {
   } catch(e) { console.error("guildMemberAdd error:", e.message); }
 });
 
-// ==================== REGISTER SLASH COMMANDS ====================
-const rest = new REST({ version:"10" }).setToken(TOKEN);
-(async () => {
-  try {
-    console.log("🔄 Registering slash commands...");
-    await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-    console.log("✅ Commands registered!");
-  } catch(e) { console.error("Command registration error:", e); }
-})();
+// ==================== STARTUP ====================
+async function start() {
+  const missing = [["TOKEN",TOKEN],["CLIENT_ID",CLIENT_ID],["MONGODB_URI",MONGODB_URI]]
+    .filter(([,value]) => !value)
+    .map(([name]) => name);
+  if (missing.length) throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
 
-// ==================== LOGIN ====================
-client.login(TOKEN);
+  await database.connect(MONGODB_URI);
+  await database.loadAllData(
+    state.userSpecies, state.leaderboard, state.fightLeaderboard,
+    state.fightStats, state.dailyClaims, state.botStats,
+  );
+  await database.loadAllQuestProgress(state.questProgress, state.userSpecies);
+
+  const rest = new REST({ version:"10" }).setToken(TOKEN);
+  await rest.put(Routes.applicationCommands(CLIENT_ID), { body:commands });
+  await client.login(TOKEN);
+}
+
+start().catch(async error => {
+  console.error("LOZ startup failed:", error);
+  client.destroy();
+  await database.disconnect().catch(() => {});
+  process.exitCode = 1;
+});
