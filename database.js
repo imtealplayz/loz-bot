@@ -1,18 +1,34 @@
 const mongoose = require("mongoose");
 
 // ==================== CONNECT ====================
-let connected = false;
-async function connect() {
-  if (connected) return;
-  try {
-    await mongoose.connect(process.env.MONGODB_URI);
-    connected = true;
-    console.log("✅ MongoDB connected!");
-  } catch (e) {
-    console.error("❌ MongoDB connection failed:", e.message);
+let connectionPromise = null;
+async function connect(uri = process.env.MONGODB_URI) {
+  if (!uri) throw new Error("MONGODB_URI is required.");
+  if (mongoose.connection.readyState === 1) return mongoose.connection;
+  if (!connectionPromise) {
+    connectionPromise = mongoose.connect(uri)
+      .then(() => {
+        console.log("MongoDB connected.");
+        return mongoose.connection;
+      })
+      .catch((error) => {
+        connectionPromise = null;
+        throw new Error(`MongoDB connection failed: ${error.message}`, { cause:error });
+      });
+  }
+  return connectionPromise;
+}
+
+function assertConnected() {
+  if (mongoose.connection.readyState !== 1) {
+    throw new Error("MongoDB is not connected. Call database.connect() before using persistence.");
   }
 }
-connect();
+
+async function disconnect() {
+  connectionPromise = null;
+  await mongoose.disconnect();
+}
 
 // ==================== SCHEMAS ====================
 const userSchema = new mongoose.Schema({
@@ -83,11 +99,8 @@ const FightLeaderboard = mongoose.model("FightLeaderboard", fightLeaderboardSche
 
 // ==================== HELPERS ====================
 async function upsert(Model, filter, data) {
-  try {
-    await Model.findOneAndUpdate(filter, { $set:data }, { upsert:true, new:true });
-  } catch(e) {
-    console.error(`❌ DB upsert error (${Model.modelName}):`, e.message);
-  }
+  assertConnected();
+  return Model.findOneAndUpdate(filter, { $set:data }, { upsert:true, new:true, runValidators:true });
 }
 
 // ==================== SAVE FUNCTIONS ====================
@@ -117,9 +130,44 @@ async function saveDailyClaim(userId, data) {
   await upsert(Daily, { userId }, { userId, ...data });
 }
 
+// Atomically claim a daily reward so concurrent requests cannot both succeed.
+async function claimDaily(userId, now) {
+  assertConnected();
+  const existing = await Daily.findOne({ userId });
+  if (!existing) {
+    try {
+      return await Daily.create({ userId, lastClaim:now, streak:1 });
+    } catch (error) {
+      if (error.code === 11000) return null;
+      throw error;
+    }
+  }
+  return Daily.findOneAndUpdate(
+    { userId, lastClaim:{ $lte:now - 86400000 } },
+    { $set:{ lastClaim:now }, $inc:{ streak:1 } },
+    { new:true, runValidators:true }
+  );
+}
+
+async function getDailyClaim(userId) {
+  assertConnected();
+  return Daily.findOne({ userId });
+}
+
+// Create a missing player record and add rolls in one atomic operation.
+async function addDailyRolls(userId, amount, defaults) {
+  assertConnected();
+  const { rolls:_rolls, userId:_userId, ...initialData } = defaults;
+  return User.findOneAndUpdate(
+    { userId },
+    { $inc:{ rolls:amount }, $setOnInsert:{ userId, ...initialData } },
+    { upsert:true, new:true, runValidators:true, setDefaultsOnInsert:true }
+  );
+}
+
 async function saveQuestProgress(userId, questName, data) {
   if (!data) {
-    await Quest.deleteOne({ userId, questName }).catch(()=>{});
+    await Quest.deleteOne({ userId, questName });
     return;
   }
   await upsert(Quest, { userId, questName }, { userId, questName, data });
@@ -131,6 +179,7 @@ async function saveDuelChannel(guildId, channelId) {
 
 // ==================== LOAD FUNCTIONS ====================
 async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStats, dailyClaims, botStats) {
+  assertConnected();
   try {
     console.log("📂 Loading data from MongoDB...");
 
@@ -183,12 +232,12 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
 
     return true;
   } catch(e) {
-    console.error("❌ loadAllData error:", e.message);
-    return false;
+    throw new Error(`Failed to load persistent game data: ${e.message}`, { cause:e });
   }
 }
 
 async function loadAllQuestProgress(questProgress, userSpecies) {
+  assertConnected();
   try {
     const quests = await Quest.find({});
     for (const q of quests) {
@@ -213,24 +262,20 @@ async function loadAllQuestProgress(questProgress, userSpecies) {
     }
     return true;
   } catch(e) {
-    console.error("❌ loadAllQuestProgress error:", e.message);
-    return false;
+    throw new Error(`Failed to load quest progress: ${e.message}`, { cause:e });
   }
 }
 
 async function loadDuelChannel(guildId) {
-  try {
-    const doc = await DuelChannel.findOne({ guildId });
-    return doc ? doc.channelId : null;
-  } catch(e) {
-    console.error("loadDuelChannel error:", e.message);
-    return null;
-  }
+  assertConnected();
+  const doc = await DuelChannel.findOne({ guildId });
+  return doc ? doc.channelId : null;
 }
 
 // ==================== UTILITY ====================
 // Used by /god debug-db to show collection counts
 async function listAllKeys() {
+  assertConnected();
   try {
     return {
       users:            await User.countDocuments(),
@@ -243,8 +288,7 @@ async function listAllKeys() {
       duelChannels:     await DuelChannel.countDocuments(),
     };
   } catch(e) {
-    console.error("listAllKeys error:", e.message);
-    return {};
+    throw e;
   }
 }
 
@@ -263,7 +307,7 @@ async function deleteUser(userId) {
 module.exports = {
   saveUserSpecies, saveLeaderboard, saveFightLeaderboard,
   saveFightStats, saveBotStats, saveDailyClaim,
-  saveQuestProgress, saveDuelChannel,
-  loadAllData, loadAllQuestProgress, loadDuelChannel,
+  saveQuestProgress, saveDuelChannel, claimDaily, getDailyClaim, addDailyRolls,
+  connect, disconnect, loadAllData, loadAllQuestProgress, loadDuelChannel,
   listAllKeys, deleteUser,
 };
