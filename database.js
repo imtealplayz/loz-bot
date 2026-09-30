@@ -161,11 +161,12 @@ async function addDailyRolls(userId, amount, defaults) {
   return User.findOneAndUpdate(
     { userId },
     { $inc:{ rolls:amount }, $setOnInsert:{ userId, ...initialData } },
-    { upsert:true, new:true, runValidators:true, setDefaultsOnInsert:true }
+    { upsert:true, new:true, runValidators:true }
   );
 }
 
 async function saveQuestProgress(userId, questName, data) {
+  assertConnected();
   if (!data) {
     await Quest.deleteOne({ userId, questName });
     return;
@@ -293,6 +294,7 @@ async function listAllKeys() {
 }
 
 async function deleteUser(userId) {
+  assertConnected();
   await User.deleteOne({ userId });
   await Leaderboard.deleteOne({ userId });
   await FightLeaderboard.deleteOne({ userId });
