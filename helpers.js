@@ -1,6 +1,6 @@
 const { EmbedBuilder } = require("discord.js");
 const {
-  speciesList, dragonSpecies, botSpecies,
+  speciesList, dragonSpecies, selectSpeciesRoll, botSpecies,
   godSpecies, humanSpecies, reaperSpecies, archdemonSpecies,
   awakeningRequirements,
 } = require("./constants.js");
@@ -15,23 +15,26 @@ function hpBar(current, max) {
   const pct = Math.max(0, Math.min(1, current / max));
   const filled = Math.round(pct * 10);
   const bar = "█".repeat(filled) + "░".repeat(10 - filled);
-  const color = pct > 0.5 ? "🟢" : pct > 0.25 ? "🟡" : "🔴";
-  return `${color} ${bar} ${Math.max(0, current)}/${max}`;
+  return `${bar} ${Math.max(0, current)}/${max} HP`;
 }
 
 function createErrorEmbed(msg) {
-  return new EmbedBuilder().setColor(0xff0000).setDescription(`❌ ${msg}`);
+  return new EmbedBuilder().setColor(0xff0000).setDescription(msg);
 }
 
 function createSuccessEmbed(msg) {
-  return new EmbedBuilder().setColor(0x00ff00).setDescription(`✅ ${msg}`);
+  return new EmbedBuilder().setColor(0x00ff00).setDescription(msg);
 }
 
 async function safeReply(interaction, content) {
   try {
-    if (!interaction.replied && !interaction.deferred) return await interaction.reply(content);
-    else return await interaction.followUp(content);
-  } catch (e) { console.error("safeReply error:", e); }
+    if (interaction.deferred) return await interaction.editReply(content);
+    if (interaction.replied) return await interaction.followUp(content);
+    return await interaction.reply(content);
+  } catch (e) {
+    console.error("safeReply error:", e);
+    throw e;
+  }
 }
 
 // ==================== SPECIES LOOKUP ====================
@@ -57,13 +60,8 @@ function getSpeciesByName(name) {
   return null;
 }
 
-function getRandomSpecies() {
-  if (Math.random() * 100 < 2) return { isDragon: true };
-  const rollable = speciesList.filter(s => s.rarity && s.rarity > 0);
-  const total = rollable.reduce((s, x) => s + x.rarity, 0);
-  let r = Math.random() * total;
-  for (const sp of rollable) { if (r < sp.rarity) return sp; r -= sp.rarity; }
-  return speciesList.find(s => s.name === "Orc");
+function getRandomSpecies(random = Math.random) {
+  return selectSpeciesRoll(random);
 }
 
 function getDragonSubtype() {
@@ -109,14 +107,14 @@ function canSendRequest(sender, target, isGod = false) {
 }
 
 // ==================== STATS ====================
-function updateLeaderboard(id, pts) {
+async function updateLeaderboard(id, pts) {
   const s = _state.leaderboard.get(id) || { wins:0 };
   s.wins += pts;
   _state.leaderboard.set(id, s);
-  database.saveLeaderboard(id, s);
+  await database.saveLeaderboard(id, s);
 }
 
-function updateFightStats(id, won, oppId, data={}) {
+async function updateFightStats(id, won, oppId, data={}) {
   const s = _state.fightStats.get(id) || { wins:0, losses:0, streak:0, history:[] };
   if (won) { s.wins++; s.streak = (s.streak||0)+1; } else { s.losses++; s.streak=0; }
   s.history = [
@@ -124,28 +122,28 @@ function updateFightStats(id, won, oppId, data={}) {
     ...(s.history||[])
   ].slice(0,20);
   _state.fightStats.set(id, s);
-  database.saveFightStats(id, s);
+  await database.saveFightStats(id, s);
   if (won) {
     // FIX: update in-memory fightLeaderboard so /fights reflects wins immediately
     const lb = _state.fightLeaderboard.get(id) || { wins:0 };
     lb.wins = s.wins;
     _state.fightLeaderboard.set(id, lb);
-    database.saveFightLeaderboard(id, { wins: s.wins });
+    await database.saveFightLeaderboard(id, { wins: s.wins });
   }
 }
 
-function updateBotStats(id, diff, won) {
+async function updateBotStats(id, diff, won) {
   const s = _state.botStats.get(id) || { easy:{wins:0,losses:0}, medium:{wins:0,losses:0}, hard:{wins:0,losses:0}, impossible:{wins:0,losses:0} };
   if (!s[diff]) s[diff] = { wins:0, losses:0 };
-  if (won) { s[diff].wins++; updateReaperQuest(id, diff); } else s[diff].losses++;
+  if (won) { s[diff].wins++; await updateReaperQuest(id, diff); } else s[diff].losses++;
   _state.botStats.set(id, s);
-  database.saveBotStats(id, s);
+  await database.saveBotStats(id, s);
 }
 
 // ==================== QUEST ====================
 const REAPER_EXPIRY = 1774355400000; // 24 March 2026 6PM IST
 
-function updateReaperQuest(id, type) {
+async function updateReaperQuest(id, type) {
   // Stop counting progress after quest deadline
   if (Date.now() >= REAPER_EXPIRY) return;
   const uq = _state.questProgress.get(id) || {};
@@ -160,7 +158,7 @@ function updateReaperQuest(id, type) {
     q.completed = true;
   uq.reaper = q;
   _state.questProgress.set(id, uq);
-  database.saveQuestProgress(id, "reaper", q);
+  await database.saveQuestProgress(id, "reaper", q);
 }
 
 // ==================== AWAKENING ====================
