@@ -3,7 +3,7 @@ const {
   SlashCommandBuilder, REST, Routes, PermissionsBitField,
 } = require("discord.js");
 const {
-  patchNotes, humanSpecies, reaperSpecies, archdemonSpecies,
+  patchNotes, humanSpecies, reaperSpecies, archdemonSpecies, speciesRollTable, dragonSpecies,
   botSpecies, botSpeciesByDifficulty, botPersonalities,
   typeAdvantages, disintegrationMessages,
   getPassiveDescription, getActiveDescription,
@@ -31,15 +31,15 @@ async function handleCommand(interaction) {
 
   // ── HELP ──────────────────────────────────────────────────────
   if (commandName === "help") {
-    const embed = new EmbedBuilder().setColor(0x0891b2).setTitle("📖 LOZ Commands").setDescription("Complete list of commands")
+    const embed = new EmbedBuilder().setColor(0x0891b2).setTitle("LOZ Commands").setDescription("Complete list of commands")
       .addFields(
-        {name:"🎲 Species",  value:"`/species-roll` `/species` `/switch` `/daily`",inline:false},
-        {name:"⚔️ Combat",   value:"`/fight @user` `/fightbot`",inline:false},
-        {name:"📊 Stats",    value:"`/fightstats` `/botstats` `/history` `/lb` `/fights`",inline:false},
-        {name:"🌑 Quests",   value:"`/quest view` `/quest claim` `/awakening`",inline:false},
-        {name:"📋 Info",     value:"`/patchnotes` `/guide` `/profile`",inline:false},
+        {name:"Species",  value:"`/species-roll` `/species` `/switch` `/daily`",inline:false},
+        {name:"Combat",   value:"`/fight @user` `/fightbot`",inline:false},
+        {name:"Stats",    value:"`/fightstats` `/botstats` `/history` `/lb` `/fights`",inline:false},
+        {name:"Quests",   value:"`/quest view` `/quest claim` `/awakening`",inline:false},
+        {name:"Info",     value:"`/patchnotes` `/guide` `/profile`",inline:false},
       ).setFooter({text:"Use /guide for a full tutorial"})
-        .addFields({name:"💬 Need Help?",value:"Want any help or have any issues? Join the [Support Server](https://discord.gg/TKBYpjqnPC)!",inline:false});
+        .addFields({name:"Need Help?",value:"Want any help or have any issues? Join the [Support Server](https://discord.gg/TKBYpjqnPC)!",inline:false});
     return safeReply(interaction,{embeds:[embed]});
   }
 
@@ -51,36 +51,38 @@ async function handleCommand(interaction) {
       {title:"Combat",content:"Fights are turn-based:\n• ⚔️ **ATTACK** — Deal damage\n• 💚 **HEAL** — Recover HP (3-round cooldown)\n• ✨ **ULT** — Species unique ability\n• 🏃 **FORFEIT** — Give up\n\nWin fights for leaderboard points and rolls!"},
       {title:"Quests & Awakenings",content:"• **Reaper Quest** — Defeat bots and players to unlock Reaper\n• **Cyborg Awakening** — 25 wins, 500 damage, 15 ULTs → Mechangel!\n\nUse `/quest view` to track progress."},
     ];
-    const embed=new EmbedBuilder().setColor(0x0891b2).setTitle(`📖 New Player Guide (1/${steps.length})`).setDescription(`**${steps[0].title}**\n\n${steps[0].content}`);
+    const embed=new EmbedBuilder().setColor(0x0891b2).setTitle(`New Player Guide (1/${steps.length})`).setDescription(`**${steps[0].title}**\n\n${steps[0].content}`);
     const row=new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("guide_next_0").setLabel("NEXT →").setStyle(ButtonStyle.Primary));
     return safeReply(interaction,{embeds:[embed],components:[row],flags:64});
   }
 
   // ── DAILY ─────────────────────────────────────────────────────
   if (commandName === "daily") {
-    const now=Date.now(), ud=_state.dailyClaims.get(user.id);
-    if (ud&&now-ud.lastClaim<86400000) {
-      const tl=86400000-(now-ud.lastClaim), h=Math.floor(tl/3600000), m=Math.floor((tl%3600000)/60000);
-      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xff8c00).setTitle("⏰ Daily Already Claimed").setDescription(`Come back in **${h}h ${m}m**!\n🔥 Streak: **${ud.streak||0} days**`)],flags:64});
+    await interaction.deferReply();
+    const now=Date.now();
+    const claim=await database.claimDaily(user.id,now);
+    if (!claim) {
+      const ud=await database.getDailyClaim(user.id);
+      if (ud) _state.dailyClaims.set(user.id,{lastClaim:ud.lastClaim,streak:ud.streak});
+      const lastClaim=ud?.lastClaim||now;
+      const tl=Math.max(0,86400000-(now-lastClaim)), h=Math.floor(tl/3600000), m=Math.floor((tl%3600000)/60000);
+      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xff8c00).setTitle("Daily already claimed").setDescription(`Come back in **${h}h ${m}m**. Streak: **${ud?.streak||0} days**.`)]});
     }
-    const existingUser = _state.userSpecies.get(user.id);
-    let userData = existingUser || {species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0};
-    const streak=ud?(ud.streak||0)+1:1;
-    _state.dailyClaims.set(user.id,{lastClaim:now,streak});
-    database.saveDailyClaim(user.id,{lastClaim:now,streak});
-    userData.rolls=(userData.rolls||0)+1;
-    if (streak===7) userData.rolls+=1;
-    // Only save if user already had data OR species map is populated (bot fully loaded)
-    if (existingUser || _state.userSpecies.size > 0) {
-      _state.userSpecies.set(user.id,userData); database.saveUserSpecies(user.id,userData);
-    }
-    return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x00ff00).setTitle("📅 Daily Bonus Claimed!").setDescription(`+1 species roll! 🎲\nYou now have **${userData.rolls}** rolls.\n\n🔥 **${streak} Day Streak!**${streak===7?"\n🎉 **WEEK BONUS! +1 extra roll!**":""}`)]} );
-  }
 
+    const existingUser=_state.userSpecies.get(user.id);
+    const defaults=existingUser||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0,awakening:{},badges:[]};
+    const rollAmount=claim.streak===7?2:1;
+    const savedUser=await database.addDailyRolls(user.id,rollAmount,defaults);
+    const userData=savedUser.toObject();
+    delete userData._id; delete userData.__v; delete userData.userId;
+    _state.userSpecies.set(user.id,userData);
+    _state.dailyClaims.set(user.id,{lastClaim:claim.lastClaim,streak:claim.streak});
+    return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x00a884).setTitle("Daily reward claimed").setDescription(`+1 species roll. You now have **${userData.rolls}** rolls.\n\nStreak: **${claim.streak} days**${claim.streak===7?" — week bonus: +1 roll":""}.`)]});
+  }
   // ── PATCHNOTES ────────────────────────────────────────────────
   if (commandName === "patchnotes") {
     const latest=patchNotes[0];
-    return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x0891b2).setTitle(`📋 Patch Notes — v${latest.version}`).setDescription(`**Date:** ${latest.date}\n\n${latest.changes.map(c=>`• ${c}`).join("\n")}`).setFooter({text:`v${latest.version} is the latest`})]});
+    return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x0891b2).setTitle(`Patch Notes — v${latest.version}`).setDescription(`**Date:** ${latest.date}\n\n${latest.changes.map(c=>`• ${c}`).join("\n")}`).setFooter({text:`v${latest.version} is the latest`})]});
   }
 
 
@@ -88,7 +90,7 @@ async function handleCommand(interaction) {
   if (commandName === "patch") {
     const latest = patchNotes[0];
     return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x00ff00)
-      .setTitle("📝 Latest Patch Notes")
+      .setTitle("Latest Patch Notes")
       .setDescription(`**Version ${latest.version} - ${latest.date}**\n\n${latest.changes.map(c=>`• ${c}`).join("\n")}`)
       .setFooter({text:"Use /patch to see latest updates"})]});
   }
@@ -97,43 +99,19 @@ async function handleCommand(interaction) {
   if (commandName === "species") {
     const spName = options.getString("species");
 
-    // No argument — show full ranked species list
+    // No argument — show exact player roll odds.
     if (!spName) {
-      const { speciesList, dragonSpecies } = require("./constants.js");
-      const ranked = [
-        {name:"Demi God",emoji:"⚡",chance:"0.5%",tier:"Epic"},
-        {name:"Demon Lord",emoji:"🔥",chance:"1.0%",tier:"Epic"},
-        {name:"Demon King",emoji:"👑😈",chance:"1.5%",tier:"Epic"},
-        {name:"Dragon",emoji:"🐉",chance:"2.0%",tier:"Epic",note:"Random element"},
-        {name:"Chimera",emoji:"🎭",chance:"2.2%",tier:"Rare"},
-        {name:"Angel",emoji:"👼",chance:"3.0%",tier:"Rare"},
-        {name:"Demon",emoji:"😈",chance:"4.0%",tier:"Rare"},
-        {name:"Oni",emoji:"👿",chance:"5.0%",tier:"Uncommon"},
-        {name:"Orc Lord",emoji:"👑",chance:"6.0%",tier:"Uncommon"},
-        {name:"Kijin",emoji:"🎭",chance:"7.0%",tier:"Uncommon"},
-        {name:"Cyborg",emoji:"🤖",chance:"7.0%",tier:"Uncommon"},
-        {name:"High Orc",emoji:"⚔️",chance:"9.0%",tier:"Uncommon"},
-        {name:"Ogre",emoji:"👹",chance:"12.0%",tier:"Common"},
-        {name:"Goblin",emoji:"👺",chance:"18.0%",tier:"Common"},
-        {name:"Orc",emoji:"🟢",chance:"22.0%",tier:"Common"},
-        {name:"Half-Blood",emoji:"🩸",chance:"26.0%",tier:"Common"},
-      ];
-      const tierColors = {Epic:"🟣",Rare:"🔵",Uncommon:"🟡",Common:"⚪"};
-      let desc = "";
-      ranked.forEach((s,i) => {
-        const note = s.note ? ` *(${s.note})*` : "";
-        desc += `\`#${String(i+1).padStart(2,"0")}\` ${s.emoji} **${s.name}** — ${s.chance}${note}
-`;
+      const lines=speciesRollTable.map((entry,index) => {
+        const name=entry.isDragon?"Dragon (random subtype)":entry.name;
+        const percent=entry.probabilityPercent.toFixed(6);
+        return `**${String(index+1).padStart(2,"0")}. ${name}** — ${percent}%`;
       });
-      desc += `
-🌑 **Reaper** — Quest unlock only
-👿 **Archdemon** — Special event only
-⚡🤖 **Mechangel** — Cyborg awakening only`;
-      const embed = new EmbedBuilder()
+      lines.push("", "Reaper — quest unlock only", "Archdemon — special event only", "Mechangel — awakening only");
+      const embed=new EmbedBuilder()
         .setColor(0x0891b2)
-        .setTitle("🎲 All Species — Ranked by Rarity")
-        .setDescription(desc)
-        .setFooter({text:"Use /species species:<name> for detailed stats on any species"});
+        .setTitle("Species roll odds")
+        .setDescription(lines.join("\n"))
+        .setFooter({text:"Displayed odds come from the same configuration used by the roll."});
       return safeReply(interaction,{embeds:[embed]});
     }
 
@@ -145,11 +123,11 @@ async function handleCommand(interaction) {
       .setColor(sp.color||0x808080)
       .setTitle(`${sp.emoji} ${sp.name}`)
       .addFields(
-        {name:"💪 Stats",value:`HP: **${sp.hp}**\nATK: **${sp.atkMin}–${sp.atkMax}**\nHEAL: **${sp.healMin}–${sp.healMax}**\nULT CD: **${sp.ultCooldown||"—"}**`,inline:true},
-        {name:"🎲 Roll Chance",value:sp.chance||"Special unlock",inline:true},
-        {name:"🟢 Passive",value:getPassiveDescription(sp.name),inline:false},
-        {name:"✨ Active ULT",value:getActiveDescription(sp.name),inline:false},
-        {name:"⚖️ Type Matchup",value:adv?(adv.strongAgainst?`✅ Strong vs **${adv.strongAgainst}**\n`:"")+(adv.weakAgainst?`❌ Weak vs **${adv.weakAgainst}**`:"No weaknesses"):"No type advantages",inline:false},
+        {name:"Stats",value:`HP: **${sp.hp}**\nATK: **${sp.atkMin}–${sp.atkMax}**\nHEAL: **${sp.healMin}–${sp.healMax}**\nULT CD: **${sp.ultCooldown||"—"}**`,inline:true},
+        {name:"Roll Chance",value:(speciesRollTable.find(entry => entry.name===sp.name)?.probabilityPercent.toFixed(6)+"%")||"Special unlock",inline:true},
+        {name:"Passive",value:getPassiveDescription(sp.name),inline:false},
+        {name:"Active ULT",value:getActiveDescription(sp.name),inline:false},
+        {name:"Type Matchup",value:adv?(adv.strongAgainst?`✅ Strong vs **${adv.strongAgainst}**\n`:"")+(adv.weakAgainst?`❌ Weak vs **${adv.weakAgainst}**`:"No weaknesses"):"No type advantages",inline:false},
       )]});
   }
 
@@ -159,41 +137,41 @@ async function handleCommand(interaction) {
     const targetMember=await guild.members.fetch(target.id).catch(()=>null);
     if (target.bot) {
       if (target.id===_client.user.id) {
-        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(botSpecies.kitsune.color).setTitle(`👤 ${target.displayName}'s Profile`).setThumbnail(target.displayAvatarURL())
+        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(botSpecies.kitsune.color).setTitle(`${target.displayName}'s Profile`).setThumbnail(target.displayAvatarURL())
           .addFields(
-            {name:"🧬 Species",value:"🦊 **Kitsune**",inline:true},{name:"❤️ HP",value:"1,000,000",inline:true},{name:"⚔️ Attack",value:"500-1,000",inline:true},
-            {name:"💚 Heal",value:"200,000-500,000",inline:true},{name:"🎲 Rolls",value:"∞",inline:true},
-            {name:"🏅 Badges",value:"└ 💪 Omnipotent\n└ 🐛 Bug Creator",inline:false},
-            {name:"✨ Passive",value:botSpecies.kitsune.passive,inline:false},{name:"⚡ Active",value:botSpecies.kitsune.active,inline:false},
-            {name:"📊 Total Users",value:`${_state.userSpecies.size}`,inline:true},
-            {name:"⏱️ Uptime",value:`<t:${Math.floor(Date.now()/1000-process.uptime())}:R>`,inline:true},
+            {name:"Species",value:"🦊 **Kitsune**",inline:true},{name:"HP",value:"1,000,000",inline:true},{name:"Attack",value:"500-1,000",inline:true},
+            {name:"Heal",value:"200,000-500,000",inline:true},{name:"Rolls",value:"∞",inline:true},
+            {name:"Badges",value:"• 💪 Omnipotent\n• 🐛 Bug Creator",inline:false},
+            {name:"Passive",value:botSpecies.kitsune.passive,inline:false},{name:"Active",value:botSpecies.kitsune.active,inline:false},
+            {name:"Total Users",value:`${_state.userSpecies.size}`,inline:true},
+            {name:"Uptime",value:`<t:${Math.floor(Date.now()/1000-process.uptime())}:R>`,inline:true},
           ).setFooter({text:"Made by God"})]});
       }
-      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(botSpecies.bot.color).setTitle(`👤 ${target.displayName}'s Profile`).setThumbnail(target.displayAvatarURL())
-        .addFields({name:"🧬 Species",value:"🤖 **Bot**",inline:true},{name:"❤️ HP",value:`${botSpecies.bot.hp}`,inline:true},{name:"⚔️ Attack",value:`${botSpecies.bot.atkMin}-${botSpecies.bot.atkMax}`,inline:true},{name:"✨ Passive",value:botSpecies.bot.passive,inline:false},{name:"⚡ Active",value:botSpecies.bot.active,inline:false})]});
+      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(botSpecies.bot.color).setTitle(`${target.displayName}'s Profile`).setThumbnail(target.displayAvatarURL())
+        .addFields({name:"Species",value:"🤖 **Bot**",inline:true},{name:"HP",value:`${botSpecies.bot.hp}`,inline:true},{name:"Attack",value:`${botSpecies.bot.atkMin}-${botSpecies.bot.atkMax}`,inline:true},{name:"Passive",value:botSpecies.bot.passive,inline:false},{name:"Active",value:botSpecies.bot.active,inline:false})]});
     }
     const td=_state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,badges:[]};
     const fd=_state.fightStats.get(target.id)||{wins:0,losses:0,streak:0};
     const sp=td.species||humanSpecies;
 
     const wr=fd.wins+fd.losses>0?((fd.wins/(fd.wins+fd.losses))*100).toFixed(1):"0.0";
-    const embed=new EmbedBuilder().setColor(sp.color||0x9b59b6).setTitle(`👤 ${target.displayName}'s Profile`).setThumbnail(target.displayAvatarURL())
+    const embed=new EmbedBuilder().setColor(sp.color||0x9b59b6).setTitle(`${target.displayName}'s Profile`).setThumbnail(target.displayAvatarURL())
       .addFields(
-        {name:"🧬 Species",value:`${sp.emoji} **${sp.name}**`,inline:true},
-        {name:"🎲 Rolls",value:`${td.rolls||0}`,inline:true},
-        {name:"⚔️ Fight Record",value:`${fd.wins}W - ${fd.losses}L (${wr}%)`,inline:true},
-        {name:"🔥 Streak",value:`${fd.streak||0} wins`,inline:true},
-        {name:"🔘 Requests",value:td.requestsEnabled?"✅ Enabled":"❌ Disabled",inline:true},
+        {name:"Species",value:`${sp.emoji} **${sp.name}**`,inline:true},
+        {name:"Rolls",value:`${td.rolls||0}`,inline:true},
+        {name:"Fight Record",value:`${fd.wins}W - ${fd.losses}L (${wr}%)`,inline:true},
+        {name:"Streak",value:`${fd.streak||0} wins`,inline:true},
+        {name:"Requests",value:td.requestsEnabled?"✅ Enabled":"❌ Disabled",inline:true},
       );
     const badges=[];
-    if (td.badges?.includes("OG 50")) badges.push("└ 🎉 OG 50");
-    if (target.id==="926063716057894953") { badges.push("└ 👑 Founder"); badges.push("└ ✨ The Creator"); }
-    if (target.id==="1376978115171192922") { badges.push("└ 🤝 Co-Founder"); badges.push("└ 🧪 OG Tester"); badges.push("└ ⭐ Shion's Favourite"); }
-    if (badges.length) embed.addFields({name:"🏅 Badges",value:badges.join("\n"),inline:false});
+    if (td.badges?.includes("OG 50")) badges.push("• 🎉 OG 50");
+    if (target.id==="926063716057894953") { badges.push("• 👑 Founder"); badges.push("• ✨ The Creator"); }
+    if (target.id==="1376978115171192922") { badges.push("• 🤝 Co-Founder"); badges.push("• 🧪 OG Tester"); badges.push("• ⭐ Shion's Favourite"); }
+    if (badges.length) embed.addFields({name:"Badges",value:badges.join("\n"),inline:false});
     embed.addFields(
-      {name:"🟢 Passive",value:getPassiveDescription(sp.name),inline:false},
-      {name:"✨ Active ULT",value:getActiveDescription(sp.name),inline:false},
-      {name:"📅 Joined",value:`<t:${Math.floor((targetMember?.joinedTimestamp||Date.now())/1000)}:R>`,inline:true},
+      {name:"Passive",value:getPassiveDescription(sp.name),inline:false},
+      {name:"Active ULT",value:getActiveDescription(sp.name),inline:false},
+      {name:"Joined",value:`<t:${Math.floor((targetMember?.joinedTimestamp||Date.now())/1000)}:R>`,inline:true},
     ).setFooter({text:"Use /species-roll to reroll | /daily for free rolls"});
     return safeReply(interaction,{embeds:[embed]});
   }
@@ -204,22 +182,19 @@ async function handleCommand(interaction) {
     if (isPlayerInFight(user.id)||isPlayerInBotFight(user.id)) return safeReply(interaction,{embeds:[createErrorEmbed("You can't reroll during an active fight!")],flags:64});
     // New users start with 1 roll
     let userData=_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:1,requestsEnabled:true,lastSwitch:0,badges:[]};
-    if ((userData.rolls||0)<1) return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xff0000).setTitle("❌ No Rolls Left").setDescription("Use `/daily` for a free roll, or win fights for a 30% chance!")],flags:64});
+    if ((userData.rolls||0)<1) return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xff0000).setTitle("No Rolls Left").setDescription("Use `/daily` for a free roll, or win fights for a 30% chance!")],flags:64});
 
-    // Send public embed and store message ID for editing later
-    const currentSp = userData.species || humanSpecies;
-    const embed = new EmbedBuilder()
-      .setColor(currentSp.color || 0x808080)
-      .setTitle("🎲 Species Roll")
-      .setDescription(`**Current species:** ${currentSp.emoji} **${currentSp.name}**\n\n🎲 Rolls available: **${userData.rolls}**\n\nPress **REROLL** to roll for a new species, or **CANCEL** to keep your current one.`);
-    const pubMsg = await channel.send({embeds:[embed]});
-    // Store message ref so button handler can edit it
-    _state.activeRolls.set(user.id, { channelId: channel.id, messageId: pubMsg.id, timestamp: Date.now() });
-    // Ephemeral buttons only
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`reroll_${user.id}`).setLabel("🔄 REROLL").setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId(`cancel_${user.id}`).setLabel("❌ CANCEL").setStyle(ButtonStyle.Danger));
-    return safeReply(interaction,{content:"Use the buttons below to reroll or cancel:",components:[row],flags:64});
+    const currentSp=userData.species||humanSpecies;
+    const embed=new EmbedBuilder()
+      .setColor(currentSp.color||0x808080)
+      .setTitle("Species roll")
+      .setDescription(`Current species: ${currentSp.emoji} **${currentSp.name}**\n\nRolls available: **${userData.rolls}**\nChoose reroll or cancel.`);
+    const row=new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`reroll_${user.id}`).setLabel("Reroll").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`cancel_${user.id}`).setLabel("Cancel").setStyle(ButtonStyle.Secondary));
+    const reply=await interaction.reply({embeds:[embed],components:[row],ephemeral:true,fetchReply:true});
+    _state.activeRolls.set(user.id,{channelId:channel.id,messageId:reply.id,timestamp:Date.now()});
+    return reply;
   }
 
   // ── AWAKENING ─────────────────────────────────────────────────
@@ -240,24 +215,24 @@ async function handleCommand(interaction) {
       const dPct=Math.min(Math.floor((prog.damageDealt/req.damageDealt)*100),100);
       const uPct=Math.min(Math.floor((prog.ultUses/req.ultUses)*100),100);
       if (prog.awakened) {
-        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x00ffff).setTitle("✨ AWAKENING ALTAR — TRANSCENDED")
+        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x00ffff).setTitle("AWAKENING ALTAR — TRANSCENDED")
           .setDescription("*You stand before the altar, your form already reborn.*\n\n**Current Form:** ⚡ Mechangel\n**Status:** ✅ Fully Awakened\n\n*The altar hums in recognition of its ascended champion.*")
           .setFooter({text:"You have reached your final form"})],flags:64});
       }
       const ready=prog.wins>=req.wins&&prog.damageDealt>=req.damageDealt&&prog.ultUses>=req.ultUses;
       if (ready) {
-        const embed=new EmbedBuilder().setColor(0x00ffff).setTitle("✨ AWAKENING ALTAR — READY")
-          .setDescription("*The altar pulses with blinding light. Your trials are complete.*\n\n**» ALL REQUIREMENTS MET «**\n├ ✅ Combat Trials: Complete\n├ ✅ Damage Output: Complete\n└ ✅ ULT Mastery: Complete\n\n**Upon awakening to ⚡ Mechangel:**\n├ +15 HP (140 total)\n├ +3-4 Attack (15-23)\n├ New Passive: Quantum Processing\n└ New ULT: System Restoration\n\n🎁 **Reward:** +5 Species Rolls");
-        const row=new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("awaken_cyborg").setLabel("✨ STEP INTO THE ALTAR").setStyle(ButtonStyle.Success));
+        const embed=new EmbedBuilder().setColor(0x00ffff).setTitle("AWAKENING ALTAR — READY")
+          .setDescription("*The altar pulses with blinding light. Your trials are complete.*\n\n**» ALL REQUIREMENTS MET «**\n• ✅ Combat Trials: Complete\n• ✅ Damage Output: Complete\n• ✅ ULT Mastery: Complete\n\n**Upon awakening to ⚡ Mechangel:**\n• +15 HP (140 total)\n• +3-4 Attack (15-23)\n• New Passive: Quantum Processing\n• New ULT: System Restoration\n\n🎁 **Reward:** +5 Species Rolls");
+        const row=new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("awaken_cyborg").setLabel("STEP INTO THE ALTAR").setStyle(ButtonStyle.Success));
         return safeReply(interaction,{embeds:[embed],components:[row],flags:64});
       }
-      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x00ffff).setTitle("✨ AWAKENING ALTAR")
-        .setDescription(`*The altar awaits your worthiness. Prove yourself in battle.*\n\n**» YOUR PROGRESS «**\n\n⚔️ **Combat Trials:** ${prog.wins}/${req.wins} wins\n└ ${bar(wPct)} ${wPct}%\n\n💥 **Damage Output:** ${prog.damageDealt.toLocaleString()}/${req.damageDealt.toLocaleString()} dmg\n└ ${bar(dPct)} ${dPct}%\n\n⚡ **ULT Mastery:** ${prog.ultUses}/${req.ultUses} ULT uses\n└ ${bar(uPct)} ${uPct}%`)
+      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x00ffff).setTitle("AWAKENING ALTAR")
+        .setDescription(`*The altar awaits your worthiness. Prove yourself in battle.*\n\n**» YOUR PROGRESS «**\n\n⚔️ **Combat Trials:** ${prog.wins}/${req.wins} wins\n• ${bar(wPct)} ${wPct}%\n\n💥 **Damage Output:** ${prog.damageDealt.toLocaleString()}/${req.damageDealt.toLocaleString()} dmg\n• ${bar(dPct)} ${dPct}%\n\n⚡ **ULT Mastery:** ${prog.ultUses}/${req.ultUses} ULT uses\n• ${bar(uPct)} ${uPct}%`)
         .setFooter({text:"25 wins • 500 damage • 15 ULTs to unlock your true form"})],flags:64});
     }
 
     // ── No awakening available for this species ─────────────────
-    return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x2d2d2d).setTitle("✨ AWAKENING ALTAR")
+    return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x2d2d2d).setTitle("AWAKENING ALTAR")
       .setDescription(`*You approach the altar, but it remains silent.*\n\n${userData.species?.emoji||"👤"} **${sp||"Unknown"}** does not yet have an awakening path.\n\nAwakenings are rare transformations granted to species who have proven their worth through relentless battle.\n\n*Check back as new awakenings are discovered.*`)
       .setFooter({text:"Currently: Cyborg → Mechangel"})],flags:64});
   }
@@ -277,16 +252,16 @@ async function handleCommand(interaction) {
     const challengeId=`${user.id}-${target.id}`;
     if (_state.fightChallenges.has(challengeId)) return safeReply(interaction,{embeds:[createErrorEmbed("A challenge already exists!")],flags:64});
     const row=new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`fight_accept_${user.id}_${target.id}`).setLabel("✅ Accept").setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId(`fight_reject_${user.id}_${target.id}`).setLabel("❌ Reject").setStyle(ButtonStyle.Danger));
+      new ButtonBuilder().setCustomId(`fight_accept_${user.id}_${target.id}`).setLabel("Accept").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`fight_reject_${user.id}_${target.id}`).setLabel("Reject").setStyle(ButtonStyle.Danger));
     const cdSp=cd.species||humanSpecies, odSp=od.species||humanSpecies;
-    const embed=new EmbedBuilder().setColor(0xff4500).setTitle("⚔️ Fight Challenge!").setDescription(`${cdSp.emoji} **${cdSp.name}** <@${user.id}>\nvs\n${odSp.emoji} **${odSp.name}** <@${target.id}>\n\n<@${target.id}>, do you accept?`);
+    const embed=new EmbedBuilder().setColor(0xff4500).setTitle("Fight Challenge!").setDescription(`${cdSp.emoji} **${cdSp.name}** <@${user.id}>\nvs\n${odSp.emoji} **${odSp.name}** <@${target.id}>\n\n<@${target.id}>, do you accept?`);
     await safeReply(interaction,{embeds:[embed],components:[row]});
     const msg=await interaction.fetchReply();
     _state.activeRequests.set(user.id,{type:"fight",targetId:target.id,timestamp:Date.now()});
     _state.activeRequests.set(target.id,{type:"fight",targetId:user.id,timestamp:Date.now()});
     _state.fightChallenges.set(challengeId,{challengerId:user.id,opponentId:target.id,messageId:msg.id,channelId:channel.id,timestamp:Date.now()});
-    setTimeout(()=>{ if(_state.fightChallenges.has(challengeId)){ _state.fightChallenges.delete(challengeId); _state.activeRequests.delete(user.id); _state.activeRequests.delete(target.id); msg.edit({embeds:[new EmbedBuilder().setColor(0x808080).setDescription("⏰ Challenge expired.")],components:[]}).catch(()=>{}); } },60000);
+    setTimeout(()=>{ if(_state.fightChallenges.has(challengeId)){ _state.fightChallenges.delete(challengeId); _state.activeRequests.delete(user.id); _state.activeRequests.delete(target.id); msg.edit({embeds:[new EmbedBuilder().setColor(0x808080).setDescription("⏰ Challenge expired.")],components:[]}); } },60000);
     return;
   }
 
@@ -331,11 +306,11 @@ async function handleCommand(interaction) {
     }
     const sp=userData.species||humanSpecies;
     const row=new ActionRowBuilder();
-    row.addComponents(new ButtonBuilder().setCustomId("switch_current").setLabel(`✅ ${sp.name} (Current)`).setStyle(ButtonStyle.Success).setDisabled(true));
+    row.addComponents(new ButtonBuilder().setCustomId("switch_current").setLabel(`${sp.name} (Current)`).setStyle(ButtonStyle.Success).setDisabled(true));
     if (userData.originalSpecies?.name&&userData.originalSpecies.name!==sp.name) row.addComponents(new ButtonBuilder().setCustomId("switch_original").setLabel(userData.originalSpecies.name).setStyle(ButtonStyle.Primary));
-    if (userData.questSpecies?.reaper?.unlocked&&sp.name!=="Reaper") row.addComponents(new ButtonBuilder().setCustomId("switch_reaper").setLabel("🌑 Reaper").setStyle(ButtonStyle.Primary));
-    if (userData.questSpecies?.archdemon?.unlocked&&sp.name!=="Archdemon") row.addComponents(new ButtonBuilder().setCustomId("switch_archdemon").setLabel("👿 Archdemon").setStyle(ButtonStyle.Danger));
-    const embed=new EmbedBuilder().setColor(0x9b59b6).setTitle("🔄 Class Switch")
+    if (userData.questSpecies?.reaper?.unlocked&&sp.name!=="Reaper") row.addComponents(new ButtonBuilder().setCustomId("switch_reaper").setLabel("Reaper").setStyle(ButtonStyle.Primary));
+    if (userData.questSpecies?.archdemon?.unlocked&&sp.name!=="Archdemon") row.addComponents(new ButtonBuilder().setCustomId("switch_archdemon").setLabel("Archdemon").setStyle(ButtonStyle.Danger));
+    const embed=new EmbedBuilder().setColor(0x9b59b6).setTitle("Class Switch")
       .setDescription(`**Current:** ${sp.emoji} ${sp.name}\n**Original:** ${userData.originalSpecies?.emoji||"👤"} ${userData.originalSpecies?.name||"Human"}\n🌑 Reaper: ${userData.questSpecies?.reaper?.unlocked?"✅ Unlocked":"❌ Locked"}\n👿 Archdemon: ${userData.questSpecies?.archdemon?.unlocked?"✅ Unlocked":"❌ Locked"}\n\n⏰ Cooldown: 3 hours`);
     return interaction.editReply({embeds:[embed],components:[row]});
   }
@@ -347,8 +322,8 @@ async function handleCommand(interaction) {
     const sp=_state.userSpecies.get(target.id)?.species||humanSpecies;
     if (!stats||(stats.wins===0&&stats.losses===0)) return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x808080).setDescription(`📊 **${target.displayName}** hasn't fought yet!`)]});
     const wr=((stats.wins/(stats.wins+stats.losses))*100).toFixed(1);
-    return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(sp.color||0xff4500).setTitle(`⚔️ ${target.displayName}'s Fight Stats`).setThumbnail(target.displayAvatarURL())
-      .addFields({name:"🏆 Wins",value:`${stats.wins}`,inline:true},{name:"💔 Losses",value:`${stats.losses}`,inline:true},{name:"📊 Win Rate",value:`${wr}%`,inline:true},{name:"🔥 Streak",value:`${stats.streak||0} wins`,inline:true},{name:"🧬 Species",value:`${sp.emoji} ${sp.name}`,inline:true})]});
+    return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(sp.color||0xff4500).setTitle(`${target.displayName}'s Fight Stats`).setThumbnail(target.displayAvatarURL())
+      .addFields({name:"Wins",value:`${stats.wins}`,inline:true},{name:"Losses",value:`${stats.losses}`,inline:true},{name:"Win Rate",value:`${wr}%`,inline:true},{name:"Streak",value:`${stats.streak||0} wins`,inline:true},{name:"Species",value:`${sp.emoji} ${sp.name}`,inline:true})]});
   }
 
   // ── HISTORY ───────────────────────────────────────────────────
@@ -357,7 +332,7 @@ async function handleCommand(interaction) {
     const stats=_state.fightStats.get(target.id);
     if (!stats?.history?.length) return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x808080).setDescription(`📜 **${target.displayName}** has no fight history!`)]});
     const tf=stats.wins+stats.losses, wr=tf>0?((stats.wins/tf)*100).toFixed(1):"0.0";
-    const embed=new EmbedBuilder().setColor(0x9b59b6).setTitle(`📜 ${target.displayName}'s History`).setDescription(`Fights: **${tf}** | W: **${stats.wins}** | L: **${stats.losses}** | WR: **${wr}%**`).setThumbnail(target.displayAvatarURL());
+    const embed=new EmbedBuilder().setColor(0x9b59b6).setTitle(`${target.displayName}'s History`).setDescription(`Fights: **${tf}** | W: **${stats.wins}** | L: **${stats.losses}** | WR: **${wr}%**`).setThumbnail(target.displayAvatarURL());
     let txt="";
     for (let i=0;i<Math.min(stats.history.length,10);i++) {
       const f=stats.history[i], da=Math.floor((Date.now()-f.date)/86400000);
@@ -386,7 +361,7 @@ async function handleCommand(interaction) {
       const sp=_state.userSpecies.get(uid)?.species, medal=i===0?"🥇":i===1?"🥈":i===2?"🥉":"🎖️";
       desc+=`${medal} ${sp?.emoji||"⚔️"} **${nm}** — ${s.wins} wins\n`;
     }
-    return interaction.editReply({embeds:[new EmbedBuilder().setColor(0xff4500).setTitle("⚔️ Fight Leaderboard").setDescription(desc)]});
+    return interaction.editReply({embeds:[new EmbedBuilder().setColor(0xff4500).setTitle("Fight Leaderboard").setDescription(desc)]});
   }
 
   // ── BOTSTATS ──────────────────────────────────────────────────
@@ -394,12 +369,12 @@ async function handleCommand(interaction) {
     const target=options.getUser("user")||user;
     const stats=_state.botStats.get(target.id);
     if (!stats) return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x808080).setDescription(`📊 **${target.displayName}** hasn't fought any bots!`)]});
-    return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x9b59b6).setTitle(`🤖 ${target.displayName}'s Bot Stats`)
+    return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x9b59b6).setTitle(`${target.displayName}'s Bot Stats`)
       .addFields(
-        {name:"🧸 Easy",    value:`W:${stats.easy?.wins||0} L:${stats.easy?.losses||0}`,    inline:true},
-        {name:"⚔️ Medium",  value:`W:${stats.medium?.wins||0} L:${stats.medium?.losses||0}`,inline:true},
-        {name:"👹 Hard",    value:`W:${stats.hard?.wins||0} L:${stats.hard?.losses||0}`,    inline:true},
-        {name:"💀 Impossible",value:`W:${stats.impossible?.wins||0} L:${stats.impossible?.losses||0}`,inline:true})]});
+        {name:"Easy",    value:`W:${stats.easy?.wins||0} L:${stats.easy?.losses||0}`,    inline:true},
+        {name:"Medium",  value:`W:${stats.medium?.wins||0} L:${stats.medium?.losses||0}`,inline:true},
+        {name:"Hard",    value:`W:${stats.hard?.wins||0} L:${stats.hard?.losses||0}`,    inline:true},
+        {name:"Impossible",value:`W:${stats.impossible?.wins||0} L:${stats.impossible?.losses||0}`,inline:true})]});
   }
 
   // ── QUEST ─────────────────────────────────────────────────────
@@ -413,7 +388,7 @@ async function handleCommand(interaction) {
       const now=Date.now();
       const REAPER_EXPIRY=1774355400000;
       const expired=now>=REAPER_EXPIRY&&!r.claimed;
-      const embed=new EmbedBuilder().setColor(0x9b59b6).setTitle(`📋 Quests — ${target.displayName}`).setDescription("Complete quests to unlock exclusive species!");
+      const embed=new EmbedBuilder().setColor(0x9b59b6).setTitle(`Quests — ${target.displayName}`).setDescription("Complete quests to unlock exclusive species!");
       let rstatus, rvalue;
       if (r.claimed) { rstatus="✅ CLAIMED"; rvalue="Reaper unlocked! Use `/switch` to equip."; }
       else if (expired) { rstatus="⌛ EXPIRED"; rvalue=`The Reaper Quest has ended.\n\n*The Reaper has returned to the shadows.*\n\nDeadline was: **24 March 2026 at 6:00 PM**`; }
@@ -433,12 +408,13 @@ async function handleCommand(interaction) {
         if (r.claimed) return safeReply(interaction,{embeds:[createErrorEmbed("Already claimed! Use `/switch` to equip.")],flags:64});
         if (Date.now()>=1774355400000&&!r.claimed) return safeReply(interaction,{embeds:[createErrorEmbed("The Reaper Quest has expired. The window to claim has closed.")],flags:64});
         if (!r.completed) return safeReply(interaction,{embeds:[createErrorEmbed("Quest not complete yet! Check `/quest view`.")],flags:64});
-        r.claimed=true; qd.reaper=r; _state.questProgress.set(user.id,qd); database.saveQuestProgress(user.id,"reaper",r);
+        await interaction.deferReply({flags:64});
+        r.claimed=true; qd.reaper=r; await database.saveQuestProgress(user.id,"reaper",r); _state.questProgress.set(user.id,qd);
         const ud=_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0};
         if (!ud.questSpecies) ud.questSpecies={};
         ud.questSpecies.reaper={unlocked:true,equipped:false};
-        _state.userSpecies.set(user.id,ud); database.saveUserSpecies(user.id,ud);
-        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x2f4f4f).setTitle("🌑 Reaper Unlocked!").setDescription("Use `/switch` to equip Reaper!")]});
+        await database.saveUserSpecies(user.id,ud); _state.userSpecies.set(user.id,ud);
+        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x2f4f4f).setTitle("Reaper Unlocked!").setDescription("Use `/switch` to equip Reaper!")]});
       }
     }
   }
@@ -497,6 +473,8 @@ async function handleCommand(interaction) {
 
     const actualAmount = Math.min(amount, senderRemaining, receiverRemaining);
 
+    await interaction.deferReply();
+
     // Transfer rolls
     senderData.rolls=(senderData.rolls||0)-actualAmount;
     receiverData.rolls=(receiverData.rolls||0)+actualAmount;
@@ -505,11 +483,13 @@ async function handleCommand(interaction) {
 
     _state.userSpecies.set(user.id,senderData);
     _state.userSpecies.set(target.id,receiverData);
-    database.saveUserSpecies(user.id,senderData).catch(()=>{});
-    database.saveUserSpecies(target.id,receiverData).catch(()=>{});
+    await Promise.all([
+      database.saveUserSpecies(user.id,senderData),
+      database.saveUserSpecies(target.id,receiverData),
+    ]);
 
     const embed = new EmbedBuilder().setColor(0x00ff99)
-      .setTitle("🎁 Rolls Gifted!")
+      .setTitle("Rolls Gifted!")
       .setDescription(`<@${user.id}> gifted **${actualAmount}** roll${actualAmount!==1?"s":""}  to <@${target.id}>!\n\n📊 **Your rolls remaining:** ${senderData.rolls}\n📤 **Gifts sent today:** ${senderData.giftSent.count}/2\n\n*Resets at midnight.*`);
     return safeReply(interaction,{embeds:[embed]});
   }
@@ -518,7 +498,8 @@ async function handleCommand(interaction) {
   if (commandName === "togglerequests") {
     const status=options.getString("status");
     const ud=_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0};
-    ud.requestsEnabled=(status==="enable"); _state.userSpecies.set(user.id,ud); database.saveUserSpecies(user.id,ud);
+    await interaction.deferReply({flags:64});
+    ud.requestsEnabled=(status==="enable"); _state.userSpecies.set(user.id,ud); await database.saveUserSpecies(user.id,ud);
     return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(ud.requestsEnabled?0x00ff00:0xff0000).setDescription(ud.requestsEnabled?"✅ You will now receive challenges!":"❌ You will NOT receive challenges.")],flags:64});
   }
 
@@ -528,17 +509,18 @@ async function handleCommand(interaction) {
     const sub=options.getSubcommand();
 
     if (sub==="menu") {
-      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xffd700).setTitle("👑 God Commands")
+      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xffd700).setTitle("God Commands")
         .addFields(
-          {name:"🧬 Species Management",value:"`/god species-change @user <species>`\n`/god species-reset @user`\n`/god species-add @user <rolls>`",inline:false},
-          {name:"⚙️ Management",value:"`/god rolls-reset @user`\n`/god quest-reset @user <quest>`\n`/god debug-db`",inline:false}
+          {name:"Species Management",value:"`/god species-change @user <species>`\n`/god species-reset @user`\n`/god species-add @user <rolls>`",inline:false},
+          {name:"Management",value:"`/god rolls-reset @user`\n`/god quest-reset @user <quest>`\n`/god debug-db`",inline:false}
         ).setFooter({text:"Use /god menu to see this again"})]});
     }
 
     if (sub==="species-add") {
       const target=options.getUser("user"), amount=options.getInteger("amount");
       const ud=_state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0,badges:[]};
-      ud.rolls=(ud.rolls||0)+amount; _state.userSpecies.set(target.id,ud); database.saveUserSpecies(target.id,ud);
+      await interaction.deferReply({flags:64});
+      ud.rolls=(ud.rolls||0)+amount; await database.saveUserSpecies(target.id,ud); _state.userSpecies.set(target.id,ud);
       return safeReply(interaction,{embeds:[createSuccessEmbed(`Gave **${amount}** rolls to <@${target.id}>! They now have **${ud.rolls}** rolls.`)],flags:64});
     }
 
@@ -552,9 +534,9 @@ async function handleCommand(interaction) {
       // God-given species always becomes the new original
       ud.originalSpecies=newSp;
       ud.species=newSp;
-      _state.userSpecies.set(target.id,ud); database.saveUserSpecies(target.id,ud);
+      await database.saveUserSpecies(target.id,ud); _state.userSpecies.set(target.id,ud);
       const member=await guild.members.fetch(target.id).catch(()=>null);
-      if (member) { const old=member.roles.cache.find(r=>r.name===ud.species?.roleName); if(old) await member.roles.remove(old).catch(()=>{}); await assignSpeciesRole(member,newSp); }
+      if (member) { const old=member.roles.cache.find(r=>r.name===ud.species?.roleName); if(old) await member.roles.remove(old); await assignSpeciesRole(member,newSp); }
       return safeReply(interaction,{embeds:[createSuccessEmbed(`Changed <@${target.id}>'s species to ${newSp.emoji} **${newSp.name}**!`)]});
     }
 
@@ -562,16 +544,16 @@ async function handleCommand(interaction) {
       const target=options.getUser("user");
       const member=await guild.members.fetch(target.id).catch(()=>null);
       const ud=_state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0,badges:[]};
-      if (ud.species?.roleName&&member) { const old=member.roles.cache.find(r=>r.name===ud.species.roleName); if(old) await member.roles.remove(old).catch(()=>{}); }
+      if (ud.species?.roleName&&member) { const old=member.roles.cache.find(r=>r.name===ud.species.roleName); if(old) await member.roles.remove(old); }
       ud.species=humanSpecies; ud.originalSpecies=humanSpecies;
-      _state.userSpecies.set(target.id,ud); database.saveUserSpecies(target.id,ud);
+      await database.saveUserSpecies(target.id,ud); _state.userSpecies.set(target.id,ud);
       return safeReply(interaction,{embeds:[createSuccessEmbed(`Reset <@${target.id}> to 👤 **Human**.`)]});
     }
 
     if (sub==="rolls-reset") {
       const target=options.getUser("user");
       const ud=_state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0,badges:[]};
-      const old=ud.rolls||0; ud.rolls=0; _state.userSpecies.set(target.id,ud); database.saveUserSpecies(target.id,ud);
+      const old=ud.rolls||0; ud.rolls=0; await interaction.deferReply({flags:64}); await database.saveUserSpecies(target.id,ud); _state.userSpecies.set(target.id,ud);
       return safeReply(interaction,{embeds:[createSuccessEmbed(`Reset **${old}** rolls for <@${target.id}> to 0. Species stays **${ud.species?.name||"Human"}**.`)],flags:64});
     }
 
@@ -580,7 +562,7 @@ async function handleCommand(interaction) {
       const qd=_state.questProgress.get(target.id)||{};
       const blank={easyBots:0,mediumBots:0,hardBots:0,impossibleBots:0,playerFights:0,completed:false,claimed:false};
       if (qn==="reaper"||qn==="all") qd.reaper=blank;
-      _state.questProgress.set(target.id,qd); database.saveQuestProgress(target.id,"reaper",qd.reaper);
+      await interaction.deferReply({flags:64}); await database.saveQuestProgress(target.id,"reaper",qd.reaper); _state.questProgress.set(target.id,qd);
       return safeReply(interaction,{embeds:[createSuccessEmbed(`Reset ${qn} quest for <@${target.id}>.`)],flags:64});
     }
 
@@ -588,7 +570,7 @@ async function handleCommand(interaction) {
       try {
         const counts = await database.listAllKeys();
         const lines = Object.entries(counts).map(([k,v])=>`• **${k}**: ${v} records`).join("\n");
-        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xffd700).setTitle("📊 MongoDB Collections").setDescription(lines||"No data found.")],flags:64});
+        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xffd700).setTitle("MongoDB Collections").setDescription(lines||"No data found.")],flags:64});
       } catch(e) { return safeReply(interaction,{embeds:[createErrorEmbed(`DB error: ${e.message}`)],flags:64}); }
     }
   }
@@ -608,10 +590,10 @@ async function handleButton(interaction) {
       {title:"Quests",content:"• Reaper Quest: defeat bots and players\n• Cyborg Awakening: 25 wins, 500 dmg, 15 ULTs\n\n`/quest view` to track progress!"},
     ];
     const totalSteps=steps.length;
-    const embed=new EmbedBuilder().setColor(0x0891b2).setTitle(`📖 Guide (${step+1}/${totalSteps})`).setDescription(`**${steps[step].title}**\n\n${steps[step].content}`);
+    const embed=new EmbedBuilder().setColor(0x0891b2).setTitle(`Guide (${step+1}/${totalSteps})`).setDescription(`**${steps[step].title}**\n\n${steps[step].content}`);
     const row=new ActionRowBuilder();
     if (step<totalSteps-1) row.addComponents(new ButtonBuilder().setCustomId(`guide_next_${step}`).setLabel("NEXT →").setStyle(ButtonStyle.Primary));
-    else row.addComponents(new ButtonBuilder().setCustomId("guide_finish").setLabel("✅ Finish").setStyle(ButtonStyle.Success));
+    else row.addComponents(new ButtonBuilder().setCustomId("guide_finish").setLabel("Finish").setStyle(ButtonStyle.Success));
     return interaction.update({embeds:[embed],components:[row],flags:64});
   }
   if (customId==="guide_finish") return interaction.update({content:"✅ Guide complete! Use `/help` for all commands.",embeds:[],components:[],flags:64});
@@ -620,71 +602,61 @@ async function handleButton(interaction) {
   if (customId.startsWith("reroll_")||customId.startsWith("cancel_")) {
     const uid=customId.split("_")[1];
     if (user.id!==uid) return safeReply(interaction,{embeds:[createErrorEmbed("This isn't your roll!")],flags:64});
+    const rollState=_state.activeRolls.get(user.id);
+    if (!rollState) return safeReply(interaction,{embeds:[createErrorEmbed("This roll has expired.")],flags:64});
+    if (rollState.processing) return safeReply(interaction,{embeds:[createErrorEmbed("Your roll is already being processed.")],flags:64});
+    rollState.processing=true;
+    await interaction.deferUpdate();
+    try {
     if (customId.startsWith("cancel_")) {
       _state.activeRolls.delete(user.id);
-      return interaction.update({embeds:[new EmbedBuilder().setColor(0x808080).setDescription("❌ Reroll cancelled — keeping your current species.")],components:[]});
+      return interaction.editReply({embeds:[new EmbedBuilder().setColor(0x808080).setDescription("Reroll cancelled. Your current species is unchanged.")],components:[]});
     }
-    const userData=_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:1,requestsEnabled:true,lastSwitch:0};
-    if ((userData.rolls||0)<1) return interaction.update({embeds:[new EmbedBuilder().setColor(0xff0000).setDescription("❌ No rolls left! Use `/daily` for a free roll.")],components:[]});
+    const userData={...(_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:1,requestsEnabled:true,lastSwitch:0})};
+    if ((userData.rolls||0)<1) return interaction.editReply({embeds:[new EmbedBuilder().setColor(0xff0000).setDescription("No rolls left. Use `/daily` for a free roll.")],components:[]});
 
     // Roll the species BEFORE any async work so result is instant
     const rollResult=getRandomSpecies();
     const newSpecies=rollResult.isDragon?getDragonSubtype():rollResult;
     userData.species=newSpecies; userData.originalSpecies=newSpecies; userData.rolls=(userData.rolls||0)-1;
-    _state.userSpecies.set(user.id,userData);
-
-    // Build the result embed
+    const rollEntry=speciesRollTable.find(entry => entry.name===newSpecies.name || (entry.isDragon&&newSpecies.name.endsWith(" Dragon")));
+    const chance=rollEntry?rollEntry.probabilityPercent.toFixed(6)+"%":"Special unlock";
     const resultEmbed=new EmbedBuilder()
       .setColor(newSpecies.color||0x808080)
-      .setTitle(`${newSpecies.emoji} ${newSpecies.name}`)
-      .setDescription(`<@${user.id}> rolled ${newSpecies.emoji} **${newSpecies.name}**!\n\nChance: **${newSpecies.chance||"?"}** | HP: **${newSpecies.hp}** | ATK: **${newSpecies.atkMin}–${newSpecies.atkMax}** | HEAL: **${newSpecies.healMin}–${newSpecies.healMax}**\n\n🎲 Rolls remaining: **${userData.rolls}**`);
-
-    // Grab messageId BEFORE potentially deleting activeRolls
-    const rollData = _state.activeRolls.get(user.id);
-    const pubMsgId = rollData?.messageId;
-
-    // Respond to button immediately (no timeout)
-    if (userData.rolls>0) {
-      await interaction.update({
-        content:"Use the buttons below to reroll or cancel:",
-        components:[new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`reroll_${user.id}`).setLabel("🔄 REROLL").setStyle(ButtonStyle.Success),
-          new ButtonBuilder().setCustomId(`cancel_${user.id}`).setLabel("❌ CANCEL").setStyle(ButtonStyle.Danger))]
-      });
-    } else {
-      _state.activeRolls.delete(user.id);
-      await interaction.update({content:"✅ No rolls remaining — use `/daily` for a free roll.",components:[]});
+      .setTitle(newSpecies.name)
+      .setDescription(`<@${user.id}> rolled **${newSpecies.name}**.\n\nChance: **${chance}**\nHP: **${newSpecies.hp}** · ATK: **${newSpecies.atkMin}–${newSpecies.atkMax}** · HEAL: **${newSpecies.healMin}–${newSpecies.healMax}**\n\nRolls remaining: **${userData.rolls}**`);
+    await database.saveUserSpecies(user.id,userData);
+    _state.userSpecies.set(user.id,userData);
+    const components=userData.rolls>0?[new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`reroll_${user.id}`).setLabel("Reroll").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`cancel_${user.id}`).setLabel("Cancel").setStyle(ButtonStyle.Secondary))]:[];
+    if (!userData.rolls) _state.activeRolls.delete(user.id);
+    await interaction.editReply({embeds:[resultEmbed],components});
+    guild.members.fetch(user.id).then(member=>assignSpeciesRole(member,newSpecies)).catch(error=>console.error("Role assignment failed:",error));
+    } finally {
+      const currentRoll=_state.activeRolls.get(user.id);
+      if (currentRoll) currentRoll.processing=false;
     }
-
-    // Edit the public embed to show the rolled result
-    if (pubMsgId) {
-      channel.messages.fetch(pubMsgId).then(pubMsg=>{
-        if (pubMsg) pubMsg.edit({embeds:[resultEmbed]}).catch(()=>{});
-      }).catch(()=>{});
-    }
-
-    // Slow stuff after responding
-    database.saveUserSpecies(user.id,userData).catch(console.error);
-    guild.members.fetch(user.id).then(member=>assignSpeciesRole(member,newSpecies)).catch(()=>{});
   }
 
   // ── SWITCH ────────────────────────────────────────────────────
   if (customId==="switch_original"||customId==="switch_reaper"||customId==="switch_archdemon") {
+    await interaction.deferUpdate();
     const ud=_state.userSpecies.get(user.id);
-    if (!ud) return interaction.update({content:"❌ No species data!",components:[]});
+    if (!ud) return interaction.editReply({content:"No species data.",components:[]});
     const now=Date.now(), th=3*60*60*1000;
     if (user.id!==_state.ownerId&&user.id!==_state.secondGodId&&ud.lastSwitch&&now-ud.lastSwitch<th) {
       const tl=th-(now-ud.lastSwitch), h=Math.floor(tl/3600000), m=Math.floor((tl%3600000)/60000);
-      return interaction.update({embeds:[createErrorEmbed(`Switch in **${h}h ${m}m**!`)],components:[]});
+      return interaction.editReply({embeds:[createErrorEmbed(`Switch in **${h}h ${m}m**.`)],components:[]});
     }
     let newSp;
     if (customId==="switch_original") newSp=ud.originalSpecies;
-    else if (customId==="switch_reaper") { if(!ud.questSpecies?.reaper?.unlocked) return interaction.update({content:"❌ Reaper not unlocked!",components:[]}); newSp=reaperSpecies; }
-    else { if(!ud.questSpecies?.archdemon?.unlocked) return interaction.update({content:"❌ Archdemon not unlocked!",components:[]}); newSp=archdemonSpecies; }
+    else if (customId==="switch_reaper") { if(!ud.questSpecies?.reaper?.unlocked) return interaction.editReply({content:"Reaper not unlocked.",components:[]}); newSp=reaperSpecies; }
+    else { if(!ud.questSpecies?.archdemon?.unlocked) return interaction.editReply({content:"Archdemon not unlocked.",components:[]}); newSp=archdemonSpecies; }
     ud.species=newSp; ud.lastSwitch=Date.now();
-    _state.userSpecies.set(user.id,ud); database.saveUserSpecies(user.id,ud);
+    _state.userSpecies.set(user.id,ud); await database.saveUserSpecies(user.id,ud);
     const member=await guild.members.fetch(user.id); await assignSpeciesRole(member,newSp);
-    return interaction.update({embeds:[createSuccessEmbed(`Switched to ${newSp.emoji} **${newSp.name}**! Next switch in 3h.`)],components:[]});
+    return interaction.editReply({embeds:[createSuccessEmbed(`Switched to **${newSp.name}**. Next switch in 3h.`)],components:[]});
   }
 
   // ── DUEL ACCEPT/DECLINE ───────────────────────────────────────
@@ -749,7 +721,7 @@ async function handleButton(interaction) {
       }
       fight.playerUltCooldown=fight.playerSpecies.ultCooldown; fight.log=log.slice(-3);
       const msg=_state.fightMessages.get(fightId);
-      if (msg) await msg.edit({embeds:[buildBotFightEmbed(fight,fight.log,"bot_thinking")],components:[buildBotFightRow(fightId,fight,"bot_thinking")]}).catch(()=>{});
+      if (msg) await msg.edit({embeds:[buildBotFightEmbed(fight,fight.log,"bot_thinking")],components:[buildBotFightRow(fightId,fight,"bot_thinking")]});
       setTimeout(()=>doBotTurn(channel,fightId),botPersonalities[fight.difficulty].reactionDelay);
       return interaction.deferUpdate();
     }
@@ -795,7 +767,7 @@ async function handleButton(interaction) {
         if (requiresChoice) {
           fight.playerUltBuff=playerC.ultBuff; fight.playerUltCooldown=playerC.species.ultCooldown;
           fight.botHp=botC.currentHp; fight.playerHp=playerC.currentHp; fight.log=log.slice(-3);
-          if (msg) await msg.edit({embeds:[buildBotFightEmbed(fight,fight.log,"choice")],components:[buildBotFightRow(fightId,fight,`choice_${choiceType}`)]}).catch(()=>{});
+          if (msg) await msg.edit({embeds:[buildBotFightEmbed(fight,fight.log,"choice")],components:[buildBotFightRow(fightId,fight,`choice_${choiceType}`)]});
           fight.timeout=setTimeout(()=>{ if(_state.activeBotFights.has(fightId)){fight.playerUltBuff={type:"nextAttack",multiplier:1.5}; doBotTurn(channel,fightId);} },30000);
           return;
         }
@@ -857,7 +829,7 @@ async function handleButton(interaction) {
     if (fight.botHp<=0) { await endBotFight(channel,fightId,"player","bot",fight.difficulty); return; }
     if (fight.playerHp<=0) { await endBotFight(channel,fightId,"bot","player",fight.difficulty); return; }
 
-    if (msg) await msg.edit({embeds:[buildBotFightEmbed(fight,fight.log,"bot_thinking")],components:[buildBotFightRow(fightId,fight,"bot_thinking")]}).catch(()=>{});
+    if (msg) await msg.edit({embeds:[buildBotFightEmbed(fight,fight.log,"bot_thinking")],components:[buildBotFightRow(fightId,fight,"bot_thinking")]});
     setTimeout(()=>doBotTurn(channel,fightId),botPersonalities[fight.difficulty].reactionDelay);
     return;
   }
@@ -890,7 +862,7 @@ async function handleButton(interaction) {
       player.ultCooldown=player.species.ultCooldown; fight.currentTurn=opponent.id; fight.round++;
       const nextTurnPlayer=fight.currentTurn===fight.player1Id?fight.player1:fight.player2;
       const msg=_state.fightMessages.get(fightId);
-      if (msg) await msg.edit({embeds:[buildFightEmbed(fight,log)],components:[buildFightRow(fightId,nextTurnPlayer)]}).catch(()=>{});
+      if (msg) await msg.edit({embeds:[buildFightEmbed(fight,log)],components:[buildFightRow(fightId,nextTurnPlayer)]});
       if (fight.timeout) clearTimeout(fight.timeout);
       fight.timeout=setTimeout(()=>{ if(_state.activeFights.has(fightId)){const l=fight.currentTurn;const w=fight.player1Id===l?fight.player2Id:fight.player1Id;endFight(channel,fightId,w,l,"timeout");} },120000);
       return;
@@ -917,14 +889,14 @@ async function handleButton(interaction) {
         if (requiresChoice) {
           player.ultChoicePending=true;
           const msg=_state.fightMessages.get(fightId);
-          if (msg) await msg.edit({embeds:[buildFightEmbed(fight,[`✨ <@${user.id}> uses ULT! Choose your path:`],"choice")],components:[buildFightRow(fightId,player,`choice_${choiceType}`)]}).catch(()=>{});
+          if (msg) await msg.edit({embeds:[buildFightEmbed(fight,[`✨ <@${user.id}> uses ULT! Choose your path:`],"choice")],components:[buildFightRow(fightId,player,`choice_${choiceType}`)]});
           fight.timeout=setTimeout(()=>{
             if(_state.activeFights.has(fightId)&&player.ultChoicePending){
               player.ultChoicePending=false; player.ultCooldown=player.species.ultCooldown; player.ultBuff={type:"nextAttack",multiplier:1.5};
               fight.currentTurn=opponent.id; fight.round++;
               const msg2=_state.fightMessages.get(fightId);
               const tp=fight.currentTurn===fight.player1Id?fight.player1:fight.player2;
-              if(msg2) msg2.edit({embeds:[buildFightEmbed(fight,["⏰ ULT choice timed out!"])],components:[buildFightRow(fightId,tp)]}).catch(()=>{});
+              if(msg2) msg2.edit({embeds:[buildFightEmbed(fight,["⏰ ULT choice timed out!"])],components:[buildFightRow(fightId,tp)]});
             }
           },30000);
           return;
@@ -998,7 +970,7 @@ async function handleButton(interaction) {
 
     const nextTurnPlayer=fight.currentTurn===fight.player1Id?fight.player1:fight.player2;
     const msg2=_state.fightMessages.get(fightId);
-    if (msg2) await msg2.edit({embeds:[buildFightEmbed(fight,log)],components:[buildFightRow(fightId,nextTurnPlayer)]}).catch(()=>{});
+    if (msg2) await msg2.edit({embeds:[buildFightEmbed(fight,log)],components:[buildFightRow(fightId,nextTurnPlayer)]});
     fight.timeout=setTimeout(()=>{ if(_state.activeFights.has(fightId)){const l=fight.currentTurn;const w=fight.player1Id===l?fight.player2Id:fight.player1Id;endFight(channel,fightId,w,l,"timeout");} },120000);
     return;
   }
@@ -1006,13 +978,14 @@ async function handleButton(interaction) {
   // ── AWAKENING BUTTON ──────────────────────────────────────────
   if (customId==="awaken_cyborg") {
     const ud=_state.userSpecies.get(user.id);
-    if (!ud||!ud.species||ud.species.name!=="Cyborg") return interaction.update({content:"❌ Not a Cyborg!",components:[]});
-    if (!isCyborgReadyForAwakening(ud)) return interaction.update({content:"❌ Requirements not met yet!",components:[]});
+    if (!ud||!ud.species||ud.species.name!=="Cyborg") return interaction.editReply({content:"Not a Cyborg.",components:[]});
+    if (!isCyborgReadyForAwakening(ud)) return interaction.editReply({content:"Requirements are not met yet.",components:[]});
+    await interaction.deferUpdate();
     const mech=getSpeciesByName("Mechangel");
     ud.species=mech; ud.originalSpecies=mech; ud.awakening.cyborg.awakened=true; ud.rolls=(ud.rolls||0)+5;
     _state.userSpecies.set(user.id,ud); await database.saveUserSpecies(user.id,ud);
     const member=await guild.members.fetch(user.id); await assignSpeciesRole(member,mech);
-    return interaction.update({embeds:[new EmbedBuilder().setColor(0x00ffff).setTitle("⚡ MECHANGEL AWAKENING COMPLETE ⚡")
+    return interaction.editReply({embeds:[new EmbedBuilder().setColor(0x00ffff).setTitle("Mechangel awakening complete")
       .setDescription("🤖 **Cyborg → ⚡ Mechangel**\n\n+15 HP · New passive: Quantum Processing · New ULT: System Restoration\n\n🎁 +5 Species Rolls!\n\n*Machine and angel, fused as one.*")],components:[]});
   }
 }
@@ -1022,13 +995,13 @@ const commands = [
   new SlashCommandBuilder().setName("help").setDescription("Show all commands"),
   new SlashCommandBuilder().setName("guide").setDescription("New player tutorial"),
   new SlashCommandBuilder().setName("daily").setDescription("Claim your daily species roll"),
-  new SlashCommandBuilder().setName("species").setDescription("View species list or a specific species card").addStringOption(o=>o.setName("species").setDescription("Species name for detailed card (leave blank for full list)").addChoices({name:"Demi God ⚡",value:"Demi God"},{name:"Demon Lord 🔥",value:"Demon Lord"},{name:"Demon King 👑😈",value:"Demon King"},{name:"Chimera 🎭",value:"Chimera"},{name:"Angel 👼",value:"Angel"},{name:"Demon 😈",value:"Demon"},{name:"Oni 👿",value:"Oni"},{name:"Orc Lord 👑",value:"Orc Lord"},{name:"Kijin 🎭",value:"Kijin"},{name:"Cyborg 🤖",value:"Cyborg"},{name:"High Orc ⚔️",value:"High Orc"},{name:"Ogre 👹",value:"Ogre"},{name:"Goblin 👺",value:"Goblin"},{name:"Orc 🟢",value:"Orc"},{name:"Half-Blood 🩸",value:"Half-Blood"},{name:"Fire Dragon 🔥🐉",value:"Fire Dragon"},{name:"Thunder Dragon ⚡🐉",value:"Thunder Dragon"},{name:"Ice Dragon ❄️🐉",value:"Ice Dragon"},{name:"Earth Dragon 🌍🐉",value:"Earth Dragon"},{name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"God 👑✨",value:"God"},{name:"Human 👤",value:"Human"})),
+  new SlashCommandBuilder().setName("species").setDescription("View species list or a specific species card").addStringOption(o=>o.setName("species").setDescription("Species name for detailed card (leave blank for full list)").addChoices({name:"Demi God ",value:"Demi God"},{name:"Demon Lord ",value:"Demon Lord"},{name:"Demon King 👑",value:"Demon King"},{name:"Chimera ",value:"Chimera"},{name:"Angel ",value:"Angel"},{name:"Demon ",value:"Demon"},{name:"Oni ",value:"Oni"},{name:"Orc Lord ",value:"Orc Lord"},{name:"Kijin ",value:"Kijin"},{name:"Cyborg ",value:"Cyborg"},{name:"High Orc ⚔",value:"High Orc"},{name:"Ogre ",value:"Ogre"},{name:"Goblin ",value:"Goblin"},{name:"Orc ",value:"Orc"},{name:"Half-Blood ",value:"Half-Blood"},{name:"Fire Dragon 🔥",value:"Fire Dragon"},{name:"Thunder Dragon ⚡",value:"Thunder Dragon"},{name:"Ice Dragon ❄️",value:"Ice Dragon"},{name:"Earth Dragon 🌍",value:"Earth Dragon"},{name:"Reaper ",value:"Reaper"},{name:"Archdemon ",value:"Archdemon"},{name:"Mechangel ⚡",value:"Mechangel"},{name:"God 👑",value:"God"},{name:"Human ",value:"Human"})),
   new SlashCommandBuilder().setName("profile").setDescription("View a full player profile").addUserOption(o=>o.setName("user").setDescription("User to check")),
   new SlashCommandBuilder().setName("species-roll").setDescription("Roll for a new species"),
   new SlashCommandBuilder().setName("switch").setDescription("Switch between your species (3h cooldown)"),
   new SlashCommandBuilder().setName("awakening").setDescription("Check your Cyborg awakening progress"),
   new SlashCommandBuilder().setName("fight").setDescription("Challenge a player to a fight").addUserOption(o=>o.setName("user").setDescription("Player to fight").setRequired(true)),
-  new SlashCommandBuilder().setName("fightbot").setDescription("Fight a bot").addStringOption(o=>o.setName("difficulty").setDescription("Bot difficulty").setRequired(true).addChoices({name:"🧸 Easy",value:"easy"},{name:"⚔️ Medium",value:"medium"},{name:"👹 Hard",value:"hard"},{name:"💀 Impossible",value:"impossible"})),
+  new SlashCommandBuilder().setName("fightbot").setDescription("Fight a bot").addStringOption(o=>o.setName("difficulty").setDescription("Bot difficulty").setRequired(true).addChoices({name:"Easy",value:"easy"},{name:"Medium",value:"medium"},{name:"Hard",value:"hard"},{name:"Impossible",value:"impossible"})),
   new SlashCommandBuilder().setName("fightstats").setDescription("View fight stats").addUserOption(o=>o.setName("user").setDescription("User to check")),
   new SlashCommandBuilder().setName("history").setDescription("View fight history").addUserOption(o=>o.setName("user").setDescription("User to check")),
   new SlashCommandBuilder().setName("botstats").setDescription("View bot fight stats").addUserOption(o=>o.setName("user").setDescription("User to check")),
@@ -1044,7 +1017,7 @@ const commands = [
     .addSubcommand(s=>s.setName("claim").setDescription("Claim a quest reward").addStringOption(o=>o.setName("quest").setDescription("Quest to claim").setRequired(true).addChoices({name:"Reaper",value:"reaper"}))),
   new SlashCommandBuilder().setName("god").setDescription("God-only commands")
     .addSubcommand(s=>s.setName("menu").setDescription("Show god menu"))
-    .addSubcommand(s=>s.setName("species-change").setDescription("Change a user's species").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Species to set").setRequired(true).addChoices({name:"Demi God ⚡",value:"Demi God"},{name:"Demon Lord 🔥",value:"Demon Lord"},{name:"Demon King 👑😈",value:"Demon King"},{name:"Chimera 🎭",value:"Chimera"},{name:"Angel 👼",value:"Angel"},{name:"Demon 😈",value:"Demon"},{name:"Oni 👿",value:"Oni"},{name:"Orc Lord 👑",value:"Orc Lord"},{name:"Kijin 🎭",value:"Kijin"},{name:"Cyborg 🤖",value:"Cyborg"},{name:"High Orc ⚔️",value:"High Orc"},{name:"Ogre 👹",value:"Ogre"},{name:"Goblin 👺",value:"Goblin"},{name:"Orc 🟢",value:"Orc"},{name:"Half-Blood 🩸",value:"Half-Blood"},{name:"Fire Dragon 🔥🐉",value:"Fire Dragon"},{name:"Thunder Dragon ⚡🐉",value:"Thunder Dragon"},{name:"Ice Dragon ❄️🐉",value:"Ice Dragon"},{name:"Earth Dragon 🌍🐉",value:"Earth Dragon"},{name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"God 👑✨",value:"God"},{name:"Human 👤",value:"Human"})))
+    .addSubcommand(s=>s.setName("species-change").setDescription("Change a user's species").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Species to set").setRequired(true).addChoices({name:"Demi God ",value:"Demi God"},{name:"Demon Lord ",value:"Demon Lord"},{name:"Demon King 👑",value:"Demon King"},{name:"Chimera ",value:"Chimera"},{name:"Angel ",value:"Angel"},{name:"Demon ",value:"Demon"},{name:"Oni ",value:"Oni"},{name:"Orc Lord ",value:"Orc Lord"},{name:"Kijin ",value:"Kijin"},{name:"Cyborg ",value:"Cyborg"},{name:"High Orc ⚔",value:"High Orc"},{name:"Ogre ",value:"Ogre"},{name:"Goblin ",value:"Goblin"},{name:"Orc ",value:"Orc"},{name:"Half-Blood ",value:"Half-Blood"},{name:"Fire Dragon 🔥",value:"Fire Dragon"},{name:"Thunder Dragon ⚡",value:"Thunder Dragon"},{name:"Ice Dragon ❄️",value:"Ice Dragon"},{name:"Earth Dragon 🌍",value:"Earth Dragon"},{name:"Reaper ",value:"Reaper"},{name:"Archdemon ",value:"Archdemon"},{name:"Mechangel ⚡",value:"Mechangel"},{name:"God 👑",value:"God"},{name:"Human ",value:"Human"})))
     .addSubcommand(s=>s.setName("species-reset").setDescription("Reset a user to Human").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)))
     .addSubcommand(s=>s.setName("species-add").setDescription("Give rolls to a user").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)).addIntegerOption(o=>o.setName("amount").setDescription("Amount of rolls").setRequired(true).setMinValue(1).setMaxValue(1000000)))
     .addSubcommand(s=>s.setName("rolls-reset").setDescription("Reset a user's rolls to 0").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)))
