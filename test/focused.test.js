@@ -11,8 +11,8 @@ const database = require("../database.js");
 
 test("species roll probabilities are positive and total 100%", () => {
   assert.equal(validateSpeciesRollTable(), true);
-  assert.equal(speciesRollTable.reduce((sum, entry) => sum + entry.probabilityPercent, 0), 100);
-  assert.equal(speciesRollTable.find(entry => entry.isDragon).probabilityPercent, 2);
+  assert.equal(speciesRollTable.reduce((sum, entry) => sum + entry.displayProbabilityPercent, 0), 100);
+  assert.equal(speciesRollTable.find(entry => entry.isDragon).displayProbabilityPercent, 2);
   assert.ok(speciesRollTable.every(entry => entry.weight > 0));
 });
 
