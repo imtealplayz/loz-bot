@@ -83,24 +83,32 @@ const dragonSpecies = {
 const rollableSpecies = speciesList.filter(species => species.rarity > 0);
 const speciesRarityTotal = rollableSpecies.reduce((sum, species) => sum + species.rarity, 0);
 const speciesRollTable = [
-  ...rollableSpecies.map(species => ({ name:species.name, species, weight:species.rarity * 98 })),
+  ...rollableSpecies.slice(0, -1).map(species => ({ name:species.name, species, weight:species.rarity * 98 })),
   { name:"Dragon", species:dragonSpecies.base, isDragon:true, weight:speciesRarityTotal * 2 },
+  ...rollableSpecies.slice(-1).map(species => ({ name:species.name, species, weight:species.rarity * 98 })),
 ];
 const speciesRollWeightTotal = speciesRollTable.reduce((sum, entry) => sum + entry.weight, 0);
 let displayedRollTotal = 0;
+let roundedRollTotal = 0;
 for (let i = 0; i < speciesRollTable.length; i++) {
   const entry = speciesRollTable[i];
   entry.probabilityPercent = i === speciesRollTable.length - 1
     ? 100 - displayedRollTotal
     : entry.weight / speciesRollWeightTotal * 100;
   displayedRollTotal += entry.probabilityPercent;
+  entry.displayProbabilityPercent = i === speciesRollTable.length - 1
+    ? 100 - roundedRollTotal
+    : Number(entry.probabilityPercent.toFixed(6));
+  roundedRollTotal += entry.displayProbabilityPercent;
 }
 function validateSpeciesRollTable() {
   return speciesRollTable.length > 0
     && speciesRollTable.every(entry => Number.isFinite(entry.weight) && entry.weight > 0)
     && speciesRollWeightTotal === speciesRarityTotal * 100
     && Math.abs(speciesRollTable.reduce((sum, entry) => sum + entry.probabilityPercent, 0) - 100) < 1e-9
-    && Math.abs(speciesRollTable.find(entry => entry.isDragon).probabilityPercent - 2) < 1e-9;
+    && Math.abs(speciesRollTable.find(entry => entry.isDragon).probabilityPercent - 2) < 1e-9
+    && speciesRollTable.reduce((sum, entry) => sum + entry.displayProbabilityPercent, 0) === 100
+    && speciesRollTable.find(entry => entry.isDragon).displayProbabilityPercent === 2;
 }
 if (!validateSpeciesRollTable()) throw new Error("Invalid species roll probability configuration.");
 
