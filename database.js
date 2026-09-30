@@ -104,8 +104,21 @@ async function upsert(Model, filter, data) {
 }
 
 // ==================== SAVE FUNCTIONS ====================
+const userWriteQueues = new Map();
+function enqueueUserWrite(userId, operation) {
+  const previous = userWriteQueues.get(userId) || Promise.resolve();
+  const pending = previous.catch(() => {}).then(operation);
+  userWriteQueues.set(userId, pending);
+  pending.finally(() => {
+    if (userWriteQueues.get(userId) === pending) userWriteQueues.delete(userId);
+  }).catch(() => {});
+  return pending;
+}
+
 async function saveUserSpecies(userId, data) {
-  await upsert(User, { userId }, { userId, ...data });
+  assertConnected();
+  const snapshot = structuredClone(data);
+  return enqueueUserWrite(userId, () => upsert(User, { userId }, { userId, ...snapshot }));
 }
 
 async function saveLeaderboard(userId, data) {
@@ -133,20 +146,22 @@ async function saveDailyClaim(userId, data) {
 // Atomically claim a daily reward so concurrent requests cannot both succeed.
 async function claimDaily(userId, now) {
   assertConnected();
-  const existing = await Daily.findOne({ userId });
-  if (!existing) {
-    try {
-      return await Daily.create({ userId, lastClaim:now, streak:1 });
-    } catch (error) {
-      if (error.code === 11000) return null;
-      throw error;
+  return enqueueUserWrite(userId, async () => {
+    const existing = await Daily.findOne({ userId });
+    if (!existing) {
+      try {
+        return await Daily.create({ userId, lastClaim:now, streak:1 });
+      } catch (error) {
+        if (error.code === 11000) return null;
+        throw error;
+      }
     }
-  }
-  return Daily.findOneAndUpdate(
-    { userId, lastClaim:{ $lte:now - 86400000 } },
-    { $set:{ lastClaim:now }, $inc:{ streak:1 } },
-    { new:true, runValidators:true }
-  );
+    return Daily.findOneAndUpdate(
+      { userId, lastClaim:{ $lte:now - 86400000 } },
+      { $set:{ lastClaim:now }, $inc:{ streak:1 } },
+      { new:true, runValidators:true }
+    );
+  });
 }
 
 async function getDailyClaim(userId) {
@@ -158,11 +173,11 @@ async function getDailyClaim(userId) {
 async function addDailyRolls(userId, amount, defaults) {
   assertConnected();
   const { rolls:_rolls, userId:_userId, ...initialData } = defaults;
-  return User.findOneAndUpdate(
+  return enqueueUserWrite(userId, () => User.findOneAndUpdate(
     { userId },
     { $inc:{ rolls:amount }, $setOnInsert:{ userId, ...initialData } },
     { upsert:true, new:true, runValidators:true }
-  );
+  ));
 }
 
 async function saveQuestProgress(userId, questName, data) {
