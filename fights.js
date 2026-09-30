@@ -49,12 +49,12 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
   let winPoints=1, rollEarned=false, doubleWin=false;
   if (reason!=="disintegration"&&reason!=="judge") {
     if (Math.random()<0.05) { winPoints=2; doubleWin=true; }
-    if (Math.random()<0.3)  { rollEarned=true; const ud=_state.userSpecies.get(winnerId); if(ud){ ud.rolls=(ud.rolls||0)+1; _state.userSpecies.set(winnerId,ud); database.saveUserSpecies(winnerId,ud); } }
+    if (Math.random()<0.3)  { rollEarned=true; const ud=_state.userSpecies.get(winnerId); if(ud){ ud.rolls=(ud.rolls||0)+1; _state.userSpecies.set(winnerId,ud); await database.saveUserSpecies(winnerId,ud); } }
   }
   // FIX: only update fightLeaderboard via updateFightStats, not bomb tag leaderboard
-  updateFightStats(winnerId,true,loserId,{opponentName:loser.species.name,opponentSpecies:loser.species,hpLeft:winner.currentHp,special:reason==="forfeit"?"😵 forfeit":reason==="counter"?"💥 counter":"",doubleWin,rollEarned});
-  updateFightStats(loserId,false,winnerId,{opponentName:winner.species.name,opponentSpecies:winner.species,hpLeft:loser.currentHp,special:reason==="forfeit"?"😵 forfeited":"",doubleWin:false,rollEarned:false});
-  updateReaperQuest(winnerId,"player");
+  await updateFightStats(winnerId,true,loserId,{opponentName:loser.species.name,opponentSpecies:loser.species,hpLeft:winner.currentHp,special:reason==="forfeit"?"😵 forfeit":reason==="counter"?"💥 counter":"",doubleWin,rollEarned});
+  await updateFightStats(loserId,false,winnerId,{opponentName:winner.species.name,opponentSpecies:winner.species,hpLeft:loser.currentHp,special:reason==="forfeit"?"😵 forfeited":"",doubleWin:false,rollEarned:false});
+  await updateReaperQuest(winnerId,"player");
   _state.fightCooldowns.set(winnerId,Date.now()+60000);
   _state.fightCooldowns.set(loserId,Date.now()+60000);
   let desc=`🏆 **<@${winnerId}> WINS!**\n\n`;
@@ -227,12 +227,12 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
       case "hard":       winsEarned=3; if(Math.random()<0.5) rollEarned=true; break;
       case "impossible": winsEarned=5; if(Math.random()<0.9) rollEarned=true; break;
     }
-    if (rollEarned) { const ud=_state.userSpecies.get(fight.playerId); if(ud){ ud.rolls=(ud.rolls||0)+1; _state.userSpecies.set(fight.playerId,ud); database.saveUserSpecies(fight.playerId,ud); } }
-    if (winsEarned>0) { updateFightStats(fight.playerId,true,"BOT",{opponentName:fight.botSpecies.name,opponentSpecies:fight.botSpecies,hpLeft:fight.playerHp,special:`🤖 ${difficulty} bot`}); }
-    updateBotStats(fight.playerId,difficulty,true);
+    if (rollEarned) { const ud=_state.userSpecies.get(fight.playerId); if(ud){ ud.rolls=(ud.rolls||0)+1; _state.userSpecies.set(fight.playerId,ud); await database.saveUserSpecies(fight.playerId,ud); } }
+    if (winsEarned>0) { await updateFightStats(fight.playerId,true,"BOT",{opponentName:fight.botSpecies.name,opponentSpecies:fight.botSpecies,hpLeft:fight.playerHp,special:`🤖 ${difficulty} bot`}); }
+    await updateBotStats(fight.playerId,difficulty,true);
   } else {
-    updateBotStats(fight.playerId,difficulty,false);
-    updateFightStats(fight.playerId,false,"BOT",{opponentName:fight.botSpecies.name,opponentSpecies:fight.botSpecies,hpLeft:0,special:`🤖 ${difficulty} loss`});
+    await updateBotStats(fight.playerId,difficulty,false);
+    await updateFightStats(fight.playerId,false,"BOT",{opponentName:fight.botSpecies.name,opponentSpecies:fight.botSpecies,hpLeft:0,special:`🤖 ${difficulty} loss`});
   }
   const personality=botPersonalities[difficulty], won=winner==="player";
   const timeoutMsg=reason==="timeout"?"\n⏰ The bot took too long to respond — you win by default!":reason==="counter"?"\n⚡ Bot was killed by your counter-strike!":"";
