@@ -50,26 +50,26 @@ const patchNotes = [
 
 // ==================== SPECIES LISTS ====================
 const speciesList = [
-  { number:1,  name:"Demi God",   rarity:1,  emoji:"⚡",    chance:"0.5%",  roleName:"Demi-God",    color:0x00b0f0, hp:130, atkMin:22, atkMax:32, healMin:22, healMax:40, ultCooldown:12 },
-  { number:2,  name:"Demon Lord", rarity:2,  emoji:"🔥",    chance:"1.0%",  roleName:"Demon-Lord",  color:0xff4500, hp:125, atkMin:20, atkMax:28, healMin:20, healMax:35, ultCooldown:10 },
-  { number:3,  name:"Demon King", rarity:3,  emoji:"👑😈",  chance:"1.5%",  roleName:"Demon-King",  color:0xff6347, hp:120, atkMin:17, atkMax:25, healMin:18, healMax:30, ultCooldown:15 },
-  { number:4,  name:"Demon",      rarity:8,  emoji:"😈",    chance:"4.0%",  roleName:"Demon",       color:0xff0000, hp:105, atkMin:14, atkMax:20, healMin:12, healMax:22, ultCooldown:4  },
-  { number:5,  name:"Oni",        rarity:10, emoji:"👿",    chance:"5.0%",  roleName:"Oni",         color:0x8b0000, hp:110, atkMin:16, atkMax:24, healMin:15, healMax:25, ultCooldown:10 },
-  { number:6,  name:"Orc Lord",   rarity:12, emoji:"👑",    chance:"6.0%",  roleName:"Orc-Lord",    color:0xffd700, hp:115, atkMin:15, atkMax:22, healMin:16, healMax:28, ultCooldown:7  },
-  { number:7,  name:"Kijin",      rarity:14, emoji:"🎭",    chance:"7.0%",  roleName:"Kijin",       color:0x9b59b6, hp:100, atkMin:12, atkMax:18, healMin:10, healMax:20, ultCooldown:8  },
-  { number:8,  name:"High Orc",   rarity:18, emoji:"⚔️",   chance:"9.0%",  roleName:"High-Orc",    color:0xc0c0c0, hp:105, atkMin:14, atkMax:20, healMin:14, healMax:24, ultCooldown:10 },
-  { number:9,  name:"Ogre",       rarity:24, emoji:"👹",    chance:"12.0%", roleName:"Ogre",        color:0x8b4513, hp:110, atkMin:10, atkMax:16, healMin:18, healMax:30, ultCooldown:9  },
-  { number:10, name:"Goblin",     rarity:36, emoji:"👺",    chance:"18.0%", roleName:"Goblin",      color:0x006400, hp:95,  atkMin:8,  atkMax:14, healMin:8,  healMax:16, ultCooldown:6  },
-  { number:11, name:"Orc",        rarity:44, emoji:"🟢",    chance:"22.0%", roleName:"Orc",         color:0x00ff00, hp:100, atkMin:12, atkMax:18, healMin:12, healMax:20, ultCooldown:6  },
-  { number:12, name:"Angel",      rarity:6,  emoji:"👼",    chance:"3.0%",  roleName:"Angel",       color:0xfff700, hp:100, atkMin:15, atkMax:23, healMin:15, healMax:32, ultCooldown:10 },
-  { number:13, name:"Chimera",    rarity:4,  emoji:"🎭",    chance:"2.2%",  roleName:"Chimera",     color:0x9b59b6, hp:115, atkMin:16, atkMax:26, healMin:14, healMax:22, ultCooldown:15 },
-  { number:14, name:"Cyborg",     rarity:14, emoji:"🤖",    chance:"7.0%",  roleName:"Cyborg",      color:0x00ffff, hp:125, atkMin:12, atkMax:19, healMin:8,  healMax:14, ultCooldown:7  },
-  { number:15, name:"Half-Blood", rarity:52, emoji:"🩸",    chance:"26.0%", roleName:"Half-Blood",  color:0x8b4513, hp:90,  atkMin:10, atkMax:16, healMin:10, healMax:18, ultCooldown:7  },
-  { number:16, name:"Mechangel",  rarity:0,  emoji:"⚡🤖",  chance:"—",     roleName:"Mechangel",   color:0x00ffff, hp:140, atkMin:15, atkMax:23, healMin:10, healMax:18, ultCooldown:6  },
+  { number:1,  name:"Demi God",   rarity:1,  emoji:"⚡",  roleName:"Demi-God",    color:0x00b0f0, hp:130, atkMin:22, atkMax:32, healMin:22, healMax:40, ultCooldown:12 },
+  { number:2,  name:"Demon Lord", rarity:2,  emoji:"🔥",  roleName:"Demon-Lord",  color:0xff4500, hp:125, atkMin:20, atkMax:28, healMin:20, healMax:35, ultCooldown:10 },
+  { number:3,  name:"Demon King", rarity:3,  emoji:"👑😈",  roleName:"Demon-King",  color:0xff6347, hp:120, atkMin:17, atkMax:25, healMin:18, healMax:30, ultCooldown:15 },
+  { number:4,  name:"Demon",      rarity:8,  emoji:"😈",  roleName:"Demon",       color:0xff0000, hp:105, atkMin:14, atkMax:20, healMin:12, healMax:22, ultCooldown:4  },
+  { number:5,  name:"Oni",        rarity:10, emoji:"👿",  roleName:"Oni",         color:0x8b0000, hp:110, atkMin:16, atkMax:24, healMin:15, healMax:25, ultCooldown:10 },
+  { number:6,  name:"Orc Lord",   rarity:12, emoji:"👑",  roleName:"Orc-Lord",    color:0xffd700, hp:115, atkMin:15, atkMax:22, healMin:16, healMax:28, ultCooldown:7  },
+  { number:7,  name:"Kijin",      rarity:14, emoji:"🎭",  roleName:"Kijin",       color:0x9b59b6, hp:100, atkMin:12, atkMax:18, healMin:10, healMax:20, ultCooldown:8  },
+  { number:8,  name:"High Orc",   rarity:18, emoji:"⚔️",  roleName:"High-Orc",    color:0xc0c0c0, hp:105, atkMin:14, atkMax:20, healMin:14, healMax:24, ultCooldown:10 },
+  { number:9,  name:"Ogre",       rarity:24, emoji:"👹", roleName:"Ogre",        color:0x8b4513, hp:110, atkMin:10, atkMax:16, healMin:18, healMax:30, ultCooldown:9  },
+  { number:10, name:"Goblin",     rarity:36, emoji:"👺", roleName:"Goblin",      color:0x006400, hp:95,  atkMin:8,  atkMax:14, healMin:8,  healMax:16, ultCooldown:6  },
+  { number:11, name:"Orc",        rarity:44, emoji:"🟢", roleName:"Orc",         color:0x00ff00, hp:100, atkMin:12, atkMax:18, healMin:12, healMax:20, ultCooldown:6  },
+  { number:12, name:"Angel",      rarity:6,  emoji:"👼",  roleName:"Angel",       color:0xfff700, hp:100, atkMin:15, atkMax:23, healMin:15, healMax:32, ultCooldown:10 },
+  { number:13, name:"Chimera",    rarity:4,  emoji:"🎭",  roleName:"Chimera",     color:0x9b59b6, hp:115, atkMin:16, atkMax:26, healMin:14, healMax:22, ultCooldown:15 },
+  { number:14, name:"Cyborg",     rarity:14, emoji:"🤖",  roleName:"Cyborg",      color:0x00ffff, hp:125, atkMin:12, atkMax:19, healMin:8,  healMax:14, ultCooldown:7  },
+  { number:15, name:"Half-Blood", rarity:52, emoji:"🩸", roleName:"Half-Blood",  color:0x8b4513, hp:90,  atkMin:10, atkMax:16, healMin:10, healMax:18, ultCooldown:7  },
+  { number:16, name:"Mechangel",  rarity:0,  emoji:"⚡🤖",     roleName:"Mechangel",   color:0x00ffff, hp:140, atkMin:15, atkMax:23, healMin:10, healMax:18, ultCooldown:6  },
 ];
 
 const dragonSpecies = {
-  base: { number:17, name:"Dragon", emoji:"🐉", chance:"2.0%", rolePrefix:"Dragon-" },
+  base: { number:17, name:"Dragon", emoji:"🐉", rolePrefix:"Dragon-" },
   types: [
     { type:"Fire",    emoji:"🔥", hp:125, atkMin:22, atkMax:32, healMin:8,  healMax:14, color:0xff4500, ultCooldown:11 },
     { type:"Thunder", emoji:"⚡", hp:115, atkMin:24, atkMax:34, healMin:6,  healMax:12, color:0xffd700, ultCooldown:12 },
@@ -77,6 +77,42 @@ const dragonSpecies = {
     { type:"Earth",   emoji:"🌍", hp:135, atkMin:16, atkMax:26, healMin:10, healMax:18, color:0x8b4513, ultCooldown:11 },
   ],
 };
+
+// Player roll odds use the existing species rarity weights. The existing 2%
+// Dragon share is retained; the other species share the remaining 98%.
+const rollableSpecies = speciesList.filter(species => species.rarity > 0);
+const speciesRarityTotal = rollableSpecies.reduce((sum, species) => sum + species.rarity, 0);
+const speciesRollTable = [
+  ...rollableSpecies.map(species => ({ name:species.name, species, weight:species.rarity * 98 })),
+  { name:"Dragon", species:dragonSpecies.base, isDragon:true, weight:speciesRarityTotal * 2 },
+];
+const speciesRollWeightTotal = speciesRollTable.reduce((sum, entry) => sum + entry.weight, 0);
+let displayedRollTotal = 0;
+for (let i = 0; i < speciesRollTable.length; i++) {
+  const entry = speciesRollTable[i];
+  entry.probabilityPercent = i === speciesRollTable.length - 1
+    ? 100 - displayedRollTotal
+    : entry.weight / speciesRollWeightTotal * 100;
+  displayedRollTotal += entry.probabilityPercent;
+}
+function validateSpeciesRollTable() {
+  return speciesRollTable.length > 0
+    && speciesRollTable.every(entry => Number.isFinite(entry.weight) && entry.weight > 0)
+    && speciesRollWeightTotal === speciesRarityTotal * 100
+    && Math.abs(speciesRollTable.reduce((sum, entry) => sum + entry.probabilityPercent, 0) - 100) < 1e-9
+    && Math.abs(speciesRollTable.find(entry => entry.isDragon).probabilityPercent - 2) < 1e-9;
+}
+if (!validateSpeciesRollTable()) throw new Error("Invalid species roll probability configuration.");
+
+function selectSpeciesRoll(random = Math.random) {
+  let roll = random() * speciesRollWeightTotal;
+  for (const entry of speciesRollTable) {
+    if (roll < entry.weight) return entry.isDragon ? { isDragon:true } : entry.species;
+    roll -= entry.weight;
+  }
+  const last = speciesRollTable[speciesRollTable.length - 1];
+  return last.isDragon ? { isDragon:true } : last.species;
+}
 
 const botSpecies = {
   kitsune: { number:99, name:"Kitsune", emoji:"🦊", roleName:null, color:0xff8c00, hp:1000000, atkMin:500, atkMax:1000, healMin:200000, healMax:500000, ultCooldown:0,
@@ -274,7 +310,7 @@ function getActiveDescription(name) {
 }
 
 module.exports = {
-  patchNotes, speciesList, dragonSpecies, botSpecies,
+  patchNotes, speciesList, dragonSpecies, speciesRollTable, validateSpeciesRollTable, selectSpeciesRoll, botSpecies,
   godSpecies, humanSpecies, reaperSpecies, archdemonSpecies,
   botSpeciesByDifficulty, botPersonalities,
   typeAdvantages, critRates, failChances, awakeningRequirements,
