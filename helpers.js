@@ -116,7 +116,7 @@ async function updateLeaderboard(id, pts) {
 
 async function updateFightStats(id, won, oppId, data={}) {
   const s = _state.fightStats.get(id) || { wins:0, losses:0, streak:0, history:[] };
-  if (won) { s.wins++; s.streak = (s.streak||0)+1; } else { s.losses++; s.streak=0; }
+  if (won) { s.wins += Math.max(1, Math.floor(Number(data.winPoints) || 1)); s.streak = (s.streak||0)+1; } else { s.losses++; s.streak=0; }
   s.history = [
     { opponentId:oppId, opponentName:data.opponentName||"Unknown", opponentSpecies:data.opponentSpecies, won, date:Date.now(), hpLeft:data.hpLeft||0, special:data.special||"" },
     ...(s.history||[])
