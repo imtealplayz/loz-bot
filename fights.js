@@ -52,7 +52,7 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
     if (Math.random()<0.3)  { rollEarned=true; const ud=_state.userSpecies.get(winnerId); if(ud){ ud.rolls=(ud.rolls||0)+1; _state.userSpecies.set(winnerId,ud); await database.saveUserSpecies(winnerId,ud); } }
   }
   // FIX: only update fightLeaderboard via updateFightStats, not bomb tag leaderboard
-  await updateFightStats(winnerId,true,loserId,{opponentName:loser.species.name,opponentSpecies:loser.species,hpLeft:winner.currentHp,special:reason==="forfeit"?"😵 forfeit":reason==="counter"?"💥 counter":"",doubleWin,rollEarned});
+  await updateFightStats(winnerId,true,loserId,{opponentName:loser.species.name,opponentSpecies:loser.species,hpLeft:winner.currentHp,special:reason==="forfeit"?"😵 forfeit":reason==="counter"?"💥 counter":"",doubleWin,rollEarned,winPoints});
   await updateFightStats(loserId,false,winnerId,{opponentName:winner.species.name,opponentSpecies:winner.species,hpLeft:loser.currentHp,special:reason==="forfeit"?"😵 forfeited":"",doubleWin:false,rollEarned:false});
   await updateReaperQuest(winnerId,"player");
   _state.fightCooldowns.set(winnerId,Date.now()+60000);
@@ -75,7 +75,11 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
 // ==================== BOT AI TURN ====================
 async function doBotTurn(channel, fightId) {
   const fight = _state.activeBotFights.get(fightId);
-  if (!fight) return;
+  if (!fight || fight.botTurnInProgress) return;
+  fight.botTurnInProgress = true;
+  if (fight.timeout) clearTimeout(fight.timeout);
+  fight.timeout = null;
+  try {
   const personality = botPersonalities[fight.difficulty];
   const msg = _state.fightMessages.get(fightId);
   if (msg) await msg.edit({embeds:[buildBotFightEmbed(fight,fight.log||[],"bot_thinking")],components:[buildBotFightRow(fightId,fight,"bot_thinking")]}).catch(()=>{});
@@ -85,19 +89,28 @@ async function doBotTurn(channel, fightId) {
   const botC = {
     id:"BOT", species:fight.botSpecies, currentHp:fight.botHp, maxHp:fight.botMaxHp,
     ultBuff:fight.botUltBuff, adaptiveStacks:fight.botAdaptiveStacks||0, attackCounter:fight.botAttackCounter||0,
-    burn:fight.botBurn||0, burnRounds:fight.botBurnRounds||0, curse:fight.botCurse||0,
-    blockHeal:fight.botBlockHeal||false, possession:false, stunnedTurns:fight.botStunnedTurns||0,
+    burn:fight.botBurn||0, burnRounds:fight.botBurnRounds||0, curse:fight.botCurse||0, curseRounds:fight.botCurseRounds||0,
+    blockHeal:fight.botBlockHeal||false, possession:fight.botPossession||false, stunnedTurns:fight.botStunnedTurns||0,
     healCooldown:fight.botHealCooldown, ultCooldown:fight.botUltCooldown, lastUltUsed:fight.botLastUltUsed,
   };
   const playerC = {
     id:fight.playerId, species:fight.playerSpecies, currentHp:fight.playerHp, maxHp:fight.playerMaxHp,
     ultBuff:fight.playerUltBuff, adaptiveStacks:fight.playerAdaptiveStacks||0, attackCounter:fight.playerAttackCounter||0,
-    burn:fight.playerBurn||0, burnRounds:fight.playerBurnRounds||0, curse:fight.playerCurse||0,
+    burn:fight.playerBurn||0, burnRounds:fight.playerBurnRounds||0, curse:fight.playerCurse||0, curseRounds:fight.playerCurseRounds||0,
     blockHeal:fight.playerBlockHeal||false, possession:fight.playerPossession||false, stunnedTurns:fight.playerStunnedTurns||0,
     healCooldown:fight.playerHealCooldown, ultCooldown:fight.playerUltCooldown, lastUltUsed:fight.playerLastUltUsed,
   };
 
-  if (playerC.possession) {
+  if (botC.stunnedTurns>0) {
+    botC.stunnedTurns--;
+    log.push("Bot is stunned and loses this turn.");
+  } else if (botC.possession) {
+    botC.possession=false;
+    const selfHit=Math.floor(Math.random()*(botC.species.atkMax-botC.species.atkMin+1))+botC.species.atkMin;
+    botC.currentHp=Math.max(0,botC.currentHp-selfHit);
+    fight.botHp=botC.currentHp;
+    log.push(`Bot is possessed and attacks itself for ${selfHit}.`);
+  } else if (playerC.possession) {
     playerC.possession=false;
     const selfHit=Math.floor(Math.random()*(playerC.species.atkMax-playerC.species.atkMin+1))+playerC.species.atkMin;
     fight.playerHp=Math.max(0,fight.playerHp-selfHit);
@@ -184,9 +197,9 @@ async function doBotTurn(channel, fightId) {
   // Sync
   fight.botHp=Math.max(0,botC.currentHp); fight.playerHp=Math.max(0,playerC.currentHp);
   fight.playerBurn=playerC.burn; fight.playerBurnRounds=playerC.burnRounds;
-  fight.botBurn=botC.burn; fight.botBurnRounds=botC.burnRounds;
-  fight.playerBlockHeal=playerC.blockHeal; fight.playerCurse=playerC.curse;
-  fight.playerPossession=playerC.possession; fight.playerStunnedTurns=playerC.stunnedTurns||0;
+  fight.botBurn=botC.burn; fight.botBurnRounds=botC.burnRounds; fight.botCurse=botC.curse; fight.botCurseRounds=botC.curseRounds||0;
+  fight.playerBlockHeal=playerC.blockHeal; fight.playerCurse=playerC.curse; fight.playerCurseRounds=playerC.curseRounds||0;
+  fight.playerPossession=playerC.possession; fight.playerStunnedTurns=playerC.stunnedTurns||0; fight.botPossession=botC.possession;
   fight.playerUltBuff=playerC.ultBuff;
 
   // Burn tick on player
@@ -204,6 +217,7 @@ async function doBotTurn(channel, fightId) {
   // Player ULT also ticks on bot's turn (every round rule)
   fight.playerUltCooldown=Math.max(0,(fight.playerUltCooldown||0)-1);
   // Player heal cooldown does NOT tick on bot's turn (only ticks when player acts)
+  fight.botStunnedTurns=botC.stunnedTurns||0;
   fight.round++; fight.log=log.slice(-3);
 
   if (fight.playerHp<=0) { await endBotFight(channel,fightId,"bot","player",fight.difficulty); return; }
@@ -211,6 +225,17 @@ async function doBotTurn(channel, fightId) {
 
   if (msg) await msg.edit({embeds:[buildBotFightEmbed(fight,fight.log||[],"playing")],components:[buildBotFightRow(fightId,fight)]}).catch(()=>{});
   fight.timeout=setTimeout(()=>{ if(_state.activeBotFights.has(fightId)) endBotFight(channel,fightId,"player","bot",fight.difficulty,"timeout"); },60000);
+  } catch (error) {
+    console.error("Bot fight turn failed:", error);
+    if (_state.activeBotFights.has(fightId)) {
+      fight.log=[...(fight.log||[]), "The bot turn hit an error. Your turn is restored."].slice(-3);
+      const currentMessage=_state.fightMessages.get(fightId);
+      if (currentMessage) await currentMessage.edit({embeds:[buildBotFightEmbed(fight,fight.log,"playing")],components:[buildBotFightRow(fightId,fight)]}).catch(editError=>console.error("Failed to restore bot fight UI:",editError));
+      fight.timeout=setTimeout(()=>{ if(_state.activeBotFights.has(fightId)) endBotFight(channel,fightId,"player","bot",fight.difficulty,"timeout"); },60000);
+    }
+  } finally {
+    fight.botTurnInProgress=false;
+  }
 }
 
 // ==================== END BOT FIGHT ====================
@@ -228,7 +253,7 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
       case "impossible": winsEarned=5; if(Math.random()<0.9) rollEarned=true; break;
     }
     if (rollEarned) { const ud=_state.userSpecies.get(fight.playerId); if(ud){ ud.rolls=(ud.rolls||0)+1; _state.userSpecies.set(fight.playerId,ud); await database.saveUserSpecies(fight.playerId,ud); } }
-    if (winsEarned>0) { await updateFightStats(fight.playerId,true,"BOT",{opponentName:fight.botSpecies.name,opponentSpecies:fight.botSpecies,hpLeft:fight.playerHp,special:`🤖 ${difficulty} bot`}); }
+    if (winsEarned>0) { await updateFightStats(fight.playerId,true,"BOT",{opponentName:fight.botSpecies.name,opponentSpecies:fight.botSpecies,hpLeft:fight.playerHp,special:`🤖 ${difficulty} bot`,winPoints:winsEarned}); }
     await updateBotStats(fight.playerId,difficulty,true);
   } else {
     await updateBotStats(fight.playerId,difficulty,false);
