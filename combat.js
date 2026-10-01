@@ -110,12 +110,12 @@ function calculateDamage(attacker, defender) {
       if (ub.healSelf&&ub.healAmount) { attackerMutations.hpDelta+=ub.healAmount; specialLines.push(`🩸 Heal +${ub.healAmount}`); }
       if (ub.curse&&ub.curseRounds) { defender.curse=(defender.curse||0)+ub.curse; defender.curseRounds=ub.curseRounds; specialLines.push(`👿 Curse applied`); }
       if (ub.burn&&ub.burnRounds) { defender.burn=(defender.burn||0)+ub.burn; defender.burnRounds=Math.max(defender.burnRounds||0,ub.burnRounds); specialLines.push(`🔥 Burn +${ub.burn}`); }
-      attacker.ultBuff=null;
+      attacker.ultBuff=ub.invincible?{type:"invincible"}:null;
     } else if (ub.type==="buff"&&ub.attack) {
       multiplier*=ub.attack; specialLines.push(`💪 ULT Buff +${Math.round((ub.attack-1)*100)}%`);
       ub.duration--; if(ub.duration<=0) attacker.ultBuff=null;
     } else if (ub.type==="thunderActive") {
-      multiplier*=1.4; specialLines.push("⚡ Thunder Surge ×1.4"); attacker.ultBuff=null;
+      multiplier*=1.4; defender.stunnedTurns=Math.max(defender.stunnedTurns||0,1); specialLines.push("⚡ Thunder Surge ×1.4 — target paralyzed"); attacker.ultBuff=null;
     }
   }
 
@@ -270,6 +270,10 @@ function applyUltEffect(attacker, defender) {
     }
     case "Archdemon":   attacker.ultBuff={type:"nextAttack",multiplier:2.0,curse:10,curseRounds:3}; msg="👿 **ABYSSAL GATE!**\n2× + 10 curse 3 turns!"; break;
     case "Chimera": {
+      if (defender.species.name==="Chimera") {
+        msg="🎭 **MIRROR REALM!** Chimera cannot copy another Chimera ULT.";
+        break;
+      }
       // Copy opponent's species ULT directly — no waiting, no fallback
       // Temporarily spoof attacker species to cast defender's ULT
       const originalSpecies = attacker.species;
