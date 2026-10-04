@@ -4,7 +4,7 @@ const {
 
 const database = require("./database.js"); // MongoDB
 const state    = require("./state.js");
-const { setState: setHelperState, assignSpeciesRole } = require("./helpers.js");
+const { setState: setHelperState } = require("./helpers.js");
 const { setState: setFightState }   = require("./fights.js");
 const { setState: setCommandState, setClient, handleCommand, handleButton, commands } = require("./commands.js");
 const { disintegrationMessages } = require("./constants.js");
@@ -140,18 +140,6 @@ client.on("interactionCreate", async (interaction) => {
       await safeReply(interaction, { embeds:[createErrorEmbed("An error occurred. Please try again.")], flags:64 });
     } catch(_) {}
   }
-});
-
-// ==================== GUILD MEMBER ADD ====================
-client.on("guildMemberAdd", async (member) => {
-  try {
-    if (!member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageRoles)) return;
-    const ud = state.userSpecies.get(member.id);
-    if (ud?.species?.roleName) {
-      const role = member.guild.roles.cache.find(r => r.name === ud.species.roleName);
-      if (role && !member.roles.cache.has(role.id)) { await member.roles.add(role); console.log(`✅ Gave ${ud.species.name} role to ${member.user.tag}`); }
-    }
-  } catch(e) { console.error("guildMemberAdd error:", e.message); }
 });
 
 // ==================== REGISTER SLASH COMMANDS ====================
