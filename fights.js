@@ -4,7 +4,7 @@ const { humanSpecies } = require("./constants.js");
 const database = require("./database.js");
 const {
   hpBar, updateFightStats, updateBotStats,
-  updateReaperQuest, updateCyborgProgress, assignSpeciesRole,
+  updateReaperQuest, updateCyborgProgress,
 } = require("./helpers.js");
 const {
   makeCombatant, calculateDamage, applyUltEffect,
