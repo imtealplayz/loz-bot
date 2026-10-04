@@ -1,6 +1,6 @@
 const {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
-  SlashCommandBuilder, REST, Routes, PermissionsBitField,
+  SlashCommandBuilder, REST, Routes,
 } = require("discord.js");
 const {
   patchNotes, humanSpecies, reaperSpecies, archdemonSpecies,
@@ -13,7 +13,7 @@ const {
   hpBar, createErrorEmbed, createSuccessEmbed, safeReply,
   getSpeciesByName, getRandomSpecies, getDragonSubtype,
   isPlayerInFight, isPlayerInBotFight, canFight,
-  canSendRequest, assignSpeciesRole,
+  canSendRequest,
   updateLeaderboard, updateFightStats, updateCyborgProgress,
   isCyborgReadyForAwakening, updateReaperQuest,
 } = require("./helpers.js");
@@ -553,16 +553,12 @@ async function handleCommand(interaction) {
       ud.originalSpecies=newSp;
       ud.species=newSp;
       _state.userSpecies.set(target.id,ud); database.saveUserSpecies(target.id,ud);
-      const member=await guild.members.fetch(target.id).catch(()=>null);
-      if (member) { const old=member.roles.cache.find(r=>r.name===ud.species?.roleName); if(old) await member.roles.remove(old).catch(()=>{}); await assignSpeciesRole(member,newSp); }
       return safeReply(interaction,{embeds:[createSuccessEmbed(`Changed <@${target.id}>'s species to ${newSp.emoji} **${newSp.name}**!`)]});
     }
 
     if (sub==="species-reset") {
       const target=options.getUser("user");
-      const member=await guild.members.fetch(target.id).catch(()=>null);
       const ud=_state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0,badges:[]};
-      if (ud.species?.roleName&&member) { const old=member.roles.cache.find(r=>r.name===ud.species.roleName); if(old) await member.roles.remove(old).catch(()=>{}); }
       ud.species=humanSpecies; ud.originalSpecies=humanSpecies;
       _state.userSpecies.set(target.id,ud); database.saveUserSpecies(target.id,ud);
       return safeReply(interaction,{embeds:[createSuccessEmbed(`Reset <@${target.id}> to 👤 **Human**.`)]});
@@ -665,7 +661,6 @@ async function handleButton(interaction) {
 
     // Slow stuff after responding
     database.saveUserSpecies(user.id,userData).catch(console.error);
-    guild.members.fetch(user.id).then(member=>assignSpeciesRole(member,newSpecies)).catch(()=>{});
   }
 
   // ── SWITCH ────────────────────────────────────────────────────
@@ -683,7 +678,6 @@ async function handleButton(interaction) {
     else { if(!ud.questSpecies?.archdemon?.unlocked) return interaction.update({content:"❌ Archdemon not unlocked!",components:[]}); newSp=archdemonSpecies; }
     ud.species=newSp; ud.lastSwitch=Date.now();
     _state.userSpecies.set(user.id,ud); database.saveUserSpecies(user.id,ud);
-    const member=await guild.members.fetch(user.id); await assignSpeciesRole(member,newSp);
     return interaction.update({embeds:[createSuccessEmbed(`Switched to ${newSp.emoji} **${newSp.name}**! Next switch in 3h.`)],components:[]});
   }
 
@@ -1011,7 +1005,6 @@ async function handleButton(interaction) {
     const mech=getSpeciesByName("Mechangel");
     ud.species=mech; ud.originalSpecies=mech; ud.awakening.cyborg.awakened=true; ud.rolls=(ud.rolls||0)+5;
     _state.userSpecies.set(user.id,ud); await database.saveUserSpecies(user.id,ud);
-    const member=await guild.members.fetch(user.id); await assignSpeciesRole(member,mech);
     return interaction.update({embeds:[new EmbedBuilder().setColor(0x00ffff).setTitle("⚡ MECHANGEL AWAKENING COMPLETE ⚡")
       .setDescription("🤖 **Cyborg → ⚡ Mechangel**\n\n+15 HP · New passive: Quantum Processing · New ULT: System Restoration\n\n🎁 +5 Species Rolls!\n\n*Machine and angel, fused as one.*")],components:[]});
   }
