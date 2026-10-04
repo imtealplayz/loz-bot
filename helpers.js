@@ -190,27 +190,6 @@ function isCyborgReadyForAwakening(ud) {
   return p.wins>=req.wins && p.damageDealt>=req.damageDealt && p.ultUses>=req.ultUses && !p.awakened;
 }
 
-// ==================== ROLE ASSIGNMENT ====================
-async function assignSpeciesRole(member, species) {
-  if (!member || !species.roleName) return false;
-  try {
-    const guild = member.guild;
-    let role = guild.roles.cache.find(r => r.name === species.roleName);
-    if (!role) role = await guild.roles.create({ name:species.roleName, color:species.color, reason:`Species role for ${species.name}` });
-    const allRoles = [
-      "God","Demi-God","Demon-Lord","Demon-King","Demon","Oni","Orc-Lord","Kijin",
-      "High-Orc","Ogre","Goblin","Orc","Angel","Chimera","Reaper","Cyborg",
-      "Half-Blood","Mechangel","Archdemon","Dragon-Fire","Dragon-Thunder","Dragon-Ice","Dragon-Earth"
-    ];
-    for (const rn of allRoles) {
-      const old = member.roles.cache.find(r => r.name === rn);
-      if (old && old.name !== species.roleName) await member.roles.remove(old).catch(()=>{});
-    }
-    if (!member.roles.cache.has(role.id)) await member.roles.add(role);
-    return true;
-  } catch (e) { console.error("assignSpeciesRole error:", e); return false; }
-}
-
 module.exports = {
   setState,
   hpBar, createErrorEmbed, createSuccessEmbed, safeReply,
@@ -219,5 +198,4 @@ module.exports = {
   hasActiveRequest, canSendRequest,
   updateLeaderboard, updateFightStats, updateBotStats,
   updateReaperQuest, initAwakeningData, updateCyborgProgress, isCyborgReadyForAwakening,
-  assignSpeciesRole,
 };
