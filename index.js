@@ -39,6 +39,21 @@ setClient(client);
 process.on("unhandledRejection", e => console.error("Unhandled rejection:", e));
 process.on("uncaughtException",  e => console.error("Uncaught exception:", e));
 
+// ==================== PRESENCE ====================
+function updatePresence() {
+  client.user.setPresence({
+    activities: [{
+      name: "Custom Status",
+      type: 4,
+      state: `Serving ${client.guilds.cache.size} servers`,
+    }],
+    status: "online",
+  });
+}
+
+client.on("guildCreate", updatePresence);
+client.on("guildDelete", updatePresence);
+
 // ==================== READY EVENT ====================
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
@@ -56,7 +71,7 @@ client.once("ready", async () => {
   await database.loadAllQuestProgress(state.questProgress, state.userSpecies);
 
   console.log(success ? "✅ Database loaded" : "⚠️ Database loaded with issues");
-  client.user.setPresence({ activities:[{name:"loz-bot | /help", type:2}], status:"dnd" });
+  updatePresence();
   console.log(`🎉 Bot ready with ${state.userSpecies.size} users!`);
 });
 
