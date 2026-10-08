@@ -1,17 +1,43 @@
 const mongoose = require("mongoose");
 
 // ==================== CONNECT ====================
+mongoose.set("bufferCommands", false);
+
 let connected = false;
+let connectionPromise = null;
+let authenticationFailed = false;
+
 async function connect() {
-  if (connected) return;
-  try {
-    await mongoose.connect(process.env.MONGODB_URI);
-    connected = true;
-    console.log("✅ MongoDB connected!");
-  } catch (e) {
-    console.error("❌ MongoDB connection failed:", e.message);
+  if (connected && mongoose.connection.readyState === 1) return true;
+  if (authenticationFailed) return false;
+  if (connectionPromise) return connectionPromise;
+
+  const uri = (process.env.MONGODB_URI || "").trim();
+  if (!uri) {
+    console.error("❌ MongoDB connection failed: MONGODB_URI is missing.");
+    authenticationFailed = true;
+    return false;
   }
+
+  connectionPromise = mongoose.connect(uri, { serverSelectionTimeoutMS: 10000 })
+    .then(() => {
+      connected = true;
+      console.log("✅ MongoDB connected!");
+      return true;
+    })
+    .catch(e => {
+      connected = false;
+      console.error("❌ MongoDB connection failed:", e.message);
+      if (/bad auth|authentication failed/i.test(e.message)) authenticationFailed = true;
+      return false;
+    })
+    .finally(() => {
+      connectionPromise = null;
+    });
+
+  return connectionPromise;
 }
+
 connect();
 
 // ==================== SCHEMAS ====================
@@ -84,9 +110,12 @@ const FightLeaderboard = mongoose.model("FightLeaderboard", fightLeaderboardSche
 // ==================== HELPERS ====================
 async function upsert(Model, filter, data) {
   try {
+    if (!await connect()) return false;
     await Model.findOneAndUpdate(filter, { $set:data }, { upsert:true, new:true });
+    return true;
   } catch(e) {
-    console.error(`❌ DB upsert error (${Model.modelName}):`, e.message);
+    console.error("❌ DB upsert error (" + Model.modelName + "):", e.message);
+    return false;
   }
 }
 
@@ -132,6 +161,10 @@ async function saveDuelChannel(guildId, channelId) {
 // ==================== LOAD FUNCTIONS ====================
 async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStats, dailyClaims, botStats) {
   try {
+    if (!await connect()) {
+      console.error("⚠️ Skipping MongoDB data load because the database is unavailable.");
+      return false;
+    }
     console.log("📂 Loading data from MongoDB...");
 
     const users = await User.find({});
@@ -190,6 +223,7 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
 
 async function loadAllQuestProgress(questProgress, userSpecies) {
   try {
+    if (!await connect()) return false;
     const quests = await Quest.find({});
     for (const q of quests) {
       const existing = questProgress.get(q.userId) || {};
@@ -220,6 +254,7 @@ async function loadAllQuestProgress(questProgress, userSpecies) {
 
 async function loadDuelChannel(guildId) {
   try {
+    if (!await connect()) return null;
     const doc = await DuelChannel.findOne({ guildId });
     return doc ? doc.channelId : null;
   } catch(e) {
@@ -232,6 +267,7 @@ async function loadDuelChannel(guildId) {
 // Used by /god debug-db to show collection counts
 async function listAllKeys() {
   try {
+    if (!await connect()) return {};
     return {
       users:            await User.countDocuments(),
       leaderboard:      await Leaderboard.countDocuments(),
@@ -249,6 +285,7 @@ async function listAllKeys() {
 }
 
 async function deleteUser(userId) {
+  if (!await connect()) return false;
   await User.deleteOne({ userId });
   await Leaderboard.deleteOne({ userId });
   await FightLeaderboard.deleteOne({ userId });
@@ -257,6 +294,7 @@ async function deleteUser(userId) {
   await Daily.deleteOne({ userId });
   await Quest.deleteMany({ userId });
   console.log(`🗑️ Deleted all data for user ${userId}`);
+  return true;
 }
 
 // ==================== EXPORTS ====================
