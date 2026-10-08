@@ -38,7 +38,7 @@ async function connect() {
   return connectionPromise;
 }
 
-connect();
+// Connection is established on first database operation.
 
 // ==================== SCHEMAS ====================
 const userSchema = new mongoose.Schema({
