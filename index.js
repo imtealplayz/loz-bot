@@ -71,7 +71,7 @@ async function registerCommands() {
 }
 
 // ==================== READY EVENT ====================
-client.once("ready", async () => {
+client.once("clientReady", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   await registerCommands();
 
@@ -80,6 +80,11 @@ client.once("ready", async () => {
     state.fightStats, state.dailyClaims, state.botStats,
   );
 
+  if (!success) {
+    console.error("❌ LOZ cannot start without MongoDB. Check MONGODB_URI in Railway and restart the service.");
+    process.exit(1);
+  }
+
   for (const guild of client.guilds.cache.values()) {
     const sc = await database.loadDuelChannel(guild.id);
     if (sc) { state.duelChannels.set(guild.id, sc); console.log(`📋 Loaded duel channel for ${guild.name}`); }
@@ -87,7 +92,7 @@ client.once("ready", async () => {
 
   await database.loadAllQuestProgress(state.questProgress, state.userSpecies);
 
-  console.log(success ? "✅ Database loaded" : "⚠️ Database loaded with issues");
+  console.log("✅ Database loaded");
   updatePresence();
   console.log(`🎉 Bot ready with ${state.userSpecies.size} users!`);
 });
