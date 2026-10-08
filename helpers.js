@@ -29,9 +29,16 @@ function createSuccessEmbed(msg) {
 
 async function safeReply(interaction, content) {
   try {
-    if (!interaction.replied && !interaction.deferred) return await interaction.reply(content);
-    else return await interaction.followUp(content);
-  } catch (e) { console.error("safeReply error:", e); }
+    if (!interaction?.isRepliable?.()) return null;
+    if (interaction.deferred) return await interaction.editReply(content);
+    if (interaction.replied) return await interaction.followUp(content);
+    return await interaction.reply(content);
+  } catch (e) {
+    if (e.code !== 10062 && e.code !== 40060 && !e.message?.includes("Unknown interaction")) {
+      console.error("safeReply error:", e);
+    }
+    return null;
+  }
 }
 
 // ==================== SPECIES LOOKUP ====================
