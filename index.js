@@ -12,8 +12,7 @@ const { disintegrationMessages } = require("./constants.js");
 // ==================== CONSTANTS ====================
 const ownerId     = "926063716057894953";
 const secondGodId = "1445387368830992455";
-const TOKEN       = process.env.TOKEN;
-const CLIENT_ID   = process.env.CLIENT_ID;
+const TOKEN = (process.env.TOKEN || process.env.DISCORD_TOKEN || "").trim();
 const prefix      = "'";
 
 // Attach owner IDs to state so helpers/commands can read them
@@ -54,9 +53,27 @@ function updatePresence() {
 client.on("guildCreate", updatePresence);
 client.on("guildDelete", updatePresence);
 
+// ==================== COMMAND REGISTRATION ====================
+async function registerCommands() {
+  try {
+    if (!client.user?.id || !client.token) {
+      console.error("❌ Cannot register slash commands: Discord client is not authenticated.");
+      return;
+    }
+
+    const rest = new REST({ version:"10" }).setToken(client.token);
+    console.log("🔄 Registering slash commands...");
+    await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+    console.log("✅ Commands registered!");
+  } catch (e) {
+    console.error("Command registration error:", e.message);
+  }
+}
+
 // ==================== READY EVENT ====================
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
+  await registerCommands();
 
   const success = await database.loadAllData(
     state.userSpecies, state.leaderboard, state.fightLeaderboard,
@@ -157,15 +174,13 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-// ==================== REGISTER SLASH COMMANDS ====================
-const rest = new REST({ version:"10" }).setToken(TOKEN);
-(async () => {
-  try {
-    console.log("🔄 Registering slash commands...");
-    await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-    console.log("✅ Commands registered!");
-  } catch(e) { console.error("Command registration error:", e); }
-})();
-
 // ==================== LOGIN ====================
-client.login(TOKEN);
+if (!TOKEN) {
+  console.error("❌ Missing Discord bot token. Set TOKEN (or DISCORD_TOKEN) in Railway environment variables.");
+  process.exit(1);
+}
+
+client.login(TOKEN).catch(e => {
+  console.error("❌ Discord login failed:", e.message);
+  process.exit(1);
+});
