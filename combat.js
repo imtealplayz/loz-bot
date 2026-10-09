@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
+const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const { typeAdvantages, critRates } = require("./constants.js");
 const { hpBar, updateCyborgProgress } = require("./helpers.js");
 
@@ -292,113 +292,207 @@ function applyUltEffect(attacker, defender) {
   return { message:msg, requiresChoice, choiceType };
 }
 
-// ==================== FIGHT EMBED & ROW BUILDERS ====================
+// ==================== FIGHT MESSAGE COMPONENTS ====================
+const INLINE = String.fromCharCode(96);
+function inlineCode(value) { return INLINE + value + INLINE; }
+
+function formatFightHealth(current, max) {
+  const safeMax = Math.max(1, Number(max) || 1);
+  const safeCurrent = Math.max(0, Math.min(safeMax, Number(current) || 0));
+  const filled = Math.round((safeCurrent / safeMax) * 10);
+  const bar = "█".repeat(filled) + "░".repeat(10 - filled);
+  return "HP " + inlineCode(safeCurrent + "/" + safeMax) + "  " + bar;
+}
+
+function cleanFightLog(logLines = []) {
+  return logLines
+    .flatMap(line => String(line ?? "").split("\n"))
+    .map(line => line
+      .replace(/[\\u{1F300}-\\u{1FAFF}\\u{2600}-\\u{27BF}]/gu, "")
+      .replace(/\\uFE0F|\\u200D/g, "")
+      .replace(/\\s*[—–]\\s*/g, ": ")
+      .replace(/\\s{2,}/g, " ")
+      .trim()
+      .replace(/\\b(for|deals?|heals?|healed|damage|burn|curse|HP:?)\\s+(\\d+(?:\\.\\d+)?(?:\\/\\d+)?%?)/gi, (match, label, amount) => label + " " + inlineCode(amount))
+      .replace(/\\bRound\\s+(\\d+)\\b/gi, (match, round) => "Round " + inlineCode(round)))
+    .filter(Boolean);
+}
+
 function getBuffLine(p) {
-  const parts=[];
-  if (p.ultBuff)          parts.push(`✨ ${p.ultBuff.type}`);
-  if (p.burn>0)           parts.push(`🔥 Burn ${p.burn}×${p.burnRounds}`);
-  if (p.curse>0)          parts.push(`👿 Curse ${p.curse}`);
-  if (p.blockHeal)        parts.push("🚫 Can't heal");
-  if (p.possession)       parts.push("🎭 Possessed");
-  if (p.stunnedTurns>0)   parts.push(`⚡ Stunned ${p.stunnedTurns}`);
-  return parts.length?parts.join(" | "):"";
+  const parts = [];
+  if (p.ultBuff)        parts.push("Ultimate: " + inlineCode(p.ultBuff.type));
+  if (p.burn > 0)       parts.push("Burn: " + inlineCode(p.burn + " × " + p.burnRounds));
+  if (p.curse > 0)      parts.push("Curse: " + inlineCode(p.curse));
+  if (p.blockHeal)      parts.push("Healing blocked");
+  if (p.possession)     parts.push("Possessed");
+  if (p.stunnedTurns>0) parts.push("Stunned: " + inlineCode(p.stunnedTurns));
+  return parts.length ? parts.join(" · ") : "";
 }
 
-function buildFightEmbed(fight, logLines=[], phase="playing") {
-  const p1=fight.player1, p2=fight.player2;
-  const turnPlayer=fight.currentTurn===fight.player1Id?p1:p2;
-  const color=phase==="ended"?0x2ecc71:turnPlayer.species.color||0xff4500;
-  let statusLine="";
-  if (phase==="bot_thinking") statusLine="\n🤖 **Bot is thinking...**";
-  else if (phase==="choice")  statusLine="\n🎯 **Choose your path!**";
-  else if (phase==="playing") statusLine=`\n🎲 **It's <@${fight.currentTurn}>'s turn!**`;
-  else if (phase==="ended")   statusLine="\n🏆 **Fight Over!**";
-  const p1Buffs=getBuffLine(p1), p2Buffs=getBuffLine(p2);
-  const desc=
-    `${p1.species.emoji} **${p1.species.name}** — <@${fight.player1Id}>\n`+
-    `${hpBar(p1.currentHp,p1.maxHp)}${p1Buffs?`\n${p1Buffs}`:""}\n\n`+
-    `${p2.species.emoji} **${p2.species.name}** — <@${fight.player2Id}>\n`+
-    `${hpBar(p2.currentHp,p2.maxHp)}${p2Buffs?`\n${p2Buffs}`:""}\n`+
-    statusLine+`\n\n📜 **Round ${fight.round}**\n`+
-    (logLines.length?logLines.map(l=>`└ ${l}`).join("\n"):"└ Fight started!");
-  return new EmbedBuilder().setColor(color).setTitle(`⚔️ LOZ FIGHT — Round ${fight.round}`).setDescription(desc)
-    .setFooter({text:`ULT CDs — ${p1.species.name}: ${p1.ultCooldown} | ${p2.species.name}: ${p2.ultCooldown}`});
+function buildFightEmbed(fight, logLines = [], phase = "playing") {
+  const p1 = fight.player1, p2 = fight.player2;
+  const turnPlayer = fight.currentTurn === fight.player1Id ? p1 : p2;
+  const color = phase === "ended" ? 0x2ecc71 : (turnPlayer.species.color || 0xff4500);
+  const p1Buffs = getBuffLine(p1), p2Buffs = getBuffLine(p2);
+  const logs = cleanFightLog(logLines);
+  return new ContainerBuilder()
+    .setAccentColor(color)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent("## LOZ Fight · Round " + inlineCode(fight.round)))
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      "**" + p1.species.name + "**\n" + formatFightHealth(p1.currentHp, p1.maxHp) + (p1Buffs ? "\n" + p1Buffs : "")
+    ))
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      "**" + p2.species.name + "**\n" + formatFightHealth(p2.currentHp, p2.maxHp) + (p2Buffs ? "\n" + p2Buffs : "")
+    ))
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      "**Recent actions**\n" + (logs.length ? logs.join("\n") : "Fight started.")
+    ))
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      "Ultimate cooldowns: " + p1.species.name + " " + inlineCode(p1.ultCooldown) + " · " + p2.species.name + " " + inlineCode(p2.ultCooldown)
+    ));
 }
 
-function buildFightRow(fightId, player, phase="playing") {
-  if (phase==="bot_thinking")
-    return new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`pvp_thinking_${fightId}`).setLabel("🤖 Bot is thinking...").setStyle(ButtonStyle.Secondary).setDisabled(true));
-  if (phase==="choice_angel")
+function buildFightRow(fightId, player, phase = "playing") {
+  if (phase === "bot_thinking")
+    return new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("pvp_thinking_" + fightId).setLabel("Opponent is thinking...").setStyle(ButtonStyle.Secondary).setDisabled(true));
+  if (phase === "choice_angel")
     return new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`pvp_choice_angel_smite_${fightId}`).setLabel("⚔️ Smite (1.5× + 35% heal)").setStyle(ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId(`pvp_choice_angel_prayer_${fightId}`).setLabel("💚 Prayer (60% heal)").setStyle(ButtonStyle.Success));
-  if (phase==="choice_ice_dragon")
+      new ButtonBuilder().setCustomId("pvp_choice_angel_smite_" + fightId).setLabel("Smite (1.5× + 35% heal)").setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId("pvp_choice_angel_prayer_" + fightId).setLabel("Prayer (60% heal)").setStyle(ButtonStyle.Success));
+  if (phase === "choice_ice_dragon")
     return new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`pvp_choice_ice_attack_${fightId}`).setLabel("⚔️ Glacial Strike (1.9×)").setStyle(ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId(`pvp_choice_ice_heal_${fightId}`).setLabel("💚 Glacial Heal (+50%)").setStyle(ButtonStyle.Success));
-  if (phase==="choice_earth_dragon")
+      new ButtonBuilder().setCustomId("pvp_choice_ice_attack_" + fightId).setLabel("Glacial Strike (1.9×)").setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId("pvp_choice_ice_heal_" + fightId).setLabel("Glacial Heal (+50%)").setStyle(ButtonStyle.Success));
+  if (phase === "choice_earth_dragon")
     return new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`pvp_choice_earth_attack_${fightId}`).setLabel("⚔️ Terra Strike (1.2×)").setStyle(ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId(`pvp_choice_earth_shield_${fightId}`).setLabel("🛡️ Terra Shield").setStyle(ButtonStyle.Primary));
-  const healDisabled=player.healCooldown>0||player.currentHp>=player.maxHp*0.8;
-  const ultLabel=player.ultCooldown>0?`✨ ULT (${player.ultCooldown})`:"✨ ULT";
+      new ButtonBuilder().setCustomId("pvp_choice_earth_attack_" + fightId).setLabel("Terra Strike (1.2×)").setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId("pvp_choice_earth_shield_" + fightId).setLabel("Terra Shield").setStyle(ButtonStyle.Primary));
+  const healDisabled = player.healCooldown > 0 || player.currentHp >= player.maxHp * 0.8;
+  const ultLabel = player.ultCooldown > 0 ? "Ultimate (" + player.ultCooldown + ")" : "Ultimate";
   return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`pvp_attack_${fightId}`).setLabel("⚔️ ATTACK").setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId(`pvp_heal_${fightId}`).setLabel("💚 HEAL").setStyle(ButtonStyle.Success).setDisabled(healDisabled),
-    new ButtonBuilder().setCustomId(`pvp_ult_${fightId}`).setLabel(ultLabel).setStyle(ButtonStyle.Secondary).setDisabled(player.ultCooldown>0),
-    new ButtonBuilder().setCustomId(`pvp_forfeit_${fightId}`).setLabel("🏃 FORFEIT").setStyle(ButtonStyle.Danger));
+    new ButtonBuilder().setCustomId("pvp_attack_" + fightId).setLabel("Attack").setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId("pvp_heal_" + fightId).setLabel("Heal").setStyle(ButtonStyle.Success).setDisabled(healDisabled),
+    new ButtonBuilder().setCustomId("pvp_ult_" + fightId).setLabel(ultLabel).setStyle(ButtonStyle.Secondary).setDisabled(player.ultCooldown > 0),
+    new ButtonBuilder().setCustomId("pvp_forfeit_" + fightId).setLabel("Forfeit").setStyle(ButtonStyle.Danger));
 }
 
-function buildBotFightEmbed(fight, logLines=[], phase="playing") {
+function buildBotFightEmbed(fight, logLines = [], phase = "playing") {
   const { botPersonalities } = require("./constants.js");
-  const personality=botPersonalities[fight.difficulty];
-  const color=phase==="ended"?0x2ecc71:personality.color;
-  const pBuf=[], bBuf=[];
-  if (fight.playerUltBuff)        pBuf.push(`✨ ${fight.playerUltBuff.type}`);
-  if ((fight.playerBurn||0)>0)    pBuf.push(`🔥 Burn ${fight.playerBurn}×${fight.playerBurnRounds}`);
-  if (fight.botUltBuff)           bBuf.push(`✨ ${fight.botUltBuff.type}`);
-  if ((fight.botBurn||0)>0)       bBuf.push(`🔥 Burn ${fight.botBurn}×${fight.botBurnRounds}`);
-  let statusLine=phase==="bot_thinking"?"\n🤖 **Bot is thinking...**":phase==="playing"?"\n🎲 **Your turn!**":phase==="choice"?"\n🎯 **Choose your path!**":"\n🏆 **Fight Over!**";
-  const desc=
-    `${fight.playerSpecies.emoji} **${fight.playerSpecies.name}** — <@${fight.playerId}>\n`+
-    `${hpBar(fight.playerHp,fight.playerMaxHp)}${pBuf.length?`\n${pBuf.join(" | ")}`:""}\n\n`+
-    `🤖 **${personality.emoji} ${personality.name}** — ${fight.botSpecies.emoji} ${fight.botSpecies.name}\n`+
-    `${hpBar(fight.botHp,fight.botMaxHp)}${bBuf.length?`\n${bBuf.join(" | ")}`:""}`+
-    statusLine+`\n\n📜 **Round ${fight.round}**\n`+
-    (logLines.length?logLines.map(l=>`└ ${l}`).join("\n"):"└ Fight started!");
-  return new EmbedBuilder().setColor(color).setTitle(`🤖 ${fight.playerName||"Player"} vs ${personality.emoji} ${personality.name}`)
-    .setDescription(desc)
-    .setFooter({text:`ULT CD: ${fight.playerUltCooldown} | Heal CD: ${fight.playerHealCooldown}`});
+  const personality = botPersonalities[fight.difficulty];
+  const color = phase === "ended" ? 0x2ecc71 : personality.color;
+  const pBuf = [], bBuf = [];
+  if (fight.playerUltBuff)       pBuf.push("Ultimate: " + inlineCode(fight.playerUltBuff.type));
+  if ((fight.playerBurn || 0)>0) pBuf.push("Burn: " + inlineCode(fight.playerBurn + " × " + fight.playerBurnRounds));
+  if (fight.botUltBuff)          bBuf.push("Ultimate: " + inlineCode(fight.botUltBuff.type));
+  if ((fight.botBurn || 0)>0)    bBuf.push("Burn: " + inlineCode(fight.botBurn + " × " + fight.botBurnRounds));
+  const logs = cleanFightLog(logLines);
+  return new ContainerBuilder()
+    .setAccentColor(color)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent("## Bot Fight · " + personality.name + " · Round " + inlineCode(fight.round)))
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      "**" + fight.playerSpecies.name + "**\n" + formatFightHealth(fight.playerHp, fight.playerMaxHp) + (pBuf.length ? "\n" + pBuf.join(" · ") : "")
+    ))
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      "**" + fight.botSpecies.name + "**\n" + formatFightHealth(fight.botHp, fight.botMaxHp) + (bBuf.length ? "\n" + bBuf.join(" · ") : "")
+    ))
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      "**Recent actions**\n" + (logs.length ? logs.join("\n") : "Fight started.")
+    ))
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      "Cooldowns: Ultimate " + inlineCode(fight.playerUltCooldown) + " · Heal " + inlineCode(fight.playerHealCooldown)
+    ));
 }
 
-function buildBotFightRow(fightId, fight, phase="playing") {
-  if (phase==="bot_thinking")
-    return new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`botfight_thinking_${fightId}`).setLabel("🤖 Bot is thinking...").setStyle(ButtonStyle.Secondary).setDisabled(true));
-  if (phase==="choice_angel")
+function buildBotFightRow(fightId, fight, phase = "playing") {
+  if (phase === "bot_thinking")
+    return new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("botfight_thinking_" + fightId).setLabel("LOZ is thinking...").setStyle(ButtonStyle.Secondary).setDisabled(true));
+  if (phase === "choice_angel")
     return new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`botfight_choice_angel_smite_${fightId}`).setLabel("⚔️ Smite (1.5× + 35% heal)").setStyle(ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId(`botfight_choice_angel_prayer_${fightId}`).setLabel("💚 Prayer (60% heal)").setStyle(ButtonStyle.Success));
-  if (phase==="choice_ice_dragon")
+      new ButtonBuilder().setCustomId("botfight_choice_angel_smite_" + fightId).setLabel("Smite (1.5× + 35% heal)").setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId("botfight_choice_angel_prayer_" + fightId).setLabel("Prayer (60% heal)").setStyle(ButtonStyle.Success));
+  if (phase === "choice_ice_dragon")
     return new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`botfight_choice_ice_attack_${fightId}`).setLabel("⚔️ Glacial Strike (1.9×)").setStyle(ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId(`botfight_choice_ice_heal_${fightId}`).setLabel("💚 Glacial Heal (+50%)").setStyle(ButtonStyle.Success));
-  if (phase==="choice_earth_dragon")
+      new ButtonBuilder().setCustomId("botfight_choice_ice_attack_" + fightId).setLabel("Glacial Strike (1.9×)").setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId("botfight_choice_ice_heal_" + fightId).setLabel("Glacial Heal (+50%)").setStyle(ButtonStyle.Success));
+  if (phase === "choice_earth_dragon")
     return new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`botfight_choice_earth_attack_${fightId}`).setLabel("⚔️ Terra Strike (1.2×)").setStyle(ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId(`botfight_choice_earth_shield_${fightId}`).setLabel("🛡️ Terra Shield").setStyle(ButtonStyle.Primary));
-  const healOk=fight.playerHealCooldown===0&&fight.playerHp<fight.playerMaxHp*0.8;
-  const ultLabel=fight.playerUltCooldown>0?`✨ ULT (${fight.playerUltCooldown})`:"✨ ULT";
+      new ButtonBuilder().setCustomId("botfight_choice_earth_attack_" + fightId).setLabel("Terra Strike (1.2×)").setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId("botfight_choice_earth_shield_" + fightId).setLabel("Terra Shield").setStyle(ButtonStyle.Primary));
+  const healOk = fight.playerHealCooldown === 0 && fight.playerHp < fight.playerMaxHp * 0.8;
+  const ultLabel = fight.playerUltCooldown > 0 ? "Ultimate (" + fight.playerUltCooldown + ")" : "Ultimate";
   return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`botfight_attack_${fightId}`).setLabel("⚔️ ATTACK").setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId(`botfight_heal_${fightId}`).setLabel("💚 HEAL").setStyle(ButtonStyle.Success).setDisabled(!healOk),
-    new ButtonBuilder().setCustomId(`botfight_ult_${fightId}`).setLabel(ultLabel).setStyle(ButtonStyle.Secondary).setDisabled(fight.playerUltCooldown>0),
-    new ButtonBuilder().setCustomId(`botfight_forfeit_${fightId}`).setLabel("🏃 FORFEIT").setStyle(ButtonStyle.Danger));
+    new ButtonBuilder().setCustomId("botfight_attack_" + fightId).setLabel("Attack").setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId("botfight_heal_" + fightId).setLabel("Heal").setStyle(ButtonStyle.Success).setDisabled(!healOk),
+    new ButtonBuilder().setCustomId("botfight_ult_" + fightId).setLabel(ultLabel).setStyle(ButtonStyle.Secondary).setDisabled(fight.playerUltCooldown > 0),
+    new ButtonBuilder().setCustomId("botfight_forfeit_" + fightId).setLabel("Forfeit").setStyle(ButtonStyle.Danger));
+}
+
+function buildFightMessagePayload(fight, logLines = [], phase = "playing", rowPhase = phase) {
+  const turnId = fight.currentTurn;
+  const status = phase === "bot_thinking"
+    ? "**LOZ is thinking...**"
+    : phase === "choice"
+      ? "**<@" + turnId + ">, choose an ultimate option.**"
+      : phase === "ended"
+        ? "**Fight over**"
+        : "**<@" + turnId + ">'s turn**";
+  const turnPlayer = turnId === fight.player1Id ? fight.player1 : fight.player2;
+  return {
+    flags: MessageFlags.IsComponentsV2,
+    allowedMentions: { parse: [], users: phase === "bot_thinking" || phase === "ended" ? [] : [turnId] },
+    components: [
+      new TextDisplayBuilder().setContent(status),
+      buildFightEmbed(fight, logLines, phase),
+      buildFightRow(fight.fightId, turnPlayer, rowPhase),
+    ],
+  };
+}
+
+function buildBotFightMessagePayload(fight, logLines = [], phase = "playing", rowPhase = phase) {
+  const status = phase === "bot_thinking"
+    ? "**LOZ is thinking...**"
+    : phase === "choice"
+      ? "**<@" + fight.playerId + ">, choose an ultimate option.**"
+      : phase === "ended"
+        ? "**Fight over**"
+        : "**Your turn, <@" + fight.playerId + ">**";
+  const components = [
+    new TextDisplayBuilder().setContent(status),
+    buildBotFightEmbed(fight, logLines, phase),
+  ];
+  if (phase !== "ended") components.push(buildBotFightRow(fight.fightId, fight, rowPhase));
+  return {
+    flags: MessageFlags.IsComponentsV2,
+    allowedMentions: { parse: [], users: phase === "bot_thinking" || phase === "ended" ? [] : [fight.playerId] },
+    components,
+  };
+}
+
+function buildFightResultPayload(header, body, color, mentionIds = []) {
+  const container = new ContainerBuilder()
+    .setAccentColor(color)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(body))
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  return {
+    flags: MessageFlags.IsComponentsV2,
+    allowedMentions: { parse: [], users: mentionIds },
+    components: [new TextDisplayBuilder().setContent(header), container],
+  };
 }
 
 module.exports = {
   makeCombatant, calculateDamage,
   processBurnTick, processCurseTick, tickCooldowns, tickBothUltCooldowns, applyOgreRegen,
   applyUltEffect,
-  getBuffLine, buildFightEmbed, buildFightRow,
-  buildBotFightEmbed, buildBotFightRow,
+  getBuffLine, buildFightEmbed, buildFightRow, buildFightMessagePayload,
+  buildBotFightEmbed, buildBotFightRow, buildBotFightMessagePayload,
+  buildFightResultPayload, formatFightHealth, cleanFightLog,
 };
