@@ -19,6 +19,8 @@ const prefix      = "'";
 state.ownerId     = ownerId;
 state.secondGodId = secondGodId;
 
+let databaseReady = false;
+
 // ==================== CLIENT ====================
 const client = new Client({
   intents: [
@@ -73,7 +75,6 @@ async function registerCommands() {
 // ==================== READY EVENT ====================
 client.once("clientReady", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
-  await registerCommands();
 
   const success = await database.loadAllData(
     state.userSpecies, state.leaderboard, state.fightLeaderboard,
@@ -91,6 +92,10 @@ client.once("clientReady", async () => {
   }
 
   await database.loadAllQuestProgress(state.questProgress, state.userSpecies);
+
+  // Only allow state-changing interactions after persistent data is fully loaded.
+  databaseReady = true;
+  await registerCommands();
 
   console.log("✅ Database loaded");
   updatePresence();
@@ -161,6 +166,14 @@ Users can use LOZ commands here again.`);
 // ==================== INTERACTION CREATE ====================
 client.on("interactionCreate", async (interaction) => {
   try {
+    // Never let startup-time commands write fallback/default state over saved records.
+    if (!databaseReady && (interaction.isCommand() || interaction.isButton())) {
+      return interaction.reply({
+        content: "LOZ is loading saved player data after a restart. Please try again in a few seconds.",
+        flags: 64,
+      }).catch(() => {});
+    }
+
     // Block commands in disabled channels
     if (state.disabledChannels.has(interaction.channelId)) {
       if (interaction.isCommand() || interaction.isButton()) {
