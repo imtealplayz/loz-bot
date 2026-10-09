@@ -335,6 +335,7 @@ async function handleCommand(interaction) {
     if (userData.originalSpecies?.name&&userData.originalSpecies.name!==sp.name) row.addComponents(new ButtonBuilder().setCustomId("switch_original").setLabel(userData.originalSpecies.name).setStyle(ButtonStyle.Primary));
     if (userData.questSpecies?.reaper?.unlocked&&sp.name!=="Reaper") row.addComponents(new ButtonBuilder().setCustomId("switch_reaper").setLabel("🌑 Reaper").setStyle(ButtonStyle.Primary));
     if (userData.questSpecies?.archdemon?.unlocked&&sp.name!=="Archdemon") row.addComponents(new ButtonBuilder().setCustomId("switch_archdemon").setLabel("👿 Archdemon").setStyle(ButtonStyle.Danger));
+    if (userData.awakening?.cyborg?.awakened===true&&sp.name!=="Mechangel") row.addComponents(new ButtonBuilder().setCustomId("switch_mechangel").setLabel("⚡ Mechangel").setStyle(ButtonStyle.Primary));
     const embed=new EmbedBuilder().setColor(0x9b59b6).setTitle("🔄 Class Switch")
       .setDescription(`**Current:** ${sp.emoji} ${sp.name}\n**Original:** ${userData.originalSpecies?.emoji||"👤"} ${userData.originalSpecies?.name||"Human"}\n🌑 Reaper: ${userData.questSpecies?.reaper?.unlocked?"✅ Unlocked":"❌ Locked"}\n👿 Archdemon: ${userData.questSpecies?.archdemon?.unlocked?"✅ Unlocked":"❌ Locked"}\n\n⏰ Cooldown: 3 hours`);
     return interaction.editReply({embeds:[embed],components:[row]});
@@ -664,7 +665,7 @@ async function handleButton(interaction) {
   }
 
   // ── SWITCH ────────────────────────────────────────────────────
-  if (customId==="switch_original"||customId==="switch_reaper"||customId==="switch_archdemon") {
+  if (customId==="switch_original"||customId==="switch_reaper"||customId==="switch_archdemon"||customId==="switch_mechangel") {
     const ud=_state.userSpecies.get(user.id);
     if (!ud) return interaction.update({content:"❌ No species data!",components:[]});
     const now=Date.now(), th=3*60*60*1000;
@@ -675,9 +676,15 @@ async function handleButton(interaction) {
     let newSp;
     if (customId==="switch_original") newSp=ud.originalSpecies;
     else if (customId==="switch_reaper") { if(!ud.questSpecies?.reaper?.unlocked) return interaction.update({content:"❌ Reaper not unlocked!",components:[]}); newSp=reaperSpecies; }
-    else { if(!ud.questSpecies?.archdemon?.unlocked) return interaction.update({content:"❌ Archdemon not unlocked!",components:[]}); newSp=archdemonSpecies; }
+    else if (customId==="switch_archdemon") { if(!ud.questSpecies?.archdemon?.unlocked) return interaction.update({content:"❌ Archdemon not unlocked!",components:[]}); newSp=archdemonSpecies; }
+    else {
+      if (ud.awakening?.cyborg?.awakened!==true) return interaction.update({content:"❌ Mechangel is locked. Complete the Cyborg awakening first.",components:[]});
+      newSp=getSpeciesByName("Mechangel");
+    }
+    if (!newSp) return interaction.update({content:"❌ That species is unavailable.",components:[]});
     ud.species=newSp; ud.lastSwitch=Date.now();
-    _state.userSpecies.set(user.id,ud); database.saveUserSpecies(user.id,ud);
+    _state.userSpecies.set(user.id,ud);
+    await database.saveUserSpecies(user.id,ud);
     return interaction.update({embeds:[createSuccessEmbed(`Switched to ${newSp.emoji} **${newSp.name}**! Next switch in 3h.`)],components:[]});
   }
 
