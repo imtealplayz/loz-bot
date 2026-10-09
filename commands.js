@@ -2,7 +2,7 @@ const {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
   SlashCommandBuilder, REST, Routes,
   ContainerBuilder, TextDisplayBuilder, SeparatorBuilder,
-  SeparatorSpacingSize, MessageFlags,
+  SeparatorSpacingSize, MessageFlags, PermissionsBitField,
 } = require("discord.js");
 const {
   patchNotes, humanSpecies, reaperSpecies, archdemonSpecies,
