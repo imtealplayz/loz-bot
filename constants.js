@@ -1,6 +1,14 @@
 // ==================== PATCH NOTES ====================
 const patchNotes = [
   {
+    version: "4.4", date: "2026-10-09",
+    changes: [
+      "👿 New Demon awakening — become Archdemon after 25 player-fight wins, 20 wins against Demon bots, and paying 20 rolls",
+      "🔄 Archdemon is a permanent awakening and can be restored with /switch after rerolling, subject to the 3-hour switch cooldown",
+      "📋 Consolidated patch notes into /patchnotes",
+    ],
+  },
+  {
     version: "4.3", date: "2026-03-17",
     changes: [
       "⚔️ Miss + Counter system restored — attacks can miss, defenders have a 30% chance to counter-strike",
@@ -153,7 +161,8 @@ const failChances = {
 
 // ==================== AWAKENING REQUIREMENTS ====================
 const awakeningRequirements = {
-  cyborg: { wins:25, damageDealt:500, ultUses:15, reward:"Mechangel", rewardRolls:5 }
+  cyborg: { wins:25, damageDealt:500, ultUses:15, reward:"Mechangel", rewardRolls:5 },
+  demon:  { playerWins:25, demonBotWins:20, costRolls:20, reward:"Archdemon" }
 };
 
 // ==================== DISINTEGRATION MESSAGES ====================

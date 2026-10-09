@@ -4,7 +4,7 @@ const { humanSpecies } = require("./constants.js");
 const database = require("./database.js");
 const {
   hpBar, updateFightStats, updateBotStats,
-  updateReaperQuest, updateArchdemonQuest, updateCyborgProgress,
+  updateReaperQuest, updateCyborgProgress, updateDemonAwakeningProgress,
 } = require("./helpers.js");
 const {
   makeCombatant, calculateDamage, applyUltEffect,
@@ -55,7 +55,8 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
   updateFightStats(winnerId,true,loserId,{opponentName:loser.species.name,opponentSpecies:loser.species,hpLeft:winner.currentHp,special:reason==="forfeit"?"😵 forfeit":reason==="counter"?"💥 counter":"",doubleWin,rollEarned});
   updateFightStats(loserId,false,winnerId,{opponentName:winner.species.name,opponentSpecies:winner.species,hpLeft:loser.currentHp,special:reason==="forfeit"?"😵 forfeited":"",doubleWin:false,rollEarned:false});
   updateReaperQuest(winnerId,"player");
-  updateArchdemonQuest(winnerId,"player");
+  if (reason!=="disintegration" && reason!=="judge" && winner.species.name==="Demon")
+    await updateDemonAwakeningProgress(winnerId,"playerWin");
   _state.fightCooldowns.set(winnerId,Date.now()+60000);
   _state.fightCooldowns.set(loserId,Date.now()+60000);
   let desc=`🏆 **<@${winnerId}> WINS!**\n\n`;
@@ -222,6 +223,8 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
   let winsEarned=0, rollEarned=false;
   if (winner==="player") {
     if (fight.playerSpecies.name==="Cyborg") await updateCyborgProgress(fight.playerId,"win");
+    if (reason!=="timeout" && fight.playerSpecies.name==="Demon" && fight.botSpecies.name==="Demon")
+      await updateDemonAwakeningProgress(fight.playerId,"demonBotWin");
     switch(difficulty) {
       case "easy":       winsEarned=1; break;
       case "medium":     winsEarned=2; if(Math.random()<0.2) rollEarned=true; break;
