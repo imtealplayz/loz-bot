@@ -107,6 +107,79 @@ Want more major updates from LOZ? Use \`/updates subscribe\` to opt in to future
   };
 }
 
+// Find a server invite LOZ can share with its owner.
+async function getServerInvite(guild) {
+  if (guild.vanityURLCode) return "https://discord.gg/" + guild.vanityURLCode;
+  const botMember = guild.members.me || await guild.members.fetch(_client.user.id).catch(() => null);
+  if (!botMember) return null;
+  const channels = guild.channels.cache;
+  const candidates = [...channels.values()]
+    .filter(channel => typeof channel.createInvite === "function" && channel.isTextBased && channel.isTextBased())
+    .sort((a, b) => Number(b.id === guild.systemChannelId) - Number(a.id === guild.systemChannelId));
+  for (const channel of candidates) {
+    const permissions = channel.permissionsFor(botMember);
+    if (!permissions || !permissions.has(PermissionsBitField.Flags.CreateInstantInvite)) continue;
+    try {
+      const invite = await channel.createInvite({
+        maxAge:604800,
+        maxUses:0,
+        unique:false,
+        reason:"LOZ owner used /servers to coordinate LOZ announcement setup.",
+      });
+      return invite.url;
+    } catch(e) {
+      console.warn("Could not create invite for server " + guild.id + " (code " + (e && e.code || "unknown") + ").");
+    }
+  }
+  return null;
+}
+
+async function buildServersPagePayload(page, ownerId) {
+  const servers = [..._client.guilds.cache.values()]
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity:"base" }));
+  const pageSize = 5;
+  const pageCount = Math.max(1, Math.ceil(servers.length / pageSize));
+  const safePage = Math.max(0, Math.min(Number.isInteger(page) ? page : 0, pageCount - 1));
+  const pageServers = servers.slice(safePage * pageSize, safePage * pageSize + pageSize);
+  const embed = new EmbedBuilder()
+    .setColor(0x0891b2)
+    .setTitle("LOZ Server Directory")
+    .setDescription(servers.length
+      ? "LOZ is currently in " + servers.length + " servers. Use an invite to join a server and contact its owner about LOZ announcements. Generated invites last 7 days."
+      : "LOZ isn't currently in any servers.");
+
+  const details = await Promise.all(pageServers.map(async (guild, offset) => {
+    const invite = await getServerInvite(guild);
+    const name = String(guild.name || "Unknown server").replace(/[\r\n]/g, " ").slice(0, 100);
+    const memberCount = Number.isFinite(guild.memberCount) ? guild.memberCount.toLocaleString() : "Unknown";
+    const inviteText = invite ? "[Join server](" + invite + ")" : "Unavailable. LOZ lacks invite permission.";
+    return {
+      name: ("#" + (safePage * pageSize + offset + 1) + " · " + name).slice(0, 256),
+      value: "Server ID: " + guild.id + "\nMembers: " + memberCount + "\nInvite: " + inviteText,
+      inline:false,
+    };
+  }));
+  if (details.length) embed.addFields(details);
+  embed.setFooter({ text:"Page " + (safePage + 1) + "/" + pageCount + " · Sorted by server name" });
+
+  const components = [];
+  if (servers.length) {
+    components.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("servers_page_" + ownerId + "_" + Math.max(0, safePage - 1))
+        .setLabel("Previous")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(safePage === 0),
+      new ButtonBuilder()
+        .setCustomId("servers_page_" + ownerId + "_" + Math.min(pageCount - 1, safePage + 1))
+        .setLabel("Next")
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(safePage >= pageCount - 1),
+    ));
+  }
+  return { embeds:[embed], components, flags:64, allowedMentions:{ parse:[] } };
+}
+
 // ==================== SLASH COMMAND HANDLER ====================
 async function handleCommand(interaction) {
   const { commandName, options, user, guild, channel } = interaction;
