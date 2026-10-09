@@ -55,6 +55,13 @@ You're receiving this because you opted into LOZ update DMs. Manage your prefere
     );
   }
 
+  container.addSeparatorComponents(
+    new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small)
+  );
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent("🌐 **Website:** [Visit LOZ](https://lozbot.vercel.app/)")
+  );
+
   return {
     components:[container],
     flags:MessageFlags.IsComponentsV2,
