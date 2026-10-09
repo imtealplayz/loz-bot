@@ -144,7 +144,7 @@ function updateFightStats(id, won, oppId, data={}) {
 function updateBotStats(id, diff, won) {
   const s = _state.botStats.get(id) || { easy:{wins:0,losses:0}, medium:{wins:0,losses:0}, hard:{wins:0,losses:0}, impossible:{wins:0,losses:0} };
   if (!s[diff]) s[diff] = { wins:0, losses:0 };
-  if (won) { s[diff].wins++; updateReaperQuest(id, diff); updateArchdemonQuest(id, diff); } else s[diff].losses++;
+  if (won) { s[diff].wins++; updateReaperQuest(id, diff); } else s[diff].losses++;
   _state.botStats.set(id, s);
   database.saveBotStats(id, s);
 }
@@ -168,22 +168,6 @@ function updateReaperQuest(id, type) {
   uq.reaper = q;
   _state.questProgress.set(id, uq);
   database.saveQuestProgress(id, "reaper", q);
-}
-
-function updateArchdemonQuest(id, type) {
-  const uq = _state.questProgress.get(id) || {};
-  const q = uq.archdemon || { hardBots:0, impossibleBots:0, playerFights:0, completed:false, claimed:false };
-  if (q.completed) return;
-
-  if (type === "hard") q.hardBots = Math.min((q.hardBots || 0) + 1, 10);
-  else if (type === "impossible") q.impossibleBots = Math.min((q.impossibleBots || 0) + 1, 5);
-  else if (type === "player") q.playerFights = Math.min((q.playerFights || 0) + 1, 10);
-  else return;
-
-  if ((q.hardBots || 0) >= 10 && (q.impossibleBots || 0) >= 5 && (q.playerFights || 0) >= 10) q.completed = true;
-  uq.archdemon = q;
-  _state.questProgress.set(id, uq);
-  database.saveQuestProgress(id, "archdemon", q);
 }
 
 // ==================== AWAKENING ====================
@@ -213,6 +197,34 @@ function isCyborgReadyForAwakening(ud) {
   return p.wins>=req.wins && p.damageDealt>=req.damageDealt && p.ultUses>=req.ultUses && !p.awakened;
 }
 
+function initDemonAwakeningData(ud) {
+  if (!ud.awakening) ud.awakening = {};
+  if (!ud.awakening.demon) ud.awakening.demon = { playerWins:0, demonBotWins:0, awakened:false };
+  return ud.awakening.demon;
+}
+
+async function updateDemonAwakeningProgress(id, type, val=1) {
+  const ud = _state.userSpecies.get(id);
+  if (!ud || ud.species?.name !== "Demon") return false;
+  const p = initDemonAwakeningData(ud);
+  if (p.awakened) return false;
+  const req = awakeningRequirements.demon;
+  if (type === "playerWin") p.playerWins = Math.min((p.playerWins || 0) + val, req.playerWins);
+  else if (type === "demonBotWin") p.demonBotWins = Math.min((p.demonBotWins || 0) + val, req.demonBotWins);
+  else return false;
+  _state.userSpecies.set(id, ud);
+  await database.saveUserSpecies(id, ud);
+  return true;
+}
+
+function isDemonReadyForAwakening(ud) {
+  const p = ud?.awakening?.demon, req = awakeningRequirements.demon;
+  return !!p && !p.awakened
+    && (p.playerWins || 0) >= req.playerWins
+    && (p.demonBotWins || 0) >= req.demonBotWins
+    && (ud.rolls || 0) >= req.costRolls;
+}
+
 module.exports = {
   setState,
   hpBar, createErrorEmbed, createSuccessEmbed, safeReply,
@@ -220,5 +232,6 @@ module.exports = {
   isPlayerInGame, isPlayerInFight, isPlayerInBotFight, canFight,
   hasActiveRequest, canSendRequest,
   updateLeaderboard, updateFightStats, updateBotStats,
-  updateReaperQuest, updateArchdemonQuest, initAwakeningData, updateCyborgProgress, isCyborgReadyForAwakening,
+  updateReaperQuest, initAwakeningData, updateCyborgProgress, isCyborgReadyForAwakening,
+  initDemonAwakeningData, updateDemonAwakeningProgress, isDemonReadyForAwakening,
 };
