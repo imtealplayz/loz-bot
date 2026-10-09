@@ -351,7 +351,7 @@ async function handleCommand(interaction) {
       playerCurse:0, playerBlockHeal:false, playerPossession:false, playerStunnedTurns:0, playerLastUltUsed:null,
       botSpecies:bSpecies, botHp:bSpecies.hp, botMaxHp:bSpecies.hp,
       botHealCooldown:0, botUltCooldown:0, botUltBuff:null, botAdaptiveStacks:0, botAttackCounter:0,
-      botBurn:0, botBurnRounds:0, botCurse:0, botBlockHeal:false, botStunnedTurns:0, botLastUltUsed:null,
+      botBurn:0, botBurnRounds:0, botCurse:0, botPossession:false, botBlockHeal:false, botStunnedTurns:0, botLastUltUsed:null,
       round:1, difficulty, botPersonality:personality, timeout:null, log:[], playerName:user.displayName||user.username,
     };
     _state.activeBotFights.set(fightId,fight); _state.activeBotFights.set(user.id,fightId);
@@ -777,7 +777,8 @@ async function handleButton(interaction) {
 
   // ── BOT FIGHT BUTTONS ─────────────────────────────────────────
   if (customId.startsWith("botfight_")) {
-    const parts=customId.split("_"), action=parts[1];
+    const parts=customId.split("_");
+    let action=parts[1];
     if (action==="choice") {
       const choiceType=parts[2], choice=parts[3], fightId=parts.slice(4).join("_");
       const fight=_state.activeBotFights.get(fightId);
@@ -813,10 +814,18 @@ async function handleButton(interaction) {
 
     if (action==="forfeit") { await endBotFight(channel,fightId,"bot","player",fight.difficulty); return; }
 
-    const playerC={id:fight.playerId,species:fight.playerSpecies,currentHp:fight.playerHp,maxHp:fight.playerMaxHp,ultBuff:fight.playerUltBuff,adaptiveStacks:fight.playerAdaptiveStacks||0,attackCounter:fight.playerAttackCounter||0,burn:fight.playerBurn||0,burnRounds:fight.playerBurnRounds||0,curse:fight.playerCurse||0,blockHeal:fight.playerBlockHeal||false,possession:false,stunnedTurns:fight.playerStunnedTurns||0,healCooldown:fight.playerHealCooldown,ultCooldown:fight.playerUltCooldown,lastUltUsed:fight.playerLastUltUsed};
-    const botC={id:"BOT",species:fight.botSpecies,currentHp:fight.botHp,maxHp:fight.botMaxHp,ultBuff:fight.botUltBuff,adaptiveStacks:fight.botAdaptiveStacks||0,attackCounter:fight.botAttackCounter||0,burn:fight.botBurn||0,burnRounds:fight.botBurnRounds||0,curse:fight.botCurse||0,blockHeal:fight.botBlockHeal||false,possession:false,stunnedTurns:0,healCooldown:fight.botHealCooldown,ultCooldown:fight.botUltCooldown,lastUltUsed:fight.botLastUltUsed};
+    const playerC={id:fight.playerId,species:fight.playerSpecies,currentHp:fight.playerHp,maxHp:fight.playerMaxHp,ultBuff:fight.playerUltBuff,adaptiveStacks:fight.playerAdaptiveStacks||0,attackCounter:fight.playerAttackCounter||0,burn:fight.playerBurn||0,burnRounds:fight.playerBurnRounds||0,curse:fight.playerCurse||0,blockHeal:fight.playerBlockHeal||false,possession:fight.playerPossession||false,stunnedTurns:fight.playerStunnedTurns||0,healCooldown:fight.playerHealCooldown,ultCooldown:fight.playerUltCooldown,lastUltUsed:fight.playerLastUltUsed};
+    const botC={id:"BOT",species:fight.botSpecies,currentHp:fight.botHp,maxHp:fight.botMaxHp,ultBuff:fight.botUltBuff,adaptiveStacks:fight.botAdaptiveStacks||0,attackCounter:fight.botAttackCounter||0,burn:fight.botBurn||0,burnRounds:fight.botBurnRounds||0,curse:fight.botCurse||0,blockHeal:fight.botBlockHeal||false,possession:fight.botPossession||false,stunnedTurns:fight.botStunnedTurns||0,healCooldown:fight.botHealCooldown,ultCooldown:fight.botUltCooldown,lastUltUsed:fight.botLastUltUsed};
 
-    if (action==="heal") {
+    // Oni possession consumes the target's next action.
+    if (playerC.possession) action="possessed";
+
+    if (action==="possessed") {
+      playerC.possession=false;
+      const selfHit=Math.floor(Math.random()*(playerC.species.atkMax-playerC.species.atkMin+1))+playerC.species.atkMin;
+      playerC.currentHp=Math.max(0,playerC.currentHp-selfHit);
+      log.push(`🎭 **POSSESSION!** You are forced to attack yourself for ${selfHit}!`);
+    } else if (action==="heal") {
       if (playerC.blockHeal) { playerC.blockHeal=false; log.push("🚫 **ROYAL COMMAND!** You can't heal!"); }
       else if (playerC.healCooldown>0) { log.push(`❌ Heal on cooldown for ${playerC.healCooldown} more rounds!`); }
       else if (playerC.currentHp>=playerC.maxHp*0.8) { log.push("❌ HP above 80% — too healthy to heal!"); }
@@ -895,9 +904,11 @@ async function handleButton(interaction) {
     fight.playerUltBuff=playerC.ultBuff; fight.playerHealCooldown=playerC.healCooldown; fight.playerUltCooldown=playerC.ultCooldown;
     fight.playerBurn=playerC.burn; fight.playerBurnRounds=playerC.burnRounds; fight.playerCurse=playerC.curse;
     fight.playerBlockHeal=playerC.blockHeal; fight.playerAdaptiveStacks=playerC.adaptiveStacks; fight.playerAttackCounter=playerC.attackCounter;
+    fight.playerPossession=playerC.possession||false;
     // FIX: sync bot ULT cooldown after tick (was being lost)
     fight.botUltCooldown=botC.ultCooldown;
     fight.botUltBuff=botC.ultBuff; fight.botBurn=botC.burn; fight.botBurnRounds=botC.burnRounds;
+    fight.botCurse=botC.curse; fight.botPossession=botC.possession||false;
     fight.botBlockHeal=botC.blockHeal; fight.botAdaptiveStacks=botC.adaptiveStacks; fight.botAttackCounter=botC.attackCounter; fight.botStunnedTurns=botC.stunnedTurns||0;
     fight.log=log.slice(-3);
 

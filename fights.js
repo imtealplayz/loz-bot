@@ -15,6 +15,111 @@ const {
 let _state = null;
 function setState(s) { _state = s; }
 
+const BOT_TURN_WATCHDOG_MS = 20000;
+const BOT_TURN_STATE_FIELDS = [
+  "playerHp", "botHp", "playerPossession", "botPossession",
+  "playerStunnedTurns", "botStunnedTurns",
+  "playerBurn", "playerBurnRounds", "botBurn", "botBurnRounds",
+  "playerBlockHeal", "botBlockHeal", "playerCurse", "botCurse",
+  "playerUltBuff", "botUltBuff", "botAdaptiveStacks", "botAttackCounter",
+  "botLastUltUsed", "botHealCooldown", "botUltCooldown", "playerUltCooldown",
+  "playerAdaptiveStacks", "round", "log",
+];
+
+function cloneTurnValue(value) {
+  if (value === undefined || value === null) return value;
+  return JSON.parse(JSON.stringify(value));
+}
+
+function snapshotBotTurn(fight) {
+  const snapshot = {};
+  for (const key of BOT_TURN_STATE_FIELDS) snapshot[key] = cloneTurnValue(fight[key]);
+  return snapshot;
+}
+
+function restoreBotTurn(fight, snapshot) {
+  for (const key of BOT_TURN_STATE_FIELDS) fight[key] = cloneTurnValue(snapshot[key]);
+}
+
+function isCurrentBotTurn(fightId, fight, turnToken) {
+  return _state.activeBotFights.get(fightId) === fight && fight.botTurnToken === turnToken;
+}
+
+async function updateBotFightMessage(channel, fightId, fight, phase) {
+  const payload = {
+    embeds: [buildBotFightEmbed(fight, fight.log || [], phase)],
+    components: [buildBotFightRow(fightId, fight, phase === "bot_thinking" ? "bot_thinking" : "playing")],
+  };
+  const current = _state.fightMessages.get(fightId);
+  if (current) {
+    try {
+      await current.edit(payload);
+      return true;
+    } catch (error) {
+      console.error(`[Bot fight ${fightId}] Failed to edit fight message during ${phase}:`, error?.stack || error);
+    }
+  }
+  try {
+    const replacement = await channel.send(payload);
+    _state.fightMessages.set(fightId, replacement);
+    return true;
+  } catch (error) {
+    console.error(`[Bot fight ${fightId}] Failed to send replacement message during ${phase}:`, error?.stack || error);
+    return false;
+  }
+}
+
+async function recoverBotTurn(channel, fightId, fight, turnToken, snapshot, error) {
+  if (_state.activeBotFights.get(fightId) !== fight || fight.botTurnToken !== turnToken) return;
+  console.error(`[Bot fight ${fightId}] Bot turn failed; restoring state and returning the turn to the player:`, error?.stack || error);
+
+  if (fight.timeout) clearTimeout(fight.timeout);
+  fight.timeout = null;
+  restoreBotTurn(fight, snapshot);
+  fight.botTurnToken = turnToken + 1;
+  fight.botTurnRunning = false;
+  fight.log = [
+    ...(Array.isArray(fight.log) ? fight.log.slice(-2) : []),
+    "The bot turn could not finish. Its action was skipped. Take your turn.",
+  ].slice(-3);
+
+  await updateBotFightMessage(channel, fightId, fight, "playing");
+  if (_state.activeBotFights.get(fightId) !== fight || fight.botTurnToken !== turnToken + 1) return;
+  fight.timeout = setTimeout(() => {
+    if (_state.activeBotFights.get(fightId) === fight) {
+      endBotFight(channel, fightId, "bot", "player", fight.difficulty, "timeout")
+        .catch(error => console.error(`[Bot fight ${fightId}] Player timeout resolution failed:`, error?.stack || error));
+    }
+  }, 60000);
+}
+
+async function doBotTurn(channel, fightId) {
+  const fight = _state.activeBotFights.get(fightId);
+  if (!fight || fight.botTurnRunning) return;
+
+  if (fight.timeout) clearTimeout(fight.timeout);
+  fight.timeout = null;
+  const turnToken = (Number(fight.botTurnToken) || 0) + 1;
+  fight.botTurnToken = turnToken;
+  fight.botTurnRunning = true;
+  const snapshot = snapshotBotTurn(fight);
+  const watchdog = setTimeout(() => {
+    recoverBotTurn(
+      channel, fightId, fight, turnToken, snapshot,
+      new Error(`Bot turn exceeded ${BOT_TURN_WATCHDOG_MS}ms watchdog`)
+    ).catch(error => console.error(`[Bot fight ${fightId}] Watchdog recovery failed:`, error?.stack || error));
+  }, BOT_TURN_WATCHDOG_MS);
+
+  try {
+    await runBotTurn(channel, fightId, turnToken);
+  } catch (error) {
+    await recoverBotTurn(channel, fightId, fight, turnToken, snapshot, error);
+  } finally {
+    clearTimeout(watchdog);
+    if (fight.botTurnToken === turnToken) fight.botTurnRunning = false;
+  }
+}
+
 // ==================== START PVP FIGHT ====================
 async function startFight(channel, player1Id, player2Id) {
   const p1d = _state.userSpecies.get(player1Id);
@@ -75,20 +180,21 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
 }
 
 // ==================== BOT AI TURN ====================
-async function doBotTurn(channel, fightId) {
+async function runBotTurn(channel, fightId, turnToken) {
   const fight = _state.activeBotFights.get(fightId);
-  if (!fight) return;
+  if (!fight || fight.botTurnToken !== turnToken) return;
   const personality = botPersonalities[fight.difficulty];
-  const msg = _state.fightMessages.get(fightId);
-  if (msg) await msg.edit({embeds:[buildBotFightEmbed(fight,fight.log||[],"bot_thinking")],components:[buildBotFightRow(fightId,fight,"bot_thinking")]}).catch(()=>{});
+  if (!personality) throw new Error(`Unknown bot difficulty: ${fight.difficulty}`);
+  await updateBotFightMessage(channel, fightId, fight, "bot_thinking");
+  if (!isCurrentBotTurn(fightId, fight, turnToken)) return;
   await new Promise(r=>setTimeout(r,personality.reactionDelay));
-  if (!_state.activeBotFights.has(fightId)) return;
+  if (!isCurrentBotTurn(fightId, fight, turnToken)) return;
   const log = fight.log || [];
   const botC = {
     id:"BOT", species:fight.botSpecies, currentHp:fight.botHp, maxHp:fight.botMaxHp,
     ultBuff:fight.botUltBuff, adaptiveStacks:fight.botAdaptiveStacks||0, attackCounter:fight.botAttackCounter||0,
     burn:fight.botBurn||0, burnRounds:fight.botBurnRounds||0, curse:fight.botCurse||0,
-    blockHeal:fight.botBlockHeal||false, possession:false, stunnedTurns:fight.botStunnedTurns||0,
+    blockHeal:fight.botBlockHeal||false, possession:fight.botPossession||false, stunnedTurns:fight.botStunnedTurns||0,
     healCooldown:fight.botHealCooldown, ultCooldown:fight.botUltCooldown, lastUltUsed:fight.botLastUltUsed,
   };
   const playerC = {
@@ -99,11 +205,11 @@ async function doBotTurn(channel, fightId) {
     healCooldown:fight.playerHealCooldown, ultCooldown:fight.playerUltCooldown, lastUltUsed:fight.playerLastUltUsed,
   };
 
-  if (playerC.possession) {
-    playerC.possession=false;
-    const selfHit=Math.floor(Math.random()*(playerC.species.atkMax-playerC.species.atkMin+1))+playerC.species.atkMin;
-    fight.playerHp=Math.max(0,fight.playerHp-selfHit);
-    log.push(`🎭 **POSSESSION!** <@${fight.playerId}> attacks themselves for ${selfHit}!`);
+  if (botC.possession) {
+    botC.possession=false;
+    const selfHit=Math.floor(Math.random()*(botC.species.atkMax-botC.species.atkMin+1))+botC.species.atkMin;
+    botC.currentHp=Math.max(0,botC.currentHp-selfHit);
+    log.push(`🎭 **POSSESSION!** ${botC.species.name} attacks itself for ${selfHit}!`);
   } else {
     let botAction="attack";
     const botHpRatio=botC.currentHp/botC.maxHp;
@@ -206,6 +312,7 @@ async function doBotTurn(channel, fightId) {
   fight.botBurn=botC.burn; fight.botBurnRounds=botC.burnRounds;
   fight.playerBlockHeal=playerC.blockHeal; fight.playerCurse=playerC.curse;
   fight.playerPossession=playerC.possession; fight.playerStunnedTurns=playerC.stunnedTurns||0;
+  fight.botPossession=botC.possession||false; fight.botCurse=botC.curse;
   fight.playerUltBuff=playerC.ultBuff;
 
   // Burn tick on player
@@ -228,8 +335,16 @@ async function doBotTurn(channel, fightId) {
   if (fight.playerHp<=0) { await endBotFight(channel,fightId,"bot","player",fight.difficulty); return; }
   if (fight.botHp<=0)    { await endBotFight(channel,fightId,"player","bot",fight.difficulty); return; }
 
-  if (msg) await msg.edit({embeds:[buildBotFightEmbed(fight,fight.log||[],"playing")],components:[buildBotFightRow(fightId,fight)]}).catch(()=>{});
-  fight.timeout=setTimeout(()=>{ if(_state.activeBotFights.has(fightId)) endBotFight(channel,fightId,"player","bot",fight.difficulty,"timeout"); },60000);
+  if (!isCurrentBotTurn(fightId, fight, turnToken)) return;
+  await updateBotFightMessage(channel, fightId, fight, "playing");
+  if (!isCurrentBotTurn(fightId, fight, turnToken)) return;
+  fight.timeout=setTimeout(()=>{
+    if (_state.activeBotFights.get(fightId) === fight) {
+      // The player owns this turn. Inactivity awards the bot, not the player.
+      endBotFight(channel,fightId,"bot","player",fight.difficulty,"timeout")
+        .catch(error => console.error(`[Bot fight ${fightId}] Player timeout resolution failed:`, error?.stack || error));
+    }
+  },60000);
 }
 
 // ==================== END BOT FIGHT ====================
@@ -257,7 +372,9 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
     updateFightStats(fight.playerId,false,"BOT",{opponentName:fight.botSpecies.name,opponentSpecies:fight.botSpecies,hpLeft:0,special:`🤖 ${difficulty} loss`});
   }
   const personality=botPersonalities[difficulty], won=winner==="player";
-  const timeoutMsg=reason==="timeout"?"\n⏰ The bot took too long to respond — you win by default!":reason==="counter"?"\n⚡ Bot was killed by your counter-strike!":"";
+  const timeoutMsg=reason==="timeout"
+    ? (won ? "\n⏰ You took too long to respond. The bot wins by timeout!" : "\n⏰ The bot turn timed out. You win by default!")
+    : reason==="counter" ? "\n⚡ Bot was killed by your counter-strike!" : "";
   const pName=fight.playerName||`<@${fight.playerId}>`;
   const desc=won
     ?`🏆 **${pName} defeated ${personality.emoji} ${personality.name}!**${timeoutMsg}\n\n${fight.playerSpecies.emoji} ${pName} — ${hpBar(fight.playerHp,fight.playerMaxHp)}\n${fight.botSpecies.emoji} ${personality.name} — ${hpBar(0,fight.botMaxHp)}\n\n+${winsEarned} win${winsEarned!==1?"s":""}!${rollEarned?" 🎲 +1 Roll!":""}`
