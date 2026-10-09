@@ -27,6 +27,41 @@ let _client = null;
 function setState(s) { _state = s; }
 function setClient(c) { _client = c; }
 
+// Major-update DM payload built entirely with Components V2 and native separators.
+function buildMajorUpdatePayload() {
+  const notes = patchNotes.slice(0, 4);
+  const latest = notes[0] || { version:"current", date:"", changes:[] };
+  const container = new ContainerBuilder().setAccentColor(0x0891b2);
+
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      `## 🌑 LOZ — Major Update
+**Version ${latest.version} · ${latest.date}**
+
+The Rift has evolved. Here's a recap of the latest gameplay changes, rewards, and awakenings.
+
+You're receiving this because you opted into LOZ update DMs. Manage your preference any time with \`/updates unsubscribe\`.`
+    )
+  );
+
+  for (const note of notes) {
+    container.addSeparatorComponents(
+      new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small)
+    );
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        `### Version ${note.version} · ${note.date}\n${(note.changes || []).map(change => `- ${change}`).join("\n")}`
+      )
+    );
+  }
+
+  return {
+    components:[container],
+    flags:MessageFlags.IsComponentsV2,
+    allowedMentions:{ parse:[] },
+  };
+}
+
 // ==================== SLASH COMMAND HANDLER ====================
 async function handleCommand(interaction) {
   const { commandName, options, user, guild, channel } = interaction;
@@ -39,7 +74,7 @@ async function handleCommand(interaction) {
         {name:"⚔️ Combat",   value:"`/fight @user` `/fightbot`",inline:false},
         {name:"📊 Stats",    value:"`/fightstats` `/botstats` `/history` `/lb` `/fights`",inline:false},
         {name:"🌑 Quests",   value:"`/quest view` `/quest claim` `/awakening`",inline:false},
-        {name:"📋 Info",     value:"`/patchnotes` `/guide` `/profile`",inline:false},
+        {name:"📋 Info",     value:"`/patchnotes` `/guide` `/profile` `/updates`",inline:false},
       ).setFooter({text:"Use /guide for a full tutorial"})
         .addFields({name:"💬 Need Help?",value:"Want any help or have any issues? Join the [Support Server](https://discord.gg/TKBYpjqnPC)!",inline:false});
     return safeReply(interaction,{embeds:[embed]});
@@ -100,6 +135,114 @@ async function handleCommand(interaction) {
     return interaction.reply({components:[container],flags:MessageFlags.IsComponentsV2});
   }
 
+
+  // ── UPDATE DM PREFERENCES ─────────────────────────────────────
+  if (commandName === "updates") {
+    const sub = options.getSubcommand();
+
+    if (sub === "subscribe") {
+      const saved = await database.setBroadcastOptIn(user.id, true);
+      if (!saved) return safeReply(interaction, { embeds:[createErrorEmbed("Couldn't save your notification preference. Please try again later.")], flags:64 });
+      return safeReply(interaction, {
+        embeds:[new EmbedBuilder().setColor(0x0891b2).setTitle("LOZ Update DMs Enabled")
+          .setDescription("You're subscribed to major LOZ update announcements by DM. You can opt out any time with \`/updates unsubscribe\`.")],
+        flags:64,
+      });
+    }
+
+    if (sub === "unsubscribe") {
+      const saved = await database.setBroadcastOptIn(user.id, false);
+      if (!saved) return safeReply(interaction, { embeds:[createErrorEmbed("Couldn't save your notification preference. Please try again later.")], flags:64 });
+      return safeReply(interaction, {
+        embeds:[new EmbedBuilder().setColor(0x0891b2).setTitle("LOZ Update DMs Disabled")
+          .setDescription("You won't receive future major-update DMs. You can subscribe again with \`/updates subscribe\`.")],
+        flags:64,
+      });
+    }
+
+    if (sub === "status") {
+      const optedIn = await database.getBroadcastOptIn(user.id);
+      if (optedIn === null) return safeReply(interaction, { embeds:[createErrorEmbed("Couldn't read your notification preference. Please try again later.")], flags:64 });
+      return safeReply(interaction, {
+        embeds:[new EmbedBuilder().setColor(0x0891b2).setTitle("LOZ Update DM Preference")
+          .setDescription(optedIn ? "✅ You're subscribed to major update DMs." : "You're not subscribed to major update DMs. Use \`/updates subscribe\` to opt in.")],
+        flags:64,
+      });
+    }
+  }
+
+  // ── BROADTEST: OWNER-ONLY PREVIEW ──────────────────────────────
+  if (commandName === "broadtest") {
+    if (user.id !== _state.ownerId) {
+      return safeReply(interaction, { content:"Only the LOZ owner can use this command.", flags:64 });
+    }
+
+    await interaction.deferReply({ flags:64 });
+    try {
+      await user.send(buildMajorUpdatePayload());
+      return interaction.editReply({ content:"✅ The current Components V2 update preview was sent to your DMs." });
+    } catch(e) {
+      console.error("broadtest DM failed:", e?.code || e?.message || e);
+      return interaction.editReply({ content:"❌ Couldn't DM you the preview. Check that your DMs from LOZ are open, then try again." });
+    }
+  }
+
+  // ── BROADCAST: OWNER-ONLY, OPTED-IN USERS ONLY ──────────────────
+  if (commandName === "broadcast") {
+    if (user.id !== _state.ownerId) {
+      return safeReply(interaction, { content:"Only the LOZ owner can use this command.", flags:64 });
+    }
+
+    await interaction.deferReply({ flags:64 });
+    const subscribers = await database.getBroadcastSubscribers();
+    if (subscribers === null) {
+      return interaction.editReply({ content:"❌ Couldn't load the opt-in list from MongoDB. No DMs were attempted." });
+    }
+
+    const recipientIds = [...new Set(subscribers)].filter(id => id !== _client.user.id);
+    if (!recipientIds.length) {
+      return interaction.editReply({
+        content:"No users have opted into update DMs yet. Users can subscribe with \`/updates subscribe\`. No DMs were sent.",
+      });
+    }
+
+    let nextIndex = 0;
+    let sent = 0;
+    let failed = 0;
+    let completed = 0;
+
+    const sendWorker = async () => {
+      while (true) {
+        const index = nextIndex++;
+        if (index >= recipientIds.length) return;
+        const targetId = recipientIds[index];
+
+        try {
+          const target = await _client.users.fetch(targetId);
+          await target.send(buildMajorUpdatePayload());
+          sent++;
+        } catch(e) {
+          failed++;
+          console.warn(`Update broadcast DM failed (code ${e?.code || "unknown"}).`);
+        }
+
+        completed++;
+        if (completed % 25 === 0) {
+          await interaction.editReply({
+            content:`📤 Broadcast in progress: ${completed}/${recipientIds.length} attempted · ${sent} sent · ${failed} failed.`,
+          }).catch(() => {});
+        }
+      }
+    };
+
+    await Promise.all(
+      Array.from({ length:Math.min(4, recipientIds.length) }, () => sendWorker())
+    );
+
+    return interaction.editReply({
+      content:`✅ **LOZ update broadcast finished**\n\n**Opted-in recipients:** ${recipientIds.length}\n**DMs sent:** ${sent}\n**DMs failed:** ${failed}\n\nOnly users who opted in with \`/updates subscribe\` were contacted.`,
+    });
+  }
 
   // ── SPECIES ───────────────────────────────────────────────────
   if (commandName === "species") {
@@ -1181,6 +1324,12 @@ const commands = [
   new SlashCommandBuilder().setName("botstats").setDescription("View bot fight stats").addUserOption(o=>o.setName("user").setDescription("User to check")),
   new SlashCommandBuilder().setName("fights").setDescription("Fight leaderboard"),
   new SlashCommandBuilder().setName("patchnotes").setDescription("View latest patch notes"),
+  new SlashCommandBuilder().setName("updates").setDescription("Manage major-update DM notifications")
+    .addSubcommand(s=>s.setName("subscribe").setDescription("Opt in to major LOZ update DMs"))
+    .addSubcommand(s=>s.setName("unsubscribe").setDescription("Opt out of major LOZ update DMs"))
+    .addSubcommand(s=>s.setName("status").setDescription("Check your update DM preference")),
+  new SlashCommandBuilder().setName("broadcast").setDescription("DM the major update to users who opted in").setDefaultMemberPermissions(0n),
+  new SlashCommandBuilder().setName("broadtest").setDescription("Send the update DM preview to yourself").setDefaultMemberPermissions(0n),
   new SlashCommandBuilder().setName("gift").setDescription("Gift species rolls to another player")
     .addUserOption(o=>o.setName("user").setDescription("Player to gift rolls to").setRequired(true))
     .addIntegerOption(o=>o.setName("amount").setDescription("Number of rolls to gift").setRequired(true).setMinValue(1).setMaxValue(2)),
@@ -1188,7 +1337,8 @@ const commands = [
   new SlashCommandBuilder().setName("quest").setDescription("Quest system")
     .addSubcommand(s=>s.setName("view").setDescription("View your quests").addUserOption(o=>o.setName("user").setDescription("User to check")))
     .addSubcommand(s=>s.setName("claim").setDescription("Claim a quest reward").addStringOption(o=>o.setName("quest").setDescription("Quest to claim").setRequired(true).addChoices({name:"Reaper",value:"reaper"},))),
-  new SlashCommandBuilder().setName("god").setDescription("God-only commands")
+  // default_member_permissions=0 hides these from normal members; handlers still enforce the exact allow-list.
+  new SlashCommandBuilder().setName("god").setDescription("God-only commands").setDefaultMemberPermissions(0n)
     .addSubcommand(s=>s.setName("menu").setDescription("Show god menu"))
     .addSubcommand(s=>s.setName("species-change").setDescription("Change a user's species").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Species to set").setRequired(true).addChoices({name:"Demi God ⚡",value:"Demi God"},{name:"Demon Lord 🔥",value:"Demon Lord"},{name:"Demon King 👑😈",value:"Demon King"},{name:"Chimera 🎭",value:"Chimera"},{name:"Angel 👼",value:"Angel"},{name:"Demon 😈",value:"Demon"},{name:"Oni 👿",value:"Oni"},{name:"Orc Lord 👑",value:"Orc Lord"},{name:"Kijin 🎭",value:"Kijin"},{name:"Cyborg 🤖",value:"Cyborg"},{name:"High Orc ⚔️",value:"High Orc"},{name:"Ogre 👹",value:"Ogre"},{name:"Goblin 👺",value:"Goblin"},{name:"Orc 🟢",value:"Orc"},{name:"Half-Blood 🩸",value:"Half-Blood"},{name:"Fire Dragon 🔥🐉",value:"Fire Dragon"},{name:"Thunder Dragon ⚡🐉",value:"Thunder Dragon"},{name:"Ice Dragon ❄️🐉",value:"Ice Dragon"},{name:"Earth Dragon 🌍🐉",value:"Earth Dragon"},{name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"God 👑✨",value:"God"},{name:"Human 👤",value:"Human"})))
     .addSubcommand(s=>s.setName("species-reset").setDescription("Reset a user to Human").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)))
