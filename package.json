@@ -9,17 +9,12 @@
   },
   "dependencies": {
     "discord.js": "^14.19.3",
-    "mongoose": "^8.0.0",
-    "express": "^5.2.1"
+    "mongoose": "^8.0.0"
   },
   "engines": {
     "node": ">=18.0.0"
   },
-  "keywords": [
-    "discord",
-    "bot",
-    "rpg"
-  ],
+  "keywords": ["discord", "bot", "rpg"],
   "author": "LOZ Dev",
   "license": "ISC"
 }

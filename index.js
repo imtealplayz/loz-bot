@@ -3,7 +3,6 @@ const {
 } = require("discord.js");
 
 const database = require("./database.js"); // MongoDB
-const { startTopggWebhookServer } = require("./topgg.js");
 const state    = require("./state.js");
 const { setState: setHelperState } = require("./helpers.js");
 const { setState: setFightState }   = require("./fights.js");
@@ -211,8 +210,6 @@ if (!TOKEN) {
   console.error("❌ Missing Discord bot token. Set TOKEN (or DISCORD_TOKEN) in Railway environment variables.");
   process.exit(1);
 }
-
-startTopggWebhookServer({ client, state, database, isDatabaseReady:() => databaseReady });
 
 client.login(TOKEN).catch(e => {
   console.error("❌ Discord login failed:", e.message);
