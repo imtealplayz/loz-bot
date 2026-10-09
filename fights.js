@@ -122,6 +122,10 @@ async function startFight(channel, player1Id, player2Id) {
   const p2d = _state.userSpecies.get(player2Id);
   const player1 = makeCombatant(player1Id, p1d.species);
   const player2 = makeCombatant(player2Id, p2d.species);
+  const member1 = channel.guild?.members?.cache?.get(player1Id);
+  const member2 = channel.guild?.members?.cache?.get(player2Id);
+  player1.displayName = member1?.displayName || member1?.user?.username || "Player 1";
+  player2.displayName = member2?.displayName || member2?.user?.username || "Player 2";
   const firstTurn = Math.random()<0.5?player1Id:player2Id;
   const fightId = `${player1Id}-${player2Id}-${Date.now()}`;
   const fight = { fightId, player1Id, player2Id, player1, player2, currentTurn:firstTurn, round:1, lastActionTime:Date.now(), timeout:null };
