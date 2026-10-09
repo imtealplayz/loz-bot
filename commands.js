@@ -49,7 +49,7 @@ async function handleCommand(interaction) {
       {title:"Welcome to LOZ!",content:"LOZ is an RPG battle bot!\n\n**Step 1:** Use `/daily` for your first free roll.\n**Step 2:** Use `/species-roll` to get your species.\n**Step 3:** Use `/fight @user` to battle!"},
       {title:"Species System",content:"Each species has unique stats:\n• **HP** — Health points\n• **ATK** — Damage range\n• **HEAL** — Heal range\n• **ULT** — Ultimate ability cooldown\n\nRarer species are stronger!"},
       {title:"Combat",content:"Fights are turn-based:\n• ⚔️ **ATTACK** — Deal damage\n• 💚 **HEAL** — Recover HP (3-round cooldown)\n• ✨ **ULT** — Species unique ability\n• 🏃 **FORFEIT** — Give up\n\nWin fights for leaderboard points and rolls!"},
-      {title:"Quests & Awakenings",content:"• **Reaper Quest** — Defeat bots and players to unlock Reaper\n• **Cyborg Awakening** — 25 wins, 500 damage, 15 ULTs → Mechangel!\n\nUse `/quest view` to track progress."},
+      {title:"Quests & Awakenings",content:"• **Reaper Quest** — Defeat bots and players to unlock Reaper\n• **Archdemon Trial** — 10 Hard bot wins, 5 Impossible bot wins, 10 player wins\n• **Cyborg Awakening** — 25 wins, 500 damage, 15 ULTs → Mechangel!\n\nUse `/quest view` to track progress."},
     ];
     const embed=new EmbedBuilder().setColor(0x0891b2).setTitle(`📖 New Player Guide (1/${steps.length})`).setDescription(`**${steps[0].title}**\n\n${steps[0].content}`);
     const row=new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("guide_next_0").setLabel("NEXT →").setStyle(ButtonStyle.Primary));
@@ -621,7 +621,7 @@ async function handleButton(interaction) {
       {title:"Welcome to LOZ!",content:"Use `/daily` for a free roll, `/species-roll` to get your species, `/fight @user` to battle!"},
       {title:"Species System",content:"HP, ATK, HEAL, ULT cooldown — rarer = stronger! Check `/species`."},
       {title:"Combat",content:"⚔️ ATTACK, 💚 HEAL, ✨ ULT, 🏃 FORFEIT\n\nWin fights for points and rolls!"},
-      {title:"Quests",content:"• Reaper Quest: defeat bots and players\n• Cyborg Awakening: 25 wins, 500 dmg, 15 ULTs\n\n`/quest view` to track progress!"},
+      {title:"Quests",content:"• Reaper Quest: defeat bots and players\n• Archdemon Trial: 10 Hard wins, 5 Impossible wins, 10 player wins\n• Cyborg Awakening: 25 wins, 500 dmg, 15 ULTs\n\n`/quest view` to track progress!"},
     ];
     const totalSteps=steps.length;
     const embed=new EmbedBuilder().setColor(0x0891b2).setTitle(`📖 Guide (${step+1}/${totalSteps})`).setDescription(`**${steps[step].title}**\n\n${steps[step].content}`);
