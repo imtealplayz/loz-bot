@@ -125,6 +125,16 @@ async function saveUserSpecies(userId, data) {
   return await upsert(User, { userId }, { userId, ...data });
 }
 
+// Update only the intended fields so a partial/stale in-memory user object
+// cannot overwrite unrelated persisted player data.
+async function saveUserRolls(userId, rolls) {
+  return await upsert(User, { userId }, { userId, rolls });
+}
+
+async function saveUserSpeciesFields(userId, species, originalSpecies) {
+  return await upsert(User, { userId }, { userId, species, originalSpecies });
+}
+
 async function saveLeaderboard(userId, data) {
   await upsert(Leaderboard, { userId }, { userId, wins:data.wins||0 });
 }
@@ -303,7 +313,8 @@ async function deleteUser(userId) {
 
 // ==================== EXPORTS ====================
 module.exports = {
-  saveUserSpecies, saveLeaderboard, saveFightLeaderboard,
+  saveUserSpecies, saveUserRolls, saveUserSpeciesFields,
+  saveLeaderboard, saveFightLeaderboard,
   saveFightStats, saveBotStats, saveDailyClaim,
   saveQuestProgress, saveDuelChannel,
   loadAllData, loadAllQuestProgress, loadDuelChannel,
