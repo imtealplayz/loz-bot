@@ -15,7 +15,7 @@ const {
   isPlayerInFight, isPlayerInBotFight, canFight,
   canSendRequest,
   updateLeaderboard, updateFightStats, updateCyborgProgress,
-  isCyborgReadyForAwakening, updateReaperQuest,
+  isCyborgReadyForAwakening, isDemonReadyForAwakening, updateReaperQuest,
 } = require("./helpers.js");
 const { buildBotFightEmbed, buildBotFightRow, buildFightEmbed, buildFightRow, makeCombatant, calculateDamage, applyUltEffect, tickCooldowns, tickBothUltCooldowns, applyOgreRegen, processCurseTick } = require("./combat.js");
 const { startFight, endFight, doBotTurn, endBotFight } = require("./fights.js");
@@ -49,7 +49,7 @@ async function handleCommand(interaction) {
       {title:"Welcome to LOZ!",content:"LOZ is an RPG battle bot!\n\n**Step 1:** Use `/daily` for your first free roll.\n**Step 2:** Use `/species-roll` to get your species.\n**Step 3:** Use `/fight @user` to battle!"},
       {title:"Species System",content:"Each species has unique stats:\n• **HP** — Health points\n• **ATK** — Damage range\n• **HEAL** — Heal range\n• **ULT** — Ultimate ability cooldown\n\nRarer species are stronger!"},
       {title:"Combat",content:"Fights are turn-based:\n• ⚔️ **ATTACK** — Deal damage\n• 💚 **HEAL** — Recover HP (3-round cooldown)\n• ✨ **ULT** — Species unique ability\n• 🏃 **FORFEIT** — Give up\n\nWin fights for leaderboard points and rolls!"},
-      {title:"Quests & Awakenings",content:"• **Reaper Quest** — Defeat bots and players to unlock Reaper\n• **Archdemon Trial** — 10 Hard bot wins, 5 Impossible bot wins, 10 player wins\n• **Cyborg Awakening** — 25 wins, 500 damage, 15 ULTs → Mechangel!\n\nUse `/quest view` to track progress."},
+      {title:"Quests & Awakenings",content:"• **Reaper Quest** — Defeat bots and players to unlock Reaper\n• **Demon Awakening** — 25 player wins, 20 Demon bot defeats, and 20 rolls → Archdemon\n• **Cyborg Awakening** — 25 wins, 500 damage, 15 ULTs → Mechangel!\n\nUse `/quest view` for Reaper and `/awakening` for awakening progress."},
     ];
     const embed=new EmbedBuilder().setColor(0x0891b2).setTitle(`📖 New Player Guide (1/${steps.length})`).setDescription(`**${steps[0].title}**\n\n${steps[0].content}`);
     const row=new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("guide_next_0").setLabel("NEXT →").setStyle(ButtonStyle.Primary));
@@ -256,6 +256,42 @@ async function handleCommand(interaction) {
         .setFooter({text:"25 wins • 500 damage • 15 ULTs to unlock your true form"})],flags:64});
     }
 
+
+    // ── Demon → Archdemon ─────────────────────────────────────────
+    if (sp==="Demon" || sp==="Archdemon") {
+      const prog=userData.awakening.demon || {playerWins:0,demonBotWins:0,awakened:false};
+      userData.awakening.demon=prog;
+      const req=awakeningRequirements.demon;
+      const playerWins=Math.min(prog.playerWins||0,req.playerWins);
+      const demonBotWins=Math.min(prog.demonBotWins||0,req.demonBotWins);
+      const rolls=userData.rolls||0;
+      const trialsReady=playerWins>=req.playerWins && demonBotWins>=req.demonBotWins;
+      const barFor=(v,m)=>{const f=Math.min(10,Math.floor(v/m*10));return "█".repeat(f)+"░".repeat(10-f)+` ${v}/${m}`;};
+
+      if (prog.awakened) {
+        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x4a0404).setTitle("👿 ARCHDEMON AWAKENING — COMPLETE")
+          .setDescription(`**Current Form:** ${userData.species?.emoji||"👿"} ${userData.species?.name||"Archdemon"}\n**Status:** Permanently Awakened\n\nYour Demon awakening is permanent. After rolling another species, use `/switch` to return to Archdemon. Switching has a 3-hour cooldown.`)
+          .setFooter({text:"Demon → Archdemon"})],flags:64});
+      }
+
+      if (trialsReady && rolls>=req.costRolls) {
+        const embed=new EmbedBuilder().setColor(0x4a0404).setTitle("👿 AWAKENING ALTAR — READY")
+          .setDescription(`*The darkness answers your call. Your trials are complete.*\n\n**» ALL REQUIREMENTS MET «**\n├ ✅ Player fight wins: ${playerWins}/${req.playerWins}\n├ ✅ Demon bot defeats: ${demonBotWins}/${req.demonBotWins}\n└ ✅ Reroll payment: ${req.costRolls} available\n\n**Upon awakening to 👿 Archdemon:**\n├ Your species becomes Archdemon\n├ The awakening is permanent\n└ ${req.costRolls} rolls will be consumed`);
+        const row=new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("awaken_archdemon").setLabel("AWAKEN AS ARCHDEMON").setStyle(ButtonStyle.Danger));
+        return safeReply(interaction,{embeds:[embed],components:[row],flags:64});
+      }
+
+      const costLine=rolls>=req.costRolls
+        ? `✅ Reroll payment: ${rolls}/${req.costRolls} available`
+        : `❌ Reroll payment: ${rolls}/${req.costRolls} available — need ${req.costRolls-rolls} more`;
+      const detail=trialsReady
+        ? `Combat trials complete. Get ${Math.max(0,req.costRolls-rolls)} more rolls, then return here to awaken.`
+        : "Complete both combat requirements while using Demon, then pay the reroll cost.";
+      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x4a0404).setTitle("👿 AWAKENING ALTAR")
+        .setDescription(`*Prove your strength as a Demon to awaken into Archdemon.*\n\n**» YOUR PROGRESS «**\n\n⚔️ **Player Fight Wins:** ${barFor(playerWins,req.playerWins)}\n\n👹 **Demon Bot Defeats:** ${barFor(demonBotWins,req.demonBotWins)}\n\n${costLine}\n\n${detail}`)
+        .setFooter({text:"25 player wins • 20 Demon bot defeats • 20 rolls"})],flags:64});
+    }
+
     // ── No awakening available for this species ─────────────────
     return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x2d2d2d).setTitle("✨ AWAKENING ALTAR")
       .setDescription(`*You approach the altar, but it remains silent.*\n\n${userData.species?.emoji||"👤"} **${sp||"Unknown"}** does not yet have an awakening path.\n\nAwakenings are rare transformations granted to species who have proven their worth through relentless battle.\n\n*Check back as new awakenings are discovered.*`)
@@ -334,10 +370,10 @@ async function handleCommand(interaction) {
     row.addComponents(new ButtonBuilder().setCustomId("switch_current").setLabel(`✅ ${sp.name} (Current)`).setStyle(ButtonStyle.Success).setDisabled(true));
     if (userData.originalSpecies?.name&&userData.originalSpecies.name!==sp.name) row.addComponents(new ButtonBuilder().setCustomId("switch_original").setLabel(userData.originalSpecies.name).setStyle(ButtonStyle.Primary));
     if (userData.questSpecies?.reaper?.unlocked&&sp.name!=="Reaper") row.addComponents(new ButtonBuilder().setCustomId("switch_reaper").setLabel("🌑 Reaper").setStyle(ButtonStyle.Primary));
-    if (userData.questSpecies?.archdemon?.unlocked&&sp.name!=="Archdemon") row.addComponents(new ButtonBuilder().setCustomId("switch_archdemon").setLabel("👿 Archdemon").setStyle(ButtonStyle.Danger));
+    if (userData.awakening?.demon?.awakened===true&&sp.name!=="Archdemon") row.addComponents(new ButtonBuilder().setCustomId("switch_archdemon").setLabel("👿 Archdemon").setStyle(ButtonStyle.Danger));
     if (userData.awakening?.cyborg?.awakened===true&&sp.name!=="Mechangel") row.addComponents(new ButtonBuilder().setCustomId("switch_mechangel").setLabel("⚡ Mechangel").setStyle(ButtonStyle.Primary));
     const embed=new EmbedBuilder().setColor(0x9b59b6).setTitle("🔄 Class Switch")
-      .setDescription(`**Current:** ${sp.emoji} ${sp.name}\n**Original:** ${userData.originalSpecies?.emoji||"👤"} ${userData.originalSpecies?.name||"Human"}\n🌑 Reaper: ${userData.questSpecies?.reaper?.unlocked?"✅ Unlocked":"❌ Locked"}\n👿 Archdemon: ${userData.questSpecies?.archdemon?.unlocked?"✅ Unlocked":"❌ Locked"}\n\n⏰ Cooldown: 3 hours`);
+      .setDescription(`**Current:** ${sp.emoji} ${sp.name}\n**Original:** ${userData.originalSpecies?.emoji||"👤"} ${userData.originalSpecies?.name||"Human"}\n🌑 Reaper: ${userData.questSpecies?.reaper?.unlocked?"✅ Unlocked":"❌ Locked"}\n👿 Archdemon: ${userData.awakening?.demon?.awakened?"✅ Awakened":"❌ Locked"}\n\n⏰ Cooldown: 3 hours`);
     return interaction.editReply({embeds:[embed],components:[row]});
   }
 
@@ -410,7 +446,6 @@ async function handleCommand(interaction) {
       const target=options.getUser("user")||user;
       const qd=_state.questProgress.get(target.id)||{};
       const r=qd.reaper||{easyBots:0,mediumBots:0,hardBots:0,impossibleBots:0,playerFights:0,completed:false,claimed:false};
-      const a=qd.archdemon||{hardBots:0,impossibleBots:0,playerFights:0,completed:false,claimed:false};
       const bar=(c,m)=>{ const f=Math.round((c/m)*10); return "█".repeat(f)+"░".repeat(10-f)+` ${c}/${m}`; };
       const now=Date.now();
       const REAPER_EXPIRY=1774355400000;
@@ -425,9 +460,6 @@ async function handleCommand(interaction) {
         rvalue=`⏰ **Quest ends:** <t:${Math.floor(REAPER_EXPIRY/1000)}:R>\n*(Deadline: **24 March 2026 at 6:00 PM**)*\n\n🧸 Easy Bots: ${bar(r.easyBots,35)}\n⚔️ Medium Bots: ${bar(r.mediumBots,25)}\n👹 Hard Bots: ${bar(r.hardBots,15)}\n💀 Impossible: ${bar(r.impossibleBots,5)}\n👤 Player Fights: ${bar(r.playerFights,15)}`;
       }
       embed.addFields({name:`🌑 Reaper Quest — ${rstatus}`,value:rvalue,inline:false});
-      const astatus=a.claimed?"✅ CLAIMED":a.completed?"🎁 CLAIM READY":"🔄 In Progress";
-      const avalue=a.claimed?"Archdemon unlocked! Use `/switch` to equip.":a.completed?"Use `/quest claim quest:archdemon` to claim!":`👹 Hard Bot Wins: ${bar(a.hardBots||0,10)}\n💀 Impossible Bot Wins: ${bar(a.impossibleBots||0,5)}\n⚔️ Player Fight Wins: ${bar(a.playerFights||0,10)}\n\nComplete all objectives to permanently unlock Archdemon.`;
-      embed.addFields({name:`👿 Archdemon Trial — ${astatus}`,value:avalue,inline:false});
       return safeReply(interaction,{embeds:[embed]});
     }
     if (sub==="claim") {
@@ -445,21 +477,7 @@ async function handleCommand(interaction) {
         _state.userSpecies.set(user.id,ud); database.saveUserSpecies(user.id,ud);
         return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x2f4f4f).setTitle("🌑 Reaper Unlocked!").setDescription("Use `/switch` to equip Reaper!")]});
       }
-      if (qn==="archdemon") {
-        const qd=_state.questProgress.get(user.id)||{};
-        const a=qd.archdemon||{hardBots:0,impossibleBots:0,playerFights:0,completed:false,claimed:false};
-        const udExisting=_state.userSpecies.get(user.id);
-        if (a.claimed||udExisting?.questSpecies?.archdemon?.unlocked) return safeReply(interaction,{embeds:[createErrorEmbed("Archdemon is already unlocked! Use `/switch` to equip it.")],flags:64});
-        if (!a.completed) return safeReply(interaction,{embeds:[createErrorEmbed("Archdemon Trial not complete yet! Check `/quest view`.")],flags:64});
-        a.claimed=true; qd.archdemon=a; _state.questProgress.set(user.id,qd);
-        await database.saveQuestProgress(user.id,"archdemon",a);
-        const ud=udExisting||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0};
-        if (!ud.questSpecies) ud.questSpecies={};
-        ud.questSpecies.archdemon={unlocked:true,equipped:false};
-        _state.userSpecies.set(user.id,ud);
-        await database.saveUserSpecies(user.id,ud);
-        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x4a0404).setTitle("👿 ARCHDEMON UNLOCKED").setDescription("You have completed the Archdemon Trial!\n\nYour unlock is permanent. Use `/switch` to equip Archdemon again after rolling another species.")]});
-      }
+
     }
   }
 
@@ -621,7 +639,7 @@ async function handleButton(interaction) {
       {title:"Welcome to LOZ!",content:"Use `/daily` for a free roll, `/species-roll` to get your species, `/fight @user` to battle!"},
       {title:"Species System",content:"HP, ATK, HEAL, ULT cooldown — rarer = stronger! Check `/species`."},
       {title:"Combat",content:"⚔️ ATTACK, 💚 HEAL, ✨ ULT, 🏃 FORFEIT\n\nWin fights for points and rolls!"},
-      {title:"Quests",content:"• Reaper Quest: defeat bots and players\n• Archdemon Trial: 10 Hard wins, 5 Impossible wins, 10 player wins\n• Cyborg Awakening: 25 wins, 500 dmg, 15 ULTs\n\n`/quest view` to track progress!"},
+      {title:"Quests",content:"• Reaper Quest: defeat bots and players\n• Demon Awakening: 25 player wins, 20 Demon bot defeats, 20 rolls → Archdemon\n• Cyborg Awakening: 25 wins, 500 dmg, 15 ULTs\n\n`/quest view` for Reaper; `/awakening` for awakenings."},
     ];
     const totalSteps=steps.length;
     const embed=new EmbedBuilder().setColor(0x0891b2).setTitle(`📖 Guide (${step+1}/${totalSteps})`).setDescription(`**${steps[step].title}**\n\n${steps[step].content}`);
@@ -695,7 +713,7 @@ async function handleButton(interaction) {
     let newSp;
     if (customId==="switch_original") newSp=ud.originalSpecies;
     else if (customId==="switch_reaper") { if(!ud.questSpecies?.reaper?.unlocked) return interaction.update({content:"❌ Reaper not unlocked!",components:[]}); newSp=reaperSpecies; }
-    else if (customId==="switch_archdemon") { if(!ud.questSpecies?.archdemon?.unlocked) return interaction.update({content:"❌ Archdemon not unlocked!",components:[]}); newSp=archdemonSpecies; }
+    else if (customId==="switch_archdemon") { if(ud.awakening?.demon?.awakened!==true) return interaction.update({content:"❌ Archdemon is locked. Complete the Demon awakening first.",components:[]}); newSp=archdemonSpecies; }
     else {
       if (ud.awakening?.cyborg?.awakened!==true) return interaction.update({content:"❌ Mechangel is locked. Complete the Cyborg awakening first.",components:[]});
       newSp=getSpeciesByName("Mechangel");
@@ -1033,6 +1051,23 @@ async function handleButton(interaction) {
     _state.userSpecies.set(user.id,ud); await database.saveUserSpecies(user.id,ud);
     return interaction.update({embeds:[new EmbedBuilder().setColor(0x00ffff).setTitle("⚡ MECHANGEL AWAKENING COMPLETE ⚡")
       .setDescription("🤖 **Cyborg → ⚡ Mechangel**\n\n+15 HP · New passive: Quantum Processing · New ULT: System Restoration\n\n🎁 +5 Species Rolls!\n\n*Machine and angel, fused as one.*")],components:[]});
+
+  }
+
+  if (customId==="awaken_archdemon") {
+    const ud=_state.userSpecies.get(user.id);
+    if (!ud || ud.species?.name!=="Demon") return interaction.update({content:"❌ You must currently be Demon to awaken.",components:[]});
+    if (!isDemonReadyForAwakening(ud)) return interaction.update({content:"❌ Requirements or the 20-roll payment are not ready. Check `/awakening`.",components:[]});
+    const req=require("./constants.js").awakeningRequirements.demon;
+    if ((ud.rolls||0)<req.costRolls) return interaction.update({content:`❌ You need ${req.costRolls} rolls to awaken.`,components:[]});
+    if (!ud.awakening) ud.awakening={};
+    if (!ud.awakening.demon) ud.awakening.demon={playerWins:0,demonBotWins:0,awakened:false};
+    ud.rolls-=req.costRolls;
+    ud.awakening.demon.awakened=true;
+    ud.species=archdemonSpecies; ud.originalSpecies=archdemonSpecies;
+    _state.userSpecies.set(user.id,ud); await database.saveUserSpecies(user.id,ud);
+    return interaction.update({embeds:[new EmbedBuilder().setColor(0x4a0404).setTitle("👿 ARCHDEMON AWAKENING COMPLETE")
+      .setDescription(`😈 **Demon → 👿 Archdemon**\n\n⚔️ 25 player wins and 👹 20 Demon bot defeats completed.\n\n🎲 Paid: ${req.costRolls} rolls. Remaining: ${ud.rolls}.\n\nYour awakening is permanent. After rolling another species, use `/switch` to return to Archdemon (3-hour cooldown).`)],components:[]});
   }
 }
 
@@ -1045,7 +1080,7 @@ const commands = [
   new SlashCommandBuilder().setName("profile").setDescription("View a full player profile").addUserOption(o=>o.setName("user").setDescription("User to check")),
   new SlashCommandBuilder().setName("species-roll").setDescription("Roll for a new species"),
   new SlashCommandBuilder().setName("switch").setDescription("Switch between your species (3h cooldown)"),
-  new SlashCommandBuilder().setName("awakening").setDescription("Check your Cyborg awakening progress"),
+  new SlashCommandBuilder().setName("awakening").setDescription("Check your species awakening progress"),
   new SlashCommandBuilder().setName("fight").setDescription("Challenge a player to a fight").addUserOption(o=>o.setName("user").setDescription("Player to fight").setRequired(true)),
   new SlashCommandBuilder().setName("fightbot").setDescription("Fight a bot").addStringOption(o=>o.setName("difficulty").setDescription("Bot difficulty").setRequired(true).addChoices({name:"🧸 Easy",value:"easy"},{name:"⚔️ Medium",value:"medium"},{name:"👹 Hard",value:"hard"},{name:"💀 Impossible",value:"impossible"})),
   new SlashCommandBuilder().setName("fightstats").setDescription("View fight stats").addUserOption(o=>o.setName("user").setDescription("User to check")),
@@ -1060,7 +1095,7 @@ const commands = [
   new SlashCommandBuilder().setName("togglerequests").setDescription("Toggle receiving challenge requests").addStringOption(o=>o.setName("status").setDescription("Enable or disable").setRequired(true).addChoices({name:"Enable",value:"enable"},{name:"Disable",value:"disable"})),
   new SlashCommandBuilder().setName("quest").setDescription("Quest system")
     .addSubcommand(s=>s.setName("view").setDescription("View your quests").addUserOption(o=>o.setName("user").setDescription("User to check")))
-    .addSubcommand(s=>s.setName("claim").setDescription("Claim a quest reward").addStringOption(o=>o.setName("quest").setDescription("Quest to claim").setRequired(true).addChoices({name:"Reaper",value:"reaper"},{name:"Archdemon",value:"archdemon"}))),
+    .addSubcommand(s=>s.setName("claim").setDescription("Claim a quest reward").addStringOption(o=>o.setName("quest").setDescription("Quest to claim").setRequired(true).addChoices({name:"Reaper",value:"reaper"},))),
   new SlashCommandBuilder().setName("god").setDescription("God-only commands")
     .addSubcommand(s=>s.setName("menu").setDescription("Show god menu"))
     .addSubcommand(s=>s.setName("species-change").setDescription("Change a user's species").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Species to set").setRequired(true).addChoices({name:"Demi God ⚡",value:"Demi God"},{name:"Demon Lord 🔥",value:"Demon Lord"},{name:"Demon King 👑😈",value:"Demon King"},{name:"Chimera 🎭",value:"Chimera"},{name:"Angel 👼",value:"Angel"},{name:"Demon 😈",value:"Demon"},{name:"Oni 👿",value:"Oni"},{name:"Orc Lord 👑",value:"Orc Lord"},{name:"Kijin 🎭",value:"Kijin"},{name:"Cyborg 🤖",value:"Cyborg"},{name:"High Orc ⚔️",value:"High Orc"},{name:"Ogre 👹",value:"Ogre"},{name:"Goblin 👺",value:"Goblin"},{name:"Orc 🟢",value:"Orc"},{name:"Half-Blood 🩸",value:"Half-Blood"},{name:"Fire Dragon 🔥🐉",value:"Fire Dragon"},{name:"Thunder Dragon ⚡🐉",value:"Thunder Dragon"},{name:"Ice Dragon ❄️🐉",value:"Ice Dragon"},{name:"Earth Dragon 🌍🐉",value:"Earth Dragon"},{name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"God 👑✨",value:"God"},{name:"Human 👤",value:"Human"})))
