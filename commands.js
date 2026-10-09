@@ -102,7 +102,6 @@ async function handleCommand(interaction) {
 
 
   // ── SPECIES ───────────────────────────────────────────────────
-  // ── SPECIES ───────────────────────────────────────────────────
   if (commandName === "species") {
     const spName = options.getString("species");
 
