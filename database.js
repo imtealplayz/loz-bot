@@ -270,7 +270,10 @@ async function listAllKeys() {
   try {
     if (!await connect()) return {};
     return {
+      databaseName:     mongoose.connection.name || "unknown",
       users:            await User.countDocuments(),
+      usersWithSpecies: await User.countDocuments({ "species.name": { $exists:true, $ne:null } }),
+      usersWithRolls:   await User.countDocuments({ rolls: { $gt:0 } }),
       leaderboard:      await Leaderboard.countDocuments(),
       fightLeaderboard: await FightLeaderboard.countDocuments(),
       fightStats:       await FightStats.countDocuments(),
