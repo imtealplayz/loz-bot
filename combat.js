@@ -308,13 +308,13 @@ function cleanFightLog(logLines = []) {
   return logLines
     .flatMap(line => String(line ?? "").split("\n"))
     .map(line => line
-      .replace(/[\\u{1F300}-\\u{1FAFF}\\u{2600}-\\u{27BF}]/gu, "")
-      .replace(/\\uFE0F|\\u200D/g, "")
-      .replace(/\\s*[—–]\\s*/g, ": ")
-      .replace(/\\s{2,}/g, " ")
+      .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "")
+      .replace(/\uFE0F|\u200D/g, "")
+      .replace(/\s*[—–]\s*/g, ": ")
+      .replace(/\s{2,}/g, " ")
       .trim()
-      .replace(/\\b(for|deals?|heals?|healed|damage|burn|curse|HP:?)\\s+(\\d+(?:\\.\\d+)?(?:\\/\\d+)?%?)/gi, (match, label, amount) => label + " " + inlineCode(amount))
-      .replace(/\\bRound\\s+(\\d+)\\b/gi, (match, round) => "Round " + inlineCode(round)))
+      .replace(/\b(for|deals?|heals?|healed|damage|burn|curse|HP:?)\s+(\d+(?:\.\d+)?(?:\/\d+)?%?)/gi, (match, label, amount) => label + " " + inlineCode(amount))
+      .replace(/\bRound\s+(\d+)\b/gi, (match, round) => "Round " + inlineCode(round)))
     .filter(Boolean);
 }
 
