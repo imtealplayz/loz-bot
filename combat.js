@@ -1,6 +1,6 @@
 const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const { typeAdvantages, critRates } = require("./constants.js");
-const { hpBar, updateCyborgProgress } = require("./helpers.js");
+const { updateCyborgProgress } = require("./helpers.js");
 
 // ==================== MAKE COMBATANT ====================
 function makeCombatant(id, species) {
