@@ -84,15 +84,6 @@ async function handleCommand(interaction) {
   }
 
 
-  // ── PATCH ─────────────────────────────────────────────────────
-  if (commandName === "patch") {
-    const latest = patchNotes[0];
-    return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x00ff00)
-      .setTitle("📝 Latest Patch Notes")
-      .setDescription(`**Version ${latest.version} - ${latest.date}**\n\n${latest.changes.map(c=>`• ${c}`).join("\n")}`)
-      .setFooter({text:"Use /patch to see latest updates"})]});
-  }
-
   // ── SPECIES ───────────────────────────────────────────────────
   if (commandName === "species") {
     const spName = options.getString("species");
@@ -1088,7 +1079,6 @@ const commands = [
   new SlashCommandBuilder().setName("botstats").setDescription("View bot fight stats").addUserOption(o=>o.setName("user").setDescription("User to check")),
   new SlashCommandBuilder().setName("fights").setDescription("Fight leaderboard"),
   new SlashCommandBuilder().setName("patchnotes").setDescription("View latest patch notes"),
-  new SlashCommandBuilder().setName("patch").setDescription("View latest patch notes"),
   new SlashCommandBuilder().setName("gift").setDescription("Gift species rolls to another player")
     .addUserOption(o=>o.setName("user").setDescription("Player to gift rolls to").setRequired(true))
     .addIntegerOption(o=>o.setName("amount").setDescription("Number of rolls to gift").setRequired(true).setMinValue(1).setMaxValue(2)),
