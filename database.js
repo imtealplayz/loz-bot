@@ -243,6 +243,12 @@ async function loadAllQuestProgress(questProgress, userSpecies) {
             userSpecies.set(uid, ud);
           }
         }
+        if (qp.archdemon?.completed && qp.archdemon?.claimed) {
+          if (!ud.questSpecies.archdemon?.unlocked) {
+            ud.questSpecies.archdemon = { unlocked:true, equipped:false };
+            userSpecies.set(uid, ud);
+          }
+        }
       }
     }
     return true;
