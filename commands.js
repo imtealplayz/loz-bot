@@ -241,13 +241,15 @@ async function handleCommand(interaction) {
     await interaction.deferReply({ flags:64 });
     const subscribers = await database.getBroadcastSubscribers();
     if (subscribers === null) {
-      return interaction.editReply({ content:"❌ Couldn't load the opt-in list from MongoDB. No DMs were attempted." });
+      return interaction.editReply({
+        content:"❌ Couldn't load the opt-in list from MongoDB. No DMs were attempted.\\n\\n**DMs sent:** 0\\n**DMs failed:** 0",
+      });
     }
 
     const recipientIds = [...new Set(subscribers)].filter(id => id !== _client.user.id);
     if (!recipientIds.length) {
       return interaction.editReply({
-        content:"No users have opted into update DMs yet. Users can subscribe with \`/updates subscribe\`. No DMs were sent.",
+        content:"No users have opted into update DMs yet. Users can subscribe with \`/updates subscribe\`. No DMs were sent.\\n\\n**DMs sent:** 0\\n**DMs failed:** 0",
       });
     }
 
