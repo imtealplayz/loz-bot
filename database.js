@@ -176,7 +176,7 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
       console.error("⚠️ Skipping MongoDB data load because the database is unavailable.");
       return false;
     }
-    console.log("📂 Loading data from MongoDB...");
+    console.log(`📂 Loading data from MongoDB — host=${mongoose.connection.host || "unknown"}, database=${mongoose.connection.name || "unknown"}, usersCollection=${User.collection.name}`);
 
     const users = await User.find({});
     let withSpecies = 0, withRolls = 0;
@@ -276,11 +276,22 @@ async function loadDuelChannel(guildId) {
 
 // ==================== UTILITY ====================
 // Used by /god debug-db to show collection counts
-async function listAllKeys() {
+async function listAllKeys(debugUserId) {
   try {
     if (!await connect()) return {};
+    const debugUser = debugUserId
+      ? await User.findOne({ userId: debugUserId }).select({ userId:1, species:1, originalSpecies:1, rolls:1 }).lean()
+      : null;
     return {
       databaseName:     mongoose.connection.name || "unknown",
+      databaseHost:     mongoose.connection.host || "unknown",
+      usersCollection:  User.collection.name,
+      debugUser: debugUser ? {
+        found: true,
+        species: debugUser.species?.name || null,
+        originalSpecies: debugUser.originalSpecies?.name || null,
+        rolls: Number(debugUser.rolls) || 0,
+      } : (debugUserId ? { found:false } : null),
       users:            await User.countDocuments(),
       usersWithSpecies: await User.countDocuments({ "species.name": { $exists:true, $ne:null } }),
       usersWithRolls:   await User.countDocuments({ rolls: { $gt:0 } }),
