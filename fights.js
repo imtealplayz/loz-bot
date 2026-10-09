@@ -166,8 +166,8 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
   if (reason === "timeout") desc += "Opponent timed out.\n";
   if (reason === "forfeit") desc += "Opponent forfeited.\n";
   if (reason === "counter") desc += "Opponent was defeated by a counter-strike.\n";
-  if (doubleWin) desc += "Double win: +2 leaderboard points.\n";
-  if (rollEarned) desc += "Species roll earned: +1.\n";
+  desc += "⚔️ Leaderboard: +" + winPoints + "\n";
+  if (rollEarned) desc += "🎲 Species Rolls: +1\n";
   const resultPayload = buildFightResultPayload("<@" + winnerId + "> wins the fight", desc, 0x2ecc71, []);
   const msg = _state.fightMessages.get(fightId);
   if (msg) await msg.edit({ content: null, embeds: null, ...resultPayload }).catch(() => {});
@@ -375,8 +375,8 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
   if (reason === "timeout") desc += won ? "LOZ took too long to respond. You win by default.\n" : "Your turn timed out. LOZ wins.\n";
   if (reason === "counter") desc += "LOZ was defeated by your counter-strike.\n";
   if (won) {
-    desc += "Leaderboard points earned: " + winsEarned + "\n";
-    if (rollEarned) desc += "Species rolls earned: 1\n";
+    desc += "⚔️ Leaderboard: +" + winsEarned + "\n";
+    if (rollEarned) desc += "🎲 Species Rolls: +1\n";
   } else {
     desc += "No rewards earned.";
   }
