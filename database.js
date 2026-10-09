@@ -122,8 +122,12 @@ async function upsert(Model, filter, data) {
 
 // User records may contain legacy duplicate userId documents. Update all matching
 // copies so a stale duplicate cannot bring back old species/roll values next boot.
+let userRepairPromise = null;
+
 async function upsertUser(userId, data) {
   try {
+    // Keep writes queued while the owner-triggered archive-and-dedupe operation runs.
+    if (userRepairPromise) await userRepairPromise;
     if (!await connect()) return false;
     await User.updateMany(
       { userId },
@@ -206,6 +210,73 @@ function chooseBestPlayerRecord(records) {
     // Deterministic tie-breaker: prefer the newest ObjectId timestamp.
     return String(b._id || "").localeCompare(String(a._id || ""));
   })[0] || null;
+}
+
+function isPlainPlayerObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    && !(value instanceof Date) && !(value instanceof mongoose.Types.ObjectId);
+}
+
+// Merge nested progress conservatively: keep any completed/unlocked flag, retain
+// the highest numeric progress, and union arrays. All original documents are
+// archived before a repaired canonical record is written or any copy is deleted.
+function mergePlayerProgress(values) {
+  const present = values.filter(value => value !== undefined && value !== null);
+  if (!present.length) return {};
+  if (present.every(Array.isArray)) {
+    const out = [], seen = new Set();
+    for (const arr of present) {
+      for (const item of arr) {
+        const key = JSON.stringify(item);
+        if (!seen.has(key)) { seen.add(key); out.push(item); }
+      }
+    }
+    return out;
+  }
+  if (present.every(value => typeof value === "number" && Number.isFinite(value))) {
+    return Math.max(...present);
+  }
+  if (present.every(value => typeof value === "boolean")) {
+    return present.some(Boolean);
+  }
+  if (present.every(isPlainPlayerObject)) {
+    const keys = [...new Set(present.flatMap(value => Object.keys(value)))];
+    const out = {};
+    for (const key of keys) out[key] = mergePlayerProgress(present.map(value => value[key]));
+    return out;
+  }
+  return present.find(value => value !== "" && value !== false) ?? present[0];
+}
+
+function mergeDuplicatePlayerRecords(records) {
+  const base = chooseBestPlayerRecord(records);
+  const ordered = [base, ...records.filter(record => String(record._id) !== String(base._id))
+    .sort((a, b) => playerRecordScore(b) - playerRecordScore(a))];
+  const firstValid = field => ordered.find(record => record[field]?.name)?.[field] || null;
+  const baseRolls = Number(base.rolls) || 0;
+  const maxRolls = Math.max(0, ...ordered.map(record => Number(record.rolls) || 0));
+
+  return {
+    species: firstValid("species"),
+    originalSpecies: firstValid("originalSpecies") || firstValid("species"),
+    questSpecies: mergePlayerProgress(ordered.map(record => record.questSpecies || {})),
+    // Do not replace a non-zero balance on the best record with a stale copy.
+    rolls: baseRolls > 0 ? baseRolls : maxRolls,
+    requestsEnabled: typeof base.requestsEnabled === "boolean" ? base.requestsEnabled : true,
+    lastSwitch: Number(base.lastSwitch) || Math.max(0, ...ordered.map(record => Number(record.lastSwitch) || 0)),
+    awakening: mergePlayerProgress(ordered.map(record => record.awakening || {})),
+    badges: mergePlayerProgress(ordered.map(record => record.badges || [])),
+  };
+}
+
+function hasGlobalUniqueUserIdIndex(indexes) {
+  return indexes.some(index =>
+    index.unique === true
+    && Object.keys(index.key || {}).length === 1
+    && index.key.userId === 1
+    && !index.sparse
+    && !index.partialFilterExpression
+  );
 }
 
 // ==================== LOAD FUNCTIONS ====================
@@ -338,6 +409,175 @@ async function loadDuelChannel(guildId) {
   }
 }
 
+// Archive duplicate player documents, merge recoverable progress, deduplicate,
+// and enforce a true single-field unique userId index. This runs only when the
+// owner explicitly invokes /god repair-user-db; it is not an automatic startup migration.
+async function repairUserRecords() {
+  if (userRepairPromise) return userRepairPromise;
+
+  const task = (async () => {
+    if (!await connect()) return { ok:false, error:"MongoDB connection failed." };
+    const docs = await User.find({}).lean();
+    const groups = new Map();
+    const invalidDocs = [];
+
+    for (const doc of docs) {
+      if (typeof doc.userId !== "string" || !doc.userId.length) {
+        invalidDocs.push(doc);
+        continue;
+      }
+      const group = groups.get(doc.userId) || [];
+      group.push(doc);
+      groups.set(doc.userId, group);
+    }
+
+    if (invalidDocs.length) {
+      return { ok:false, error:`Found ${invalidDocs.length} user documents without a valid userId. No records were changed.` };
+    }
+
+    const duplicateGroups = [...groups.entries()].filter(([, records]) => records.length > 1);
+    const duplicateDocuments = duplicateGroups.flatMap(([, records]) => records);
+
+    const db = mongoose.connection.db;
+    if (!db) return { ok:false, error:"MongoDB database handle is unavailable." };
+    const archive = db.collection("user_duplicate_archive");
+
+    // Archive every document in every affected group (including the canonical
+    // record) using its original _id as an idempotency key.
+    if (duplicateDocuments.length) {
+      const now = new Date();
+      await archive.bulkWrite(duplicateDocuments.map(doc => ({
+        updateOne: {
+          filter: { _id: doc._id },
+          update: { $setOnInsert: {
+            sourceCollection: User.collection.name,
+            userId: doc.userId,
+            archivedAt: now,
+            originalDocument: doc,
+          } },
+          upsert: true,
+        },
+      })), { ordered:true });
+
+      const archivedCount = await archive.countDocuments({
+        _id: { $in: duplicateDocuments.map(doc => doc._id) },
+        originalDocument: { $exists:true },
+      });
+      if (archivedCount !== duplicateDocuments.length) {
+        return {
+          ok:false,
+          error:`Archive verification failed (${archivedCount}/${duplicateDocuments.length}). No duplicate user documents were deleted.`,
+          archivedCount,
+          expectedArchiveCount: duplicateDocuments.length,
+        };
+      }
+    }
+
+    let groupsRepaired = 0, extraDocumentsRemoved = 0;
+    for (const [userId, records] of duplicateGroups) {
+      const canonical = chooseBestPlayerRecord(records);
+      const merged = mergeDuplicatePlayerRecords(records);
+      const updateResult = await User.collection.updateOne(
+        { _id: canonical._id, userId },
+        { $set: merged }
+      );
+      if (updateResult.matchedCount !== 1) {
+        return {
+          ok:false,
+          error:`Could not safely update the canonical document for userId ${userId}. The original copies are archived; no more documents were removed.`,
+          groupsRepaired,
+          extraDocumentsRemoved,
+          archivedDocuments: duplicateDocuments.length,
+        };
+      }
+
+      const extras = records.filter(record => String(record._id) !== String(canonical._id));
+      if (extras.length) {
+        const deletion = await User.collection.deleteMany({
+          userId,
+          _id: { $in: extras.map(record => record._id) },
+        });
+        if (deletion.deletedCount !== extras.length) {
+          return {
+            ok:false,
+            error:`Only deleted ${deletion.deletedCount}/${extras.length} duplicate copies for one player. All originals are archived; rerun the repair command to finish.`,
+            groupsRepaired,
+            extraDocumentsRemoved: extraDocumentsRemoved + deletion.deletedCount,
+            archivedDocuments: duplicateDocuments.length,
+          };
+        }
+        extraDocumentsRemoved += deletion.deletedCount;
+      }
+      groupsRepaired++;
+    }
+
+    const remainingDuplicateGroups = await User.aggregate([
+      { $group: { _id:"$userId", count:{ $sum:1 } } },
+      { $match: { _id:{ $ne:null }, count:{ $gt:1 } } },
+      { $count:"groups" },
+    ]);
+    const duplicatesLeft = remainingDuplicateGroups[0]?.groups || 0;
+    if (duplicatesLeft) {
+      return {
+        ok:false,
+        error:`Still found ${duplicatesLeft} duplicate userId groups after cleanup. Originals are archived; refusing to create the unique index.`,
+        groupsRepaired,
+        extraDocumentsRemoved,
+        archivedDocuments: duplicateDocuments.length,
+        duplicateUserIdGroups: duplicatesLeft,
+      };
+    }
+
+    let indexes = await User.collection.indexes();
+    let globalUniqueIndex = hasGlobalUniqueUserIdIndex(indexes);
+    if (!globalUniqueIndex) {
+      // A non-unique, sparse, or partial single-key index on userId cannot replace
+      // the required global uniqueness constraint. It is safe to rebuild the index
+      // after the duplicate documents have been archived and consolidated.
+      const simpleUserIdIndexes = indexes.filter(index =>
+        Object.keys(index.key || {}).length === 1 && index.key.userId === 1
+      );
+      for (const index of simpleUserIdIndexes) {
+        if (index.name && index.name !== "_id_") await User.collection.dropIndex(index.name);
+      }
+      await User.collection.createIndex({ userId:1 }, { unique:true, name:"userId_1" });
+      indexes = await User.collection.indexes();
+      globalUniqueIndex = hasGlobalUniqueUserIdIndex(indexes);
+    }
+
+    if (!globalUniqueIndex) {
+      return {
+        ok:false,
+        error:"Duplicate cleanup completed, but MongoDB did not confirm a global unique userId index.",
+        groupsRepaired,
+        extraDocumentsRemoved,
+        archivedDocuments: duplicateDocuments.length,
+      };
+    }
+
+    return {
+      ok:true,
+      groupsRepaired,
+      extraDocumentsRemoved,
+      archivedDocuments: duplicateDocuments.length,
+      archiveCollection: "user_duplicate_archive",
+      uniqueUserIdIndex: true,
+      totalUserDocuments: await User.countDocuments(),
+      remainingDuplicateUserIdGroups: 0,
+    };
+  })();
+
+  userRepairPromise = task;
+  try {
+    return await task;
+  } catch (e) {
+    console.error("repairUserRecords error:", e);
+    return { ok:false, error:e?.message || String(e) };
+  } finally {
+    if (userRepairPromise === task) userRepairPromise = null;
+  }
+}
+
 // ==================== UTILITY ====================
 // Used by /god debug-db to show collection counts
 async function listAllKeys(debugUserId) {
@@ -378,7 +618,14 @@ async function listAllKeys(debugUserId) {
         || String(b._id || "").localeCompare(String(a._id || "")));
     const debugUser = chooseBestPlayerRecord(sortedDebugDocs);
     const duplicateInfo = duplicateStats[0] || { duplicateUserIdGroups:0, extraDuplicateUserDocs:0 };
-    const hasUniqueUserIdIndex = userIndexes.some(index => index.unique === true && index.key?.userId === 1);
+    const hasUniqueUserIdIndex = hasGlobalUniqueUserIdIndex(userIndexes);
+    const userIdIndexDefinitions = userIndexes.filter(index => index.key?.userId === 1).map(index => ({
+      name: index.name || "unnamed",
+      key: Object.entries(index.key || {}).map(([field, direction]) => `${field}:${direction}`).join(", "),
+      unique: index.unique === true,
+      sparse: index.sparse === true,
+      partial: Boolean(index.partialFilterExpression),
+    }));
     const uniqueUserIds = (allUserIds || []).filter(id => typeof id === "string" && id.length > 0).length;
     const usersWithoutUserId = Math.max(0, users - uniqueUserIds - (duplicateInfo.extraDuplicateUserDocs || 0));
 
@@ -402,7 +649,7 @@ async function listAllKeys(debugUserId) {
       })),
       duplicateUserIdGroups: duplicateInfo.duplicateUserIdGroups || 0,
       extraDuplicateUserDocs: duplicateInfo.extraDuplicateUserDocs || 0,
-      hasUniqueUserIdIndex, uniqueUserIds, usersWithoutUserId,
+      hasUniqueUserIdIndex, userIdIndexDefinitions, uniqueUserIds, usersWithoutUserId,
       users, usersWithSpecies, usersWithRolls,
       leaderboard, fightLeaderboard, fightStats, botStats,
       dailyClaims, quests, duelChannels,
@@ -428,7 +675,7 @@ async function deleteUser(userId) {
 
 // ==================== EXPORTS ====================
 module.exports = {
-  saveUserSpecies, saveUserRolls, saveUserSpeciesFields,
+  saveUserSpecies, saveUserRolls, saveUserSpeciesFields, repairUserRecords,
   saveLeaderboard, saveFightLeaderboard,
   saveFightStats, saveBotStats, saveDailyClaim,
   saveQuestProgress, saveDuelChannel,
