@@ -177,6 +177,7 @@ function updateArchdemonQuest(id, type) {
 
   if (type === "hard") q.hardBots = Math.min((q.hardBots || 0) + 1, 10);
   else if (type === "impossible") q.impossibleBots = Math.min((q.impossibleBots || 0) + 1, 5);
+  else if (type === "player") q.playerFights = Math.min((q.playerFights || 0) + 1, 10);
   else return;
 
   if ((q.hardBots || 0) >= 10 && (q.impossibleBots || 0) >= 5 && (q.playerFights || 0) >= 10) q.completed = true;
