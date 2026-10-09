@@ -1126,9 +1126,21 @@ async function handleButton(interaction) {
     const selectedSpecies = getSpeciesByName(parsed.speciesName);
     if (ud?.species?.name === selectedSpecies.name) return interaction.update(buildSpeciesTokenSelectionPayload(user.id, parsed.speciesName, Number(ud.speciesTokens)||0));
     const redemption = await database.redeemSpeciesToken(user.id, selectedSpecies);
+    if (redemption?.sameSpecies) {
+      const alreadyUpdated = ud || { species:humanSpecies, originalSpecies:humanSpecies, questSpecies:{}, rolls:0, requestsEnabled:true, lastSwitch:0, awakening:{}, badges:[] };
+      alreadyUpdated.species = selectedSpecies;
+      alreadyUpdated.originalSpecies = selectedSpecies;
+      alreadyUpdated.speciesTokens = redemption.speciesTokens;
+      _state.userSpecies.set(user.id, alreadyUpdated);
+      return interaction.update(buildSpeciesTokenResultPayload(
+        "Species Already Changed",
+        `Your species is already ${selectedSpecies.emoji} **${selectedSpecies.name}**. This confirmation did not consume an extra token. Current balance: **${redemption.speciesTokens}**.`,
+        selectedSpecies.color || 0x0891b2
+      ));
+    }
     if (!redemption?.ok) {
       const explanation = redemption?.noTokens
-        ? "MongoDB reports that no Species Tokens remain. No species change was made."
+        ? "MongoDB reports that no Species Tokens remain. No additional species change was made."
         : "MongoDB could not confirm the species change. No local change was applied; check the database before retrying.";
       return interaction.update(buildSpeciesTokenResultPayload("Species Change Not Applied", explanation, 0xff0000));
     }
