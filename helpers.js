@@ -144,7 +144,7 @@ function updateFightStats(id, won, oppId, data={}) {
 function updateBotStats(id, diff, won) {
   const s = _state.botStats.get(id) || { easy:{wins:0,losses:0}, medium:{wins:0,losses:0}, hard:{wins:0,losses:0}, impossible:{wins:0,losses:0} };
   if (!s[diff]) s[diff] = { wins:0, losses:0 };
-  if (won) { s[diff].wins++; updateReaperQuest(id, diff); } else s[diff].losses++;
+  if (won) { s[diff].wins++; updateReaperQuest(id, diff); updateArchdemonQuest(id, diff); } else s[diff].losses++;
   _state.botStats.set(id, s);
   database.saveBotStats(id, s);
 }
@@ -168,6 +168,21 @@ function updateReaperQuest(id, type) {
   uq.reaper = q;
   _state.questProgress.set(id, uq);
   database.saveQuestProgress(id, "reaper", q);
+}
+
+function updateArchdemonQuest(id, type) {
+  const uq = _state.questProgress.get(id) || {};
+  const q = uq.archdemon || { hardBots:0, impossibleBots:0, playerFights:0, completed:false, claimed:false };
+  if (q.completed) return;
+
+  if (type === "hard") q.hardBots = Math.min((q.hardBots || 0) + 1, 10);
+  else if (type === "impossible") q.impossibleBots = Math.min((q.impossibleBots || 0) + 1, 5);
+  else return;
+
+  if ((q.hardBots || 0) >= 10 && (q.impossibleBots || 0) >= 5 && (q.playerFights || 0) >= 10) q.completed = true;
+  uq.archdemon = q;
+  _state.questProgress.set(id, uq);
+  database.saveQuestProgress(id, "archdemon", q);
 }
 
 // ==================== AWAKENING ====================
@@ -204,5 +219,5 @@ module.exports = {
   isPlayerInGame, isPlayerInFight, isPlayerInBotFight, canFight,
   hasActiveRequest, canSendRequest,
   updateLeaderboard, updateFightStats, updateBotStats,
-  updateReaperQuest, initAwakeningData, updateCyborgProgress, isCyborgReadyForAwakening,
+  updateReaperQuest, updateArchdemonQuest, initAwakeningData, updateCyborgProgress, isCyborgReadyForAwakening,
 };
