@@ -576,7 +576,7 @@ async function handleCommand(interaction) {
       return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xffd700).setTitle("👑 God Commands")
         .addFields(
           {name:"🧬 Species Management",value:"`/god species-change @user <species>`\n`/god species-reset @user`\n`/god species-add @user <rolls>`",inline:false},
-          {name:"⚙️ Management",value:"`/god rolls-reset @user`\n`/god quest-reset @user <quest>`\n`/god debug-db`",inline:false}
+          {name:"⚙️ Management",value:"`/god rolls-reset @user`\n`/god quest-reset @user <quest>`\n`/god debug-db`\n`/god repair-user-db`",inline:false}
         ).setFooter({text:"Use /god menu to see this again"})]});
     }
 
@@ -629,6 +629,32 @@ async function handleCommand(interaction) {
       return safeReply(interaction,{embeds:[createSuccessEmbed(`Reset ${qn} quest for <@${target.id}>.`)],flags:64});
     }
 
+    if (sub==="repair-user-db") {
+      // Explicit owner-invoked maintenance. Database code archives duplicate
+      // documents and verifies the archive before marking copies inactive.
+      try {
+        await interaction.deferReply({ flags:64 });
+      } catch(e) {
+        console.error("repair-user-db deferReply error:", e);
+        return null;
+      }
+
+      const result = await database.repairUserRecords();
+      if (!result.ok) {
+        const details = [
+          result.error,
+          result.archivedDocuments !== undefined ? `Original documents archived: ${result.archivedDocuments}` : null,
+          result.extraDocumentsMarked !== undefined ? `Copies marked inactive: ${result.extraDocumentsMarked}` : null,
+          result.groupsRepaired !== undefined ? `Duplicate groups repaired: ${result.groupsRepaired}` : null,
+        ].filter(Boolean).join("\n");
+        return safeReply(interaction,{embeds:[createErrorEmbed(`Player database repair did not fully complete.\n\n${details}\n\nNo player documents are deleted by this repair.`)],flags:64});
+      }
+
+      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x00aa66).setTitle("✅ Player Database Repair Complete").setDescription(
+        `**Duplicate groups repaired:** ${result.groupsRepaired}\n**Copies marked inactive:** ${result.extraDocumentsMarked}\n**Original documents archived:** ${result.archivedDocuments}\n**Archive collection:** \`${result.archiveCollection}\`\n**Remaining active duplicate IDs:** ${result.remainingDuplicateUserIdGroups}\n**Active player records:** ${result.activePlayerDocuments}\n**Archived duplicate records retained:** ${result.archivedPlayerDocuments}\n**Active userId unique index:** confirmed\n\nEvery affected original document was copied to the archive collection before duplicate copies were marked inactive. No player documents were deleted.`
+      )],flags:64});
+    }
+
     if (sub==="debug-db") {
       // Acknowledge immediately: MongoDB can take longer than Discord's 3-second initial response window.
       try {
@@ -658,7 +684,7 @@ async function handleCommand(interaction) {
           databaseName:_dbName, databaseHost:_dbHost, usersCollection:_collection,
           debugUser, debugUserRecords=[], debugUserRecordCount=0,
           duplicateUserIdGroups=0, extraDuplicateUserDocs=0,
-          hasUniqueUserIdIndex=false, uniqueUserIds=0, usersWithoutUserId=0,
+          hasUniqueUserIdIndex=false, userIdIndexDefinitions=[], uniqueUserIds=0, usersWithoutUserId=0,
           ...recordCounts
         } = counts;
         const lines = Object.entries(recordCounts).map(([k,v])=>`• **${k}**: ${v} records`).join("\n");
@@ -668,7 +694,10 @@ async function handleCommand(interaction) {
         const liveUserText = !liveUserState.found
           ? "**LOZ live player state:** NOT LOADED"
           : `**LOZ live player state:** found\n**Live species:** ${liveUserState.species || "none"}\n**Live original species:** ${liveUserState.originalSpecies || "none"}\n**Live rolls:** ${liveUserState.rolls}`;
-        const integrityText = `**Unique user IDs:** ${uniqueUserIds}\n**Duplicate userId groups:** ${duplicateUserIdGroups}\n**Extra duplicate documents:** ${extraDuplicateUserDocs}\n**Documents without userId:** ${usersWithoutUserId}\n**Unique userId index:** ${hasUniqueUserIdIndex ? "present" : "MISSING"}`;
+        const indexText = userIdIndexDefinitions.length
+          ? userIdIndexDefinitions.map(index => `${index.name}: \`${index.key}\` (unique=${index.unique}, sparse=${index.sparse}, partial=${index.partial})`).join("\n")
+          : "No index containing userId";
+        const integrityText = `**Unique active user IDs:** ${uniqueUserIds}\n**Duplicate active userId groups:** ${duplicateUserIdGroups}\n**Extra active duplicate documents:** ${extraDuplicateUserDocs}\n**Active documents without userId:** ${usersWithoutUserId}\n**Active userId unique index:** ${hasUniqueUserIdIndex ? "confirmed" : "MISSING"}\n**userId index definitions:**\n${indexText}`;
         const duplicateDocsText = debugUserRecords.length
           ? `**MongoDB documents for your user (${debugUserRecordCount}):**\n${debugUserRecords.map((r,i)=>`${i+1}. ID \`${r.documentId}\` — species: ${r.species || "none"}, original: ${r.originalSpecies || "none"}, rolls: ${r.rolls} (score ${r.score})`).join("\n")}`
           : "**MongoDB documents for your user:** none";
@@ -1166,7 +1195,8 @@ const commands = [
     .addSubcommand(s=>s.setName("species-add").setDescription("Give rolls to a user").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)).addIntegerOption(o=>o.setName("amount").setDescription("Amount of rolls").setRequired(true).setMinValue(1).setMaxValue(1000000)))
     .addSubcommand(s=>s.setName("rolls-reset").setDescription("Reset a user's rolls to 0").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)))
     .addSubcommand(s=>s.setName("quest-reset").setDescription("Reset a user's quest").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)).addStringOption(o=>o.setName("quest").setDescription("Quest name").setRequired(true).addChoices({name:"Reaper",value:"reaper"},{name:"All",value:"all"})))
-    .addSubcommand(s=>s.setName("debug-db").setDescription("Check database keys")),
+    .addSubcommand(s=>s.setName("debug-db").setDescription("Check database keys"))
+    .addSubcommand(s=>s.setName("repair-user-db").setDescription("Archive and repair duplicate player records")),
 ].map(c=>c.toJSON());
 
 module.exports = { setState, setClient, handleCommand, handleButton, commands };
