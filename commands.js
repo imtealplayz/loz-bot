@@ -35,7 +35,7 @@ async function handleCommand(interaction) {
   if (commandName === "help") {
     const embed = new EmbedBuilder().setColor(0x0891b2).setTitle("📖 LOZ Commands").setDescription("Complete list of commands")
       .addFields(
-        {name:"🎲 Species",  value:"`/species-roll` `/species` `/switch` `/daily`",inline:false},
+        {name:"<:reroll_dice:1558042108965822515> Species",  value:"`/species-roll` `/species` `/switch` `/daily`",inline:false},
         {name:"⚔️ Combat",   value:"`/fight @user` `/fightbot`",inline:false},
         {name:"📊 Stats",    value:"`/fightstats` `/botstats` `/history` `/lb` `/fights`",inline:false},
         {name:"🌑 Quests",   value:"`/quest view` `/quest claim` `/awakening`",inline:false},
@@ -76,7 +76,7 @@ async function handleCommand(interaction) {
     if (existingUser || _state.userSpecies.size > 0) {
       _state.userSpecies.set(user.id,userData); database.saveUserSpecies(user.id,userData);
     }
-    return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x00ff00).setTitle("📅 Daily Bonus Claimed!").setDescription(`+1 species roll! 🎲\nYou now have **${userData.rolls}** rolls.\n\n🔥 **${streak} Day Streak!**${streak===7?"\n🎉 **WEEK BONUS! +1 extra roll!**":""}`)]} );
+    return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x00ff00).setTitle("📅 Daily Bonus Claimed!").setDescription(`+1 species roll! <:reroll_dice:1558042108965822515>\nYou now have **${userData.rolls}** rolls.\n\n🔥 **${streak} Day Streak!**${streak===7?"\n🎉 **WEEK BONUS! +1 extra roll!**":""}`)]} );
   }
 
   // ── PATCHNOTES ────────────────────────────────────────────────
@@ -139,7 +139,7 @@ async function handleCommand(interaction) {
 ⚡🤖 **Mechangel** — Cyborg awakening only`;
       const embed = new EmbedBuilder()
         .setColor(0x0891b2)
-        .setTitle("🎲 All Species — Ranked by Rarity")
+        .setTitle("<:reroll_dice:1558042108965822515> All Species — Ranked by Rarity")
         .setDescription(desc)
         .setFooter({text:"Use /species species:<name> for detailed stats on any species"});
       return safeReply(interaction,{embeds:[embed]});
@@ -154,7 +154,7 @@ async function handleCommand(interaction) {
       .setTitle(`${sp.emoji} ${sp.name}`)
       .addFields(
         {name:"💪 Stats",value:`HP: **${sp.hp}**\nATK: **${sp.atkMin}–${sp.atkMax}**\nHEAL: **${sp.healMin}–${sp.healMax}**\nULT CD: **${sp.ultCooldown||"—"}**`,inline:true},
-        {name:"🎲 Roll Chance",value:sp.chance||"Special unlock",inline:true},
+        {name:"<:reroll_dice:1558042108965822515> Roll Chance",value:sp.chance||"Special unlock",inline:true},
         {name:"🟢 Passive",value:getPassiveDescription(sp.name),inline:false},
         {name:"✨ Active ULT",value:getActiveDescription(sp.name),inline:false},
         {name:"⚖️ Type Matchup",value:adv?(adv.strongAgainst?`✅ Strong vs **${adv.strongAgainst}**\n`:"")+(adv.weakAgainst?`❌ Weak vs **${adv.weakAgainst}**`:"No weaknesses"):"No type advantages",inline:false},
@@ -170,7 +170,7 @@ async function handleCommand(interaction) {
         return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(botSpecies.kitsune.color).setTitle(`👤 ${target.displayName}'s Profile`).setThumbnail(target.displayAvatarURL())
           .addFields(
             {name:"🧬 Species",value:"🦊 **Kitsune**",inline:true},{name:"❤️ HP",value:"1,000,000",inline:true},{name:"⚔️ Attack",value:"500-1,000",inline:true},
-            {name:"💚 Heal",value:"200,000-500,000",inline:true},{name:"🎲 Rolls",value:"∞",inline:true},
+            {name:"💚 Heal",value:"200,000-500,000",inline:true},{name:"<:reroll_dice:1558042108965822515> Rolls",value:"∞",inline:true},
             {name:"🏅 Badges",value:"└ 💪 Omnipotent\n└ 🐛 Bug Creator",inline:false},
             {name:"✨ Passive",value:botSpecies.kitsune.passive,inline:false},{name:"⚡ Active",value:botSpecies.kitsune.active,inline:false},
             {name:"📊 Total Users",value:`${_state.userSpecies.size}`,inline:true},
@@ -188,7 +188,7 @@ async function handleCommand(interaction) {
     const embed=new EmbedBuilder().setColor(sp.color||0x9b59b6).setTitle(`👤 ${target.displayName}'s Profile`).setThumbnail(target.displayAvatarURL())
       .addFields(
         {name:"🧬 Species",value:`${sp.emoji} **${sp.name}**`,inline:true},
-        {name:"🎲 Rolls",value:`${td.rolls||0}`,inline:true},
+        {name:"<:reroll_dice:1558042108965822515> Rolls",value:`${td.rolls||0}`,inline:true},
         {name:"⚔️ Fight Record",value:`${fd.wins}W - ${fd.losses}L (${wr}%)`,inline:true},
         {name:"🔥 Streak",value:`${fd.streak||0} wins`,inline:true},
         {name:"🔘 Requests",value:td.requestsEnabled?"✅ Enabled":"❌ Disabled",inline:true},
@@ -218,8 +218,8 @@ async function handleCommand(interaction) {
     const currentSp = userData.species || humanSpecies;
     const embed = new EmbedBuilder()
       .setColor(currentSp.color || 0x808080)
-      .setTitle("🎲 Species Roll")
-      .setDescription(`**Current species:** ${currentSp.emoji} **${currentSp.name}**\n\n🎲 Rolls available: **${userData.rolls}**\n\nPress **REROLL** to roll for a new species, or **CANCEL** to keep your current one.`);
+      .setTitle("<:reroll_dice:1558042108965822515> Species Roll")
+      .setDescription(`**Current species:** ${currentSp.emoji} **${currentSp.name}**\n\n<:reroll_dice:1558042108965822515> Rolls available: **${userData.rolls}**\n\nPress **REROLL** to roll for a new species, or **CANCEL** to keep your current one.`);
     const pubMsg = await channel.send({embeds:[embed]});
     // Store message ref so button handler can edit it
     _state.activeRolls.set(user.id, { channelId: channel.id, messageId: pubMsg.id, timestamp: Date.now() });
@@ -678,7 +678,7 @@ async function handleButton(interaction) {
     const resultEmbed=new EmbedBuilder()
       .setColor(newSpecies.color||0x808080)
       .setTitle(`${newSpecies.emoji} ${newSpecies.name}`)
-      .setDescription(`<@${user.id}> rolled ${newSpecies.emoji} **${newSpecies.name}**!\n\nChance: **${newSpecies.chance||"?"}** | HP: **${newSpecies.hp}** | ATK: **${newSpecies.atkMin}–${newSpecies.atkMax}** | HEAL: **${newSpecies.healMin}–${newSpecies.healMax}**\n\n🎲 Rolls remaining: **${userData.rolls}**`);
+      .setDescription(`<@${user.id}> rolled ${newSpecies.emoji} **${newSpecies.name}**!\n\nChance: **${newSpecies.chance||"?"}** | HP: **${newSpecies.hp}** | ATK: **${newSpecies.atkMin}–${newSpecies.atkMax}** | HEAL: **${newSpecies.healMin}–${newSpecies.healMax}**\n\n<:reroll_dice:1558042108965822515> Rolls remaining: **${userData.rolls}**`);
 
     // Grab messageId BEFORE potentially deleting activeRolls
     const rollData = _state.activeRolls.get(user.id);
@@ -1085,7 +1085,7 @@ async function handleButton(interaction) {
     ud.species=archdemonSpecies; ud.originalSpecies=archdemonSpecies;
     _state.userSpecies.set(user.id,ud); await database.saveUserSpecies(user.id,ud);
     return interaction.update({embeds:[new EmbedBuilder().setColor(0x4a0404).setTitle("👿 ARCHDEMON AWAKENING COMPLETE")
-      .setDescription(`😈 **Demon → 👿 Archdemon**\n\n⚔️ 25 player wins and 👹 20 Demon bot defeats completed.\n\n🎲 Paid: ${req.costRolls} rolls. Remaining: ${ud.rolls}.\n\nYour awakening is permanent. After rolling another species, use \`/switch\` to return to Archdemon (3-hour cooldown).`)],components:[]});
+      .setDescription(`😈 **Demon → 👿 Archdemon**\n\n⚔️ 25 player wins and 👹 20 Demon bot defeats completed.\n\n<:reroll_dice:1558042108965822515> Paid: ${req.costRolls} rolls. Remaining: ${ud.rolls}.\n\nYour awakening is permanent. After rolling another species, use \`/switch\` to return to Archdemon (3-hour cooldown).`)],components:[]});
   }
 }
 
