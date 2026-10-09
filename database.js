@@ -203,11 +203,12 @@ async function redeemSpeciesToken(userId, species) {
     if (!result.modifiedCount) {
       const current = await User.findOne({ userId, archivedForRepair:{ $ne:true } })
         .select({ species:1, speciesTokens:1 }).lean();
-      if (!current || (Number(current.speciesTokens)||0) < 1) {
-        return { ok:false, noTokens:true, speciesTokens:Number(current?.speciesTokens)||0 };
-      }
+      if (!current) return { ok:false, noTokens:true, speciesTokens:0 };
       if (current.species?.name === species.name) {
         return { ok:false, sameSpecies:true, speciesTokens:Number(current.speciesTokens)||0 };
+      }
+      if ((Number(current.speciesTokens)||0) < 1) {
+        return { ok:false, noTokens:true, speciesTokens:Number(current.speciesTokens)||0 };
       }
       return { ok:false, error:true };
     }
