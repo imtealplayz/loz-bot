@@ -654,15 +654,25 @@ async function handleCommand(interaction) {
         const databaseName = counts.databaseName || "unknown";
         const databaseHost = counts.databaseHost || "unknown";
         const usersCollection = counts.usersCollection || "unknown";
-        const { databaseName:_dbName, databaseHost:_dbHost, usersCollection:_collection, debugUser, ...recordCounts } = counts;
+        const {
+          databaseName:_dbName, databaseHost:_dbHost, usersCollection:_collection,
+          debugUser, debugUserRecords=[], debugUserRecordCount=0,
+          duplicateUserIdGroups=0, extraDuplicateUserDocs=0,
+          hasUniqueUserIdIndex=false, uniqueUserIds=0, usersWithoutUserId=0,
+          ...recordCounts
+        } = counts;
         const lines = Object.entries(recordCounts).map(([k,v])=>`• **${k}**: ${v} records`).join("\n");
         const storedUser = !debugUser?.found
           ? "**MongoDB record:** NOT FOUND"
-          : `**MongoDB record:** found\n**Stored species:** ${debugUser.species || "none"}\n**Stored original species:** ${debugUser.originalSpecies || "none"}\n**Stored rolls:** ${debugUser.rolls}`;
+          : `**MongoDB record (best candidate):** found\n**Stored species:** ${debugUser.species || "none"}\n**Stored original species:** ${debugUser.originalSpecies || "none"}\n**Stored rolls:** ${debugUser.rolls}`;
         const liveUserText = !liveUserState.found
           ? "**LOZ live player state:** NOT LOADED"
           : `**LOZ live player state:** found\n**Live species:** ${liveUserState.species || "none"}\n**Live original species:** ${liveUserState.originalSpecies || "none"}\n**Live rolls:** ${liveUserState.rolls}`;
-        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xffd700).setTitle("📊 MongoDB Persistence Check").setDescription(`**Database:** \`${databaseName}\`\n**MongoDB host:** \`${databaseHost}\`\n**Users collection:** \`${usersCollection}\`\n**Players in live cache:** ${_state.userSpecies.size}\n\n${storedUser}\n\n${liveUserText}\n\n${lines||"No data found."}\n\nCompare MongoDB values with LOZ live player state to pinpoint whether data failed to load or changed after startup.`)],flags:64});
+        const integrityText = `**Unique user IDs:** ${uniqueUserIds}\n**Duplicate userId groups:** ${duplicateUserIdGroups}\n**Extra duplicate documents:** ${extraDuplicateUserDocs}\n**Documents without userId:** ${usersWithoutUserId}\n**Unique userId index:** ${hasUniqueUserIdIndex ? "present" : "MISSING"}`;
+        const duplicateDocsText = debugUserRecords.length
+          ? `**MongoDB documents for your user (${debugUserRecordCount}):**\n${debugUserRecords.map((r,i)=>`${i+1}. ID \`${r.documentId}\` — species: ${r.species || "none"}, original: ${r.originalSpecies || "none"}, rolls: ${r.rolls} (score ${r.score})`).join("\n")}`
+          : "**MongoDB documents for your user:** none";
+        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xffd700).setTitle("📊 MongoDB Persistence Check").setDescription(`**Database:** \`${databaseName}\`\n**MongoDB host:** \`${databaseHost}\`\n**Users collection:** \`${usersCollection}\`\n**Players in live cache:** ${_state.userSpecies.size}\n\n${storedUser}\n\n${liveUserText}\n\n${integrityText}\n\n${duplicateDocsText}\n\n${lines||"No data found."}\n\nDuplicate records can cause later blank documents to overwrite complete profiles during loading. No records are deleted by this diagnostic.`)],flags:64});
       } catch(e) {
         console.error("debug-db command error:", e);
         return safeReply(interaction,{embeds:[createErrorEmbed(`DB diagnostic error: ${e?.message || String(e)}`)],flags:64});
