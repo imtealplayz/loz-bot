@@ -348,7 +348,7 @@ function buildFightEmbed(fight, logLines = [], phase = "playing") {
   const turnPlayer = p1Turn ? p1 : p2;
   const color = phase === "ended" ? 0x2ecc71 : (turnPlayer.species.color || 0xff4500);
   const logs = cleanFightLog(logLines);
-  const p1Name = p1.displayName || ("Player " + (p1Turn ? "1" : "1"));
+  const p1Name = p1.displayName || "Player 1";
   const p2Name = p2.displayName || "Player 2";
   return new ContainerBuilder()
     .setAccentColor(color)
@@ -411,7 +411,7 @@ function buildBotFightEmbed(fight, logLines = [], phase = "playing") {
   const playerName = fight.playerName || "You";
   return new ContainerBuilder()
     .setAccentColor(color)
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent("## ⚔️ LOZ ARENA  ·  " + personality.emoji + " " + personality.name.toUpperCase() + "  ·  ROUND " + inlineCode(fight.round)))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent("## ⚔️ LOZ ARENA  ·  " + (personality.emoji ? personality.emoji + " " : "☠️ ") + personality.name.toUpperCase() + "  ·  ROUND " + inlineCode(fight.round)))
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
       "🟢 **YOUR SIDE**  ·  **" + playerName + "**\n" +
