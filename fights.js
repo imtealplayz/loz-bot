@@ -4,7 +4,7 @@ const { humanSpecies } = require("./constants.js");
 const database = require("./database.js");
 const {
   hpBar, updateFightStats, updateBotStats,
-  updateReaperQuest, updateCyborgProgress,
+  updateReaperQuest, updateArchdemonQuest, updateCyborgProgress,
 } = require("./helpers.js");
 const {
   makeCombatant, calculateDamage, applyUltEffect,
@@ -55,6 +55,7 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
   updateFightStats(winnerId,true,loserId,{opponentName:loser.species.name,opponentSpecies:loser.species,hpLeft:winner.currentHp,special:reason==="forfeit"?"😵 forfeit":reason==="counter"?"💥 counter":"",doubleWin,rollEarned});
   updateFightStats(loserId,false,winnerId,{opponentName:winner.species.name,opponentSpecies:winner.species,hpLeft:loser.currentHp,special:reason==="forfeit"?"😵 forfeited":"",doubleWin:false,rollEarned:false});
   updateReaperQuest(winnerId,"player");
+  updateArchdemonQuest(winnerId,"player");
   _state.fightCooldowns.set(winnerId,Date.now()+60000);
   _state.fightCooldowns.set(loserId,Date.now()+60000);
   let desc=`🏆 **<@${winnerId}> WINS!**\n\n`;
