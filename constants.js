@@ -1,6 +1,12 @@
 // ==================== PATCH NOTES ====================
 const patchNotes = [
   {
+    version: "4.6", date: "2026-10-09",
+    changes: [
+      "Fight result screens now show ⚔️ leaderboard rewards and 🎲 species-roll rewards with clear icons.",
+    ],
+  },
+  {
     version: "4.5", date: "2026-10-09",
     changes: [
       "Fixed bot fight leaderboard rewards. Easy awards 1 point, Medium 2, Hard 3, and Impossible 5.",
