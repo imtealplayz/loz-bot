@@ -330,7 +330,7 @@ async function listAllKeys(debugUserId) {
     // Run independent reads concurrently so the diagnostic can reply quickly.
     const [
       debugUserDocs, users, usersWithSpecies, usersWithRolls,
-      duplicateStats, userIndexes,
+      duplicateStats, userIndexes, allUserIds,
       leaderboard, fightLeaderboard, fightStats, botStats,
       dailyClaims, quests, duelChannels,
     ] = await Promise.all([
@@ -346,6 +346,7 @@ async function listAllKeys(debugUserId) {
         { $group: { _id:null, duplicateUserIdGroups:{ $sum:1 }, extraDuplicateUserDocs:{ $sum:{ $subtract:["$count",1] } } } },
       ]),
       User.collection.indexes().catch(() => []),
+      User.distinct("userId"),
       Leaderboard.countDocuments(),
       FightLeaderboard.countDocuments(),
       FightStats.countDocuments(),
@@ -361,6 +362,8 @@ async function listAllKeys(debugUserId) {
     const debugUser = chooseBestPlayerRecord(sortedDebugDocs);
     const duplicateInfo = duplicateStats[0] || { duplicateUserIdGroups:0, extraDuplicateUserDocs:0 };
     const hasUniqueUserIdIndex = userIndexes.some(index => index.unique === true && index.key?.userId === 1);
+    const uniqueUserIds = (allUserIds || []).filter(id => typeof id === "string" && id.length > 0).length;
+    const usersWithoutUserId = Math.max(0, users - uniqueUserIds - (duplicateInfo.extraDuplicateUserDocs || 0));
 
     return {
       databaseName: mongoose.connection.name || "unknown",
@@ -382,8 +385,8 @@ async function listAllKeys(debugUserId) {
       })),
       duplicateUserIdGroups: duplicateInfo.duplicateUserIdGroups || 0,
       extraDuplicateUserDocs: duplicateInfo.extraDuplicateUserDocs || 0,
-      hasUniqueUserIdIndex,
-      users, uniqueUserIds: users - (duplicateInfo.extraDuplicateUserDocs || 0), usersWithSpecies, usersWithRolls,
+      hasUniqueUserIdIndex, uniqueUserIds, usersWithoutUserId,
+      users, usersWithSpecies, usersWithRolls,
       leaderboard, fightLeaderboard, fightStats, botStats,
       dailyClaims, quests, duelChannels,
     };
