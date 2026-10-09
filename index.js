@@ -64,11 +64,24 @@ async function registerCommands() {
     }
 
     const rest = new REST({ version:"10" }).setToken(client.token);
-    console.log("🔄 Registering slash commands...");
-    await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-    console.log("✅ Commands registered!");
+    const localGod = commands.find(command => command.name === "god");
+    console.log(`🔄 Registering ${commands.length} global slash commands...`);
+    console.log("🔎 Local /god subcommands:", (localGod?.options ?? []).map(option => option.name).join(", ") || "(none)");
+
+    const registered = await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+    const remoteGod = registered.find(command => command.name === "god");
+    const remoteSubcommands = (remoteGod?.options ?? []).map(option => option.name);
+    console.log(`✅ Discord accepted ${registered.length} global slash commands.`);
+    console.log("🔎 Discord returned /god subcommands:", remoteSubcommands.join(", ") || "(none)");
+
+    if (remoteSubcommands.includes("repair-user-db")) {
+      console.log("✅ Verified /god repair-user-db in Discord's registered command response.");
+    } else {
+      console.error("❌ Discord's registration response is missing /god repair-user-db.");
+    }
   } catch (e) {
-    console.error("Command registration error:", e.message);
+    console.error("❌ Slash command registration failed:", e);
+    console.error("Registration error details:", e?.rawError ?? e?.message ?? String(e));
   }
 }
 
