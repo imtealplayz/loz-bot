@@ -643,15 +643,26 @@ async function handleCommand(interaction) {
         if (counts.error) {
           return safeReply(interaction,{embeds:[createErrorEmbed(`MongoDB diagnostic failed: ${counts.error}`)],flags:64});
         }
+        // Compare persistent MongoDB values with the exact cache /profile reads.
+        const liveUser = _state.userSpecies.get(user.id);
+        const liveUserState = liveUser ? {
+          found: true,
+          species: liveUser.species?.name || null,
+          originalSpecies: liveUser.originalSpecies?.name || null,
+          rolls: Number(liveUser.rolls) || 0,
+        } : { found: false };
         const databaseName = counts.databaseName || "unknown";
         const databaseHost = counts.databaseHost || "unknown";
         const usersCollection = counts.usersCollection || "unknown";
         const { databaseName:_dbName, databaseHost:_dbHost, usersCollection:_collection, debugUser, ...recordCounts } = counts;
         const lines = Object.entries(recordCounts).map(([k,v])=>`• **${k}**: ${v} records`).join("\n");
         const storedUser = !debugUser?.found
-          ? "**Your MongoDB record:** NOT FOUND"
-          : `**Your MongoDB record:** found\n**Stored species:** ${debugUser.species || "none"}\n**Stored original species:** ${debugUser.originalSpecies || "none"}\n**Stored rolls:** ${debugUser.rolls}`;
-        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xffd700).setTitle("📊 MongoDB Persistence Check").setDescription(`**Database:** \`${databaseName}\`\n**MongoDB host:** \`${databaseHost}\`\n**Users collection:** \`${usersCollection}\`\n\n${storedUser}\n\n${lines||"No data found."}\n\nThis checks your actual saved MongoDB record, not just LOZ's in-memory state.`)],flags:64});
+          ? "**MongoDB record:** NOT FOUND"
+          : `**MongoDB record:** found\n**Stored species:** ${debugUser.species || "none"}\n**Stored original species:** ${debugUser.originalSpecies || "none"}\n**Stored rolls:** ${debugUser.rolls}`;
+        const liveUserText = !liveUserState.found
+          ? "**LOZ live player state:** NOT LOADED"
+          : `**LOZ live player state:** found\n**Live species:** ${liveUserState.species || "none"}\n**Live original species:** ${liveUserState.originalSpecies || "none"}\n**Live rolls:** ${liveUserState.rolls}`;
+        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xffd700).setTitle("📊 MongoDB Persistence Check").setDescription(`**Database:** \`${databaseName}\`\n**MongoDB host:** \`${databaseHost}\`\n**Users collection:** \`${usersCollection}\`\n**Players in live cache:** ${_state.userSpecies.size}\n\n${storedUser}\n\n${liveUserText}\n\n${lines||"No data found."}\n\nCompare MongoDB values with LOZ live player state to pinpoint whether data failed to load or changed after startup.`)],flags:64});
       } catch(e) {
         console.error("debug-db command error:", e);
         return safeReply(interaction,{embeds:[createErrorEmbed(`DB diagnostic error: ${e?.message || String(e)}`)],flags:64});
