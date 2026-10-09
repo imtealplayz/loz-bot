@@ -19,7 +19,7 @@ const {
   updateLeaderboard, updateFightStats, updateCyborgProgress,
   isCyborgReadyForAwakening, isDemonReadyForAwakening, updateReaperQuest,
 } = require("./helpers.js");
-const { buildBotFightEmbed, buildBotFightRow, buildFightEmbed, buildFightRow, makeCombatant, calculateDamage, applyUltEffect, tickCooldowns, tickBothUltCooldowns, applyOgreRegen, processCurseTick } = require("./combat.js");
+const { buildBotFightEmbed, buildBotFightRow, buildFightEmbed, buildFightRow, buildFightMessagePayload, buildBotFightMessagePayload, makeCombatant, calculateDamage, applyUltEffect, tickCooldowns, tickBothUltCooldowns, applyOgreRegen, processCurseTick } = require("./combat.js");
 const { startFight, endFight, doBotTurn, endBotFight } = require("./fights.js");
 
 let _state = null;
@@ -355,9 +355,7 @@ async function handleCommand(interaction) {
       round:1, difficulty, botPersonality:personality, timeout:null, log:[], playerName:user.displayName||user.username,
     };
     _state.activeBotFights.set(fightId,fight); _state.activeBotFights.set(user.id,fightId);
-    const embed=buildBotFightEmbed(fight,["⚔️ Fight started! Your turn!"],"playing");
-    const row=buildBotFightRow(fightId,fight);
-    const msg=await channel.send({embeds:[embed],components:[row]});
+    const msg = await channel.send(buildBotFightMessagePayload(fight, ["Fight started. Your turn."], "playing"));
     _state.fightMessages.set(fightId,msg);
     fight.timeout=setTimeout(()=>{ if(_state.activeBotFights.has(fightId)) endBotFight(channel,fightId,"bot","player",difficulty); },120000);
     return safeReply(interaction,{embeds:[createSuccessEmbed("Fight started!")],flags:64});
@@ -797,7 +795,7 @@ async function handleButton(interaction) {
       }
       fight.playerUltCooldown=fight.playerSpecies.ultCooldown; fight.log=log.slice(-3);
       const msg=_state.fightMessages.get(fightId);
-      if (msg) await msg.edit({embeds:[buildBotFightEmbed(fight,fight.log,"bot_thinking")],components:[buildBotFightRow(fightId,fight,"bot_thinking")]}).catch(()=>{});
+      if (msg) await msg.edit({ content: null, embeds: null, ...buildBotFightMessagePayload(fight, fight.log, "bot_thinking", "bot_thinking") }).catch(() => {});
       setTimeout(()=>doBotTurn(channel,fightId),botPersonalities[fight.difficulty].reactionDelay);
       return interaction.deferUpdate();
     }
@@ -851,7 +849,7 @@ async function handleButton(interaction) {
         if (requiresChoice) {
           fight.playerUltBuff=playerC.ultBuff; fight.playerUltCooldown=playerC.species.ultCooldown;
           fight.botHp=botC.currentHp; fight.playerHp=playerC.currentHp; fight.log=log.slice(-3);
-          if (msg) await msg.edit({embeds:[buildBotFightEmbed(fight,fight.log,"choice")],components:[buildBotFightRow(fightId,fight,`choice_${choiceType}`)]}).catch(()=>{});
+          if (msg) await msg.edit({ content: null, embeds: null, ...buildBotFightMessagePayload(fight, fight.log, "choice", "choice_" + choiceType) }).catch(() => {});
           fight.timeout=setTimeout(()=>{ if(_state.activeBotFights.has(fightId)){fight.playerUltBuff={type:"nextAttack",multiplier:1.5}; doBotTurn(channel,fightId);} },30000);
           return;
         }
@@ -915,7 +913,7 @@ async function handleButton(interaction) {
     if (fight.botHp<=0) { await endBotFight(channel,fightId,"player","bot",fight.difficulty); return; }
     if (fight.playerHp<=0) { await endBotFight(channel,fightId,"bot","player",fight.difficulty); return; }
 
-    if (msg) await msg.edit({embeds:[buildBotFightEmbed(fight,fight.log,"bot_thinking")],components:[buildBotFightRow(fightId,fight,"bot_thinking")]}).catch(()=>{});
+    if (msg) await msg.edit({ content: null, embeds: null, ...buildBotFightMessagePayload(fight, fight.log, "bot_thinking", "bot_thinking") }).catch(() => {});
     setTimeout(()=>doBotTurn(channel,fightId),botPersonalities[fight.difficulty].reactionDelay);
     return;
   }
@@ -948,7 +946,7 @@ async function handleButton(interaction) {
       player.ultCooldown=player.species.ultCooldown; fight.currentTurn=opponent.id; fight.round++;
       const nextTurnPlayer=fight.currentTurn===fight.player1Id?fight.player1:fight.player2;
       const msg=_state.fightMessages.get(fightId);
-      if (msg) await msg.edit({embeds:[buildFightEmbed(fight,log)],components:[buildFightRow(fightId,nextTurnPlayer)]}).catch(()=>{});
+      if (msg) await msg.edit({ content: null, embeds: null, ...buildFightMessagePayload(fight, log, "playing") }).catch(() => {});
       if (fight.timeout) clearTimeout(fight.timeout);
       fight.timeout=setTimeout(()=>{ if(_state.activeFights.has(fightId)){const l=fight.currentTurn;const w=fight.player1Id===l?fight.player2Id:fight.player1Id;endFight(channel,fightId,w,l,"timeout");} },120000);
       return;
@@ -975,14 +973,14 @@ async function handleButton(interaction) {
         if (requiresChoice) {
           player.ultChoicePending=true;
           const msg=_state.fightMessages.get(fightId);
-          if (msg) await msg.edit({embeds:[buildFightEmbed(fight,[`✨ <@${user.id}> uses ULT! Choose your path:`],"choice")],components:[buildFightRow(fightId,player,`choice_${choiceType}`)]}).catch(()=>{});
+          if (msg) await msg.edit({ content: null, embeds: null, ...buildFightMessagePayload(fight, ["Ultimate activated. Choose an option."], "choice", "choice_" + choiceType) }).catch(() => {});
           fight.timeout=setTimeout(()=>{
             if(_state.activeFights.has(fightId)&&player.ultChoicePending){
               player.ultChoicePending=false; player.ultCooldown=player.species.ultCooldown; player.ultBuff={type:"nextAttack",multiplier:1.5};
               fight.currentTurn=opponent.id; fight.round++;
               const msg2=_state.fightMessages.get(fightId);
               const tp=fight.currentTurn===fight.player1Id?fight.player1:fight.player2;
-              if(msg2) msg2.edit({embeds:[buildFightEmbed(fight,["⏰ ULT choice timed out!"])],components:[buildFightRow(fightId,tp)]}).catch(()=>{});
+              if (msg2) msg2.edit({ content: null, embeds: null, ...buildFightMessagePayload(fight, ["Ultimate choice timed out."], "playing") }).catch(() => {});
             }
           },30000);
           return;
@@ -1056,7 +1054,7 @@ async function handleButton(interaction) {
 
     const nextTurnPlayer=fight.currentTurn===fight.player1Id?fight.player1:fight.player2;
     const msg2=_state.fightMessages.get(fightId);
-    if (msg2) await msg2.edit({embeds:[buildFightEmbed(fight,log)],components:[buildFightRow(fightId,nextTurnPlayer)]}).catch(()=>{});
+    if (msg2) await msg2.edit({ content: null, embeds: null, ...buildFightMessagePayload(fight, log, "playing") }).catch(() => {});
     fight.timeout=setTimeout(()=>{ if(_state.activeFights.has(fightId)){const l=fight.currentTurn;const w=fight.player1Id===l?fight.player2Id:fight.player1Id;endFight(channel,fightId,w,l,"timeout");} },120000);
     return;
   }
