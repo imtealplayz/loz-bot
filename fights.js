@@ -1,15 +1,15 @@
-const { EmbedBuilder } = require("discord.js");
 const { botPersonalities } = require("./constants.js");
 const { humanSpecies } = require("./constants.js");
 const database = require("./database.js");
 const {
-  hpBar, updateFightStats, updateBotStats,
+  updateFightStats, updateBotStats,
   updateReaperQuest, updateCyborgProgress, updateDemonAwakeningProgress,
 } = require("./helpers.js");
 const {
   makeCombatant, calculateDamage, applyUltEffect,
   tickCooldowns, applyOgreRegen, processCurseTick,
   buildFightEmbed, buildFightRow, buildBotFightEmbed, buildBotFightRow,
+  buildFightMessagePayload, buildBotFightMessagePayload, buildFightResultPayload, formatFightHealth,
 } = require("./combat.js");
 
 let _state = null;
@@ -46,14 +46,11 @@ function isCurrentBotTurn(fightId, fight, turnToken) {
 }
 
 async function updateBotFightMessage(channel, fightId, fight, phase) {
-  const payload = {
-    embeds: [buildBotFightEmbed(fight, fight.log || [], phase)],
-    components: [buildBotFightRow(fightId, fight, phase === "bot_thinking" ? "bot_thinking" : "playing")],
-  };
+  const payload = buildBotFightMessagePayload(fight, fight.log || [], phase, phase === "bot_thinking" ? "bot_thinking" : "playing");
   const current = _state.fightMessages.get(fightId);
   if (current) {
     try {
-      await current.edit(payload);
+      await current.edit({ content: null, embeds: null, ...payload });
       return true;
     } catch (error) {
       console.error(`[Bot fight ${fightId}] Failed to edit fight message during ${phase}:`, error?.stack || error);
@@ -129,10 +126,7 @@ async function startFight(channel, player1Id, player2Id) {
   const firstTurn = Math.random()<0.5?player1Id:player2Id;
   const fightId = `${player1Id}-${player2Id}-${Date.now()}`;
   const fight = { fightId, player1Id, player2Id, player1, player2, currentTurn:firstTurn, round:1, lastActionTime:Date.now(), timeout:null };
-  const turnPlayer = firstTurn===player1Id?player1:player2;
-  const embed = buildFightEmbed(fight,[`⚔️ Fight started! <@${firstTurn}> goes first!`]);
-  const row   = buildFightRow(fightId, turnPlayer);
-  const msg   = await channel.send({ embeds:[embed], components:[row] });
+  const msg = await channel.send(buildFightMessagePayload(fight, ["Fight started. <@" + firstTurn + "> goes first."], "playing"));
   _state.fightMessages.set(fightId, msg);
   _state.activeFights.set(fightId, fight);
   fight.timeout = setTimeout(()=>{
@@ -164,17 +158,16 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
     await updateDemonAwakeningProgress(winnerId,"playerWin");
   _state.fightCooldowns.set(winnerId,Date.now()+60000);
   _state.fightCooldowns.set(loserId,Date.now()+60000);
-  let desc=`🏆 **<@${winnerId}> WINS!**\n\n`;
-  desc+=`${winner.species.emoji} ${winner.species.name} — ${hpBar(Math.max(0,winner.currentHp),winner.maxHp)}\n`;
-  desc+=`${loser.species.emoji}  ${loser.species.name}  — ${hpBar(0,loser.maxHp)}\n\n`;
-  if (reason==="timeout")  desc+="⏰ Opponent timed out!\n";
-  if (reason==="forfeit")  desc+="😵 Opponent forfeited!\n";
-  if (reason==="counter")  desc+="⚡ Killed by counter-strike!\n";
-  if (doubleWin)           desc+="✨ **DOUBLE WIN!** +2 points!\n";
-  if (rollEarned)          desc+="🎲 **+1 Species Roll!**\n";
-  const endEmbed=new EmbedBuilder().setColor(0x2ecc71).setTitle("⚔️ FIGHT OVER").setDescription(desc);
-  const msg=_state.fightMessages.get(fightId);
-  if (msg) await msg.edit({embeds:[endEmbed],components:[]}).catch(()=>{});
+  let desc = "**" + winner.species.name + "**: " + formatFightHealth(Math.max(0, winner.currentHp), winner.maxHp) + "\n";
+  desc += "**" + loser.species.name + "**: " + formatFightHealth(0, loser.maxHp) + "\n\n";
+  if (reason === "timeout") desc += "Opponent timed out.\n";
+  if (reason === "forfeit") desc += "Opponent forfeited.\n";
+  if (reason === "counter") desc += "Opponent was defeated by a counter-strike.\n";
+  if (doubleWin) desc += "Double win: +2 leaderboard points.\n";
+  if (rollEarned) desc += "Species roll earned: +1.\n";
+  const resultPayload = buildFightResultPayload("<@" + winnerId + "> wins the fight", desc, 0x2ecc71, []);
+  const msg = _state.fightMessages.get(fightId);
+  if (msg) await msg.edit({ content: null, embeds: null, ...resultPayload }).catch(() => {});
   _state.activeFights.delete(fightId);
   _state.fightMessages.delete(fightId);
 }
@@ -372,16 +365,22 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
     updateFightStats(fight.playerId,false,"BOT",{opponentName:fight.botSpecies.name,opponentSpecies:fight.botSpecies,hpLeft:0,special:`🤖 ${difficulty} loss`});
   }
   const personality=botPersonalities[difficulty], won=winner==="player";
-  const timeoutMsg=reason==="timeout"
-    ? (won ? "\n⏰ The bot took too long to respond. You win by default!" : "\n⏰ You took too long to respond. The bot wins by timeout!")
-    : reason==="counter" ? "\n⚡ Bot was killed by your counter-strike!" : "";
-  const pName=fight.playerName||`<@${fight.playerId}>`;
-  const desc=won
-    ?`🏆 **${pName} defeated ${personality.emoji} ${personality.name}!**${timeoutMsg}\n\n${fight.playerSpecies.emoji} ${pName} — ${hpBar(fight.playerHp,fight.playerMaxHp)}\n${fight.botSpecies.emoji} ${personality.name} — ${hpBar(0,fight.botMaxHp)}\n\n+${winsEarned} win${winsEarned!==1?"s":""}!${rollEarned?" 🎲 +1 Roll!":""}`
-    :`💀 **${pName} lost to ${personality.emoji} ${personality.name}!**\n\n${fight.playerSpecies.emoji} ${pName} — ${hpBar(0,fight.playerMaxHp)}\n${fight.botSpecies.emoji} ${personality.name} — ${hpBar(fight.botHp,fight.botMaxHp)}\n\nNo rewards.`;
-  const embed=new EmbedBuilder().setColor(won?0x2ecc71:0xe74c3c).setTitle(`🤖 BOT FIGHT — ${difficulty.toUpperCase()}`).setDescription(desc);
-  const msg=_state.fightMessages.get(fightId);
-  if (msg) await msg.edit({embeds:[embed],components:[]}).catch(()=>{});
+  const personality = botPersonalities[difficulty], won = winner === "player";
+  const playerMention = "<@" + fight.playerId + ">";
+  const header = won ? playerMention + " wins against " + personality.name : playerMention + " lost to " + personality.name;
+  let desc = "**" + fight.playerSpecies.name + "**: " + formatFightHealth(won ? fight.playerHp : 0, fight.playerMaxHp) + "\n";
+  desc += "**" + fight.botSpecies.name + "**: " + formatFightHealth(won ? 0 : fight.botHp, fight.botMaxHp) + "\n\n";
+  if (reason === "timeout") desc += won ? "LOZ took too long to respond. You win by default.\n" : "Your turn timed out. LOZ wins.\n";
+  if (reason === "counter") desc += "LOZ was defeated by your counter-strike.\n";
+  if (won) {
+    desc += "Leaderboard points earned: " + winsEarned + "\n";
+    if (rollEarned) desc += "Species rolls earned: 1\n";
+  } else {
+    desc += "No rewards earned.";
+  }
+  const resultPayload = buildFightResultPayload(header, desc, won ? 0x2ecc71 : 0xe74c3c, []);
+  const msg = _state.fightMessages.get(fightId);
+  if (msg) await msg.edit({ content: null, embeds: null, ...resultPayload }).catch(() => {});
   _state.activeBotFights.delete(fightId);
   _state.activeBotFights.delete(fight.playerId);
   _state.fightMessages.delete(fightId);
