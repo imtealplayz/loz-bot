@@ -153,7 +153,8 @@ const failChances = {
 
 // ==================== AWAKENING REQUIREMENTS ====================
 const awakeningRequirements = {
-  cyborg: { wins:25, damageDealt:500, ultUses:15, reward:"Mechangel", rewardRolls:5 }
+  cyborg: { wins:25, damageDealt:500, ultUses:15, reward:"Mechangel", rewardRolls:5 },
+  demon:  { playerWins:25, demonBotWins:20, costRolls:20, reward:"Archdemon" }
 };
 
 // ==================== DISINTEGRATION MESSAGES ====================
