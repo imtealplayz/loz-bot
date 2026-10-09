@@ -6,7 +6,7 @@ const database = require("./database.js"); // MongoDB
 const state    = require("./state.js");
 const { setState: setHelperState } = require("./helpers.js");
 const { setState: setFightState }   = require("./fights.js");
-const { setState: setCommandState, setClient, handleCommand, handleButton, commands } = require("./commands.js");
+const { setState: setCommandState, setClient, handleCommand, handleButton, handleSelectMenu, commands } = require("./commands.js");
 const { disintegrationMessages } = require("./constants.js");
 
 // ==================== CONSTANTS ====================
@@ -180,7 +180,7 @@ Users can use LOZ commands here again.`);
 client.on("interactionCreate", async (interaction) => {
   try {
     // Never let startup-time commands write fallback/default state over saved records.
-    if (!databaseReady && (interaction.isCommand() || interaction.isButton())) {
+    if (!databaseReady && (interaction.isCommand() || interaction.isButton() || interaction.isStringSelectMenu())) {
       return interaction.reply({
         content: "LOZ is loading saved player data after a restart. Please try again in a few seconds.",
         flags: 64,
@@ -189,12 +189,13 @@ client.on("interactionCreate", async (interaction) => {
 
     // Block commands in disabled channels
     if (state.disabledChannels.has(interaction.channelId)) {
-      if (interaction.isCommand() || interaction.isButton()) {
+      if (interaction.isCommand() || interaction.isButton() || interaction.isStringSelectMenu()) {
         return interaction.reply({ content: "🔒 LOZ commands are disabled in this channel.", ephemeral: true }).catch(()=>{});
       }
     }
     if (interaction.isCommand()) await handleCommand(interaction);
     else if (interaction.isButton()) await handleButton(interaction);
+    else if (interaction.isStringSelectMenu()) await handleSelectMenu(interaction);
   } catch (e) {
     if (e.code === 10062 || e.message?.includes("Unknown interaction")) return;
     console.error("Interaction error:", e);
