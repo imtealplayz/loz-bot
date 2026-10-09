@@ -364,7 +364,6 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
     updateBotStats(fight.playerId,difficulty,false);
     updateFightStats(fight.playerId,false,"BOT",{opponentName:fight.botSpecies.name,opponentSpecies:fight.botSpecies,hpLeft:0,special:`🤖 ${difficulty} loss`});
   }
-  const personality=botPersonalities[difficulty], won=winner==="player";
   const personality = botPersonalities[difficulty], won = winner === "player";
   const playerMention = "<@" + fight.playerId + ">";
   const header = won ? playerMention + " wins against " + personality.name : playerMention + " lost to " + personality.name;
