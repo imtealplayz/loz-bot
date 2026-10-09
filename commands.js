@@ -983,6 +983,20 @@ async function handleCommand(interaction) {
 async function handleButton(interaction) {
   const { customId, user, guild, channel, message } = interaction;
 
+  if (customId.startsWith("servers_page_")) {
+    const parts = customId.slice("servers_page_".length).split("_");
+    const expectedOwnerId = parts[0];
+    const targetPage = Number.parseInt(parts[1], 10);
+    if (user.id !== _state.ownerId || expectedOwnerId !== _state.ownerId) {
+      return safeReply(interaction, { content:"Owner only.", flags:64 });
+    }
+    if (!Number.isInteger(targetPage) || targetPage < 0) {
+      return safeReply(interaction, { content:"Invalid page.", flags:64 });
+    }
+    await interaction.deferUpdate();
+    return interaction.editReply(await buildServersPagePayload(targetPage, user.id));
+  }
+
   // ── GUIDE ─────────────────────────────────────────────────────
   if (customId.startsWith("guide_next_")) {
     const step=parseInt(customId.split("_")[2])+1;
