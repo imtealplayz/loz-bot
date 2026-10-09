@@ -104,7 +104,7 @@ client.on("messageCreate", async (message) => {
 
     // Bot mention response
     if (message.content.startsWith(`<@${client.user.id}>`) || message.content.startsWith(`<@!${client.user.id}>`))
-      return message.reply(`👋 **${client.user.username}** here!\nUse \`/guide\` to learn how to play or \`/help\` for all commands. Start with \`/species-roll\`! 🎲`);
+      return message.reply(`👋 **${client.user.username}** here!\nUse \`/guide\` to learn how to play or \`/help\` for all commands. Start with \`/species-roll\`! <:reroll_dice:1558042108965822515>`);
 
     if (!message.content.startsWith(prefix)) return;
     const args = message.content.slice(prefix.length).trim().split(/ +/);
