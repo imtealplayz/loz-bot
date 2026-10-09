@@ -1,5 +1,5 @@
 const {
-  EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
+  EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder,
   SlashCommandBuilder, REST, Routes,
   ContainerBuilder, TextDisplayBuilder, SeparatorBuilder,
   SeparatorSpacingSize, MessageFlags, PermissionsBitField,
@@ -26,6 +26,81 @@ let _state = null;
 let _client = null;
 function setState(s) { _state = s; }
 function setClient(c) { _client = c; }
+
+const SPECIES_TOKEN_EMOJI = "<:species_token:1558174976904007760>";
+const SPECIES_TOKEN_SPECIES_NAMES = [
+  "Demi God", "Demon Lord", "Demon King", "Demon", "Oni", "Orc Lord",
+  "Kijin", "High Orc", "Ogre", "Goblin", "Orc", "Angel", "Chimera",
+  "Cyborg", "Half-Blood", "Fire Dragon", "Thunder Dragon", "Ice Dragon",
+  "Earth Dragon", "Human",
+];
+function isSpeciesTokenEligible(name) { return SPECIES_TOKEN_SPECIES_NAMES.includes(name); }
+function parseSpeciesTokenCustomId(customId, action) {
+  const rest = customId.slice(`species_token_${action}_`.length);
+  const separator = rest.indexOf("_");
+  if (separator <= 0) return null;
+  try { return { userId:rest.slice(0, separator), speciesName:decodeURIComponent(rest.slice(separator + 1)) }; }
+  catch { return null; }
+}
+function buildSpeciesTokenResultPayload(title, description, color = 0x0891b2) {
+  const container = new ContainerBuilder().setAccentColor(color);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${title}\n${description}`));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  return { components:[container], flags:MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, allowedMentions:{ parse:[] } };
+}
+function buildSpeciesTokenSelectionPayload(userId, selectedName = null, tokenCount = 0) {
+  const selectedSpecies = selectedName ? getSpeciesByName(selectedName) : null;
+  const currentSpecies = _state?.userSpecies?.get(userId)?.species || humanSpecies;
+  const container = new ContainerBuilder().setAccentColor(selectedSpecies?.color || currentSpecies.color || 0x0891b2);
+  const selectionNote = selectedSpecies
+    ? (currentSpecies.name === selectedSpecies.name
+      ? `\n⚠️ You're already ${selectedSpecies.emoji} **${selectedSpecies.name}**. Choose a different species.`
+      : `\n**Selected:** ${selectedSpecies.emoji} **${selectedSpecies.name}**`)
+    : "\n**Selected:** None";
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    `## ${SPECIES_TOKEN_EMOJI} Species Token\nSpend **1 token** to change your species. Reaper, Archdemon, Mechangel, and God are not available.\n\n**Current species:** ${currentSpecies.emoji} **${currentSpecies.name}**\n**Your balance:** ${SPECIES_TOKEN_EMOJI} **${tokenCount}**${selectionNote}`
+  ));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  const options = SPECIES_TOKEN_SPECIES_NAMES.map(name => {
+    const species = getSpeciesByName(name);
+    return {
+      label:`${species.emoji} ${species.name}`.slice(0, 100),
+      value:species.name,
+      description:`HP ${species.hp} · ATK ${species.atkMin}-${species.atkMax}`.slice(0, 100),
+      default:species.name === selectedName,
+    };
+  });
+  const selector = new StringSelectMenuBuilder()
+    .setCustomId(`species_token_pick_${userId}`)
+    .setPlaceholder("Choose your new species")
+    .setMinValues(1).setMaxValues(1).addOptions(options);
+  container.addActionRowComponents(new ActionRowBuilder().addComponents(selector));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  container.addActionRowComponents(new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`species_token_review_${userId}_${selectedName ? encodeURIComponent(selectedName) : "none"}`)
+      .setLabel("Select").setStyle(ButtonStyle.Primary)
+      .setDisabled(!selectedSpecies || currentSpecies.name === selectedSpecies.name),
+    new ButtonBuilder()
+      .setCustomId(`species_token_cancel_${userId}`)
+      .setLabel("Cancel").setStyle(ButtonStyle.Secondary)
+  ));
+  return { components:[container], flags:MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, allowedMentions:{ parse:[] } };
+}
+function buildSpeciesTokenConfirmPayload(userId, speciesName, tokenCount) {
+  const species = getSpeciesByName(speciesName);
+  const currentSpecies = _state?.userSpecies?.get(userId)?.species || humanSpecies;
+  const container = new ContainerBuilder().setAccentColor(species?.color || 0x0891b2);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    `## Confirm Species Change\nYou're about to change from ${currentSpecies.emoji} **${currentSpecies.name}** to ${species.emoji} **${species.name}**.\n\nThis action costs **1** ${SPECIES_TOKEN_EMOJI}. Your balance is currently **${tokenCount}**.\n\nThe token will **only be deducted after you press Confirm**.`
+  ));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  container.addActionRowComponents(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`species_token_confirm_${userId}_${encodeURIComponent(speciesName)}`).setLabel("Confirm").setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`species_token_back_${userId}_${encodeURIComponent(speciesName)}`).setLabel("Go Back").setStyle(ButtonStyle.Secondary)
+  ));
+  return { components:[container], flags:MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, allowedMentions:{ parse:[] } };
+}
 
 // Major-update DM payload built entirely with Components V2 and native separators.
 function buildMajorUpdatePayload() {
@@ -458,6 +533,7 @@ async function handleCommand(interaction) {
       .addFields(
         {name:"🧬 Species",value:`${sp.emoji} **${sp.name}**`,inline:true},
         {name:"<:reroll_dice:1558042108965822515> Rolls",value:`${td.rolls||0}`,inline:true},
+        {name:`${SPECIES_TOKEN_EMOJI} Species Tokens`,value:`${Number(td.speciesTokens)||0}`,inline:true},
         {name:"⚔️ Fight Record",value:`${fd.wins}W - ${fd.losses}L (${wr}%)`,inline:true},
         {name:"🔥 Streak",value:`${fd.streak||0} wins`,inline:true},
         {name:"🔘 Requests",value:td.requestsEnabled?"✅ Enabled":"❌ Disabled",inline:true},
@@ -836,6 +912,20 @@ async function handleCommand(interaction) {
     return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(ud.requestsEnabled?0x00ff00:0xff0000).setDescription(ud.requestsEnabled?"✅ You will now receive challenges!":"❌ You will NOT receive challenges.")],flags:64});
   }
 
+
+  // ── INVENTORY ITEMS ───────────────────────────────────────────
+  if (commandName === "items") {
+    if (options.getSubcommand() === "use") {
+      if (isPlayerInFight(user.id) || isPlayerInBotFight(user.id))
+        return safeReply(interaction, buildSpeciesTokenResultPayload("Can't Use Items During a Fight", "Finish your active fight before using a Species Token.", 0xff0000));
+      const ud = _state.userSpecies.get(user.id) || { species:humanSpecies, originalSpecies:humanSpecies, questSpecies:{}, rolls:0, speciesTokens:0, requestsEnabled:true, lastSwitch:0, badges:[] };
+      const tokenCount = Number(ud.speciesTokens) || 0;
+      if (tokenCount < 1)
+        return safeReply(interaction, buildSpeciesTokenResultPayload("No Species Tokens", `You don't have any ${SPECIES_TOKEN_EMOJI} Species Tokens. A God can grant them to you.`, 0xff0000));
+      return safeReply(interaction, buildSpeciesTokenSelectionPayload(user.id, null, tokenCount));
+    }
+  }
+
   // ── GOD COMMANDS ──────────────────────────────────────────────
   if (commandName === "god") {
     if (user.id!==_state.ownerId&&user.id!==_state.secondGodId) return safeReply(interaction,{embeds:[createErrorEmbed("Only God can use this!")],flags:64});
@@ -845,8 +935,23 @@ async function handleCommand(interaction) {
       return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xffd700).setTitle("👑 God Commands")
         .addFields(
           {name:"🧬 Species Management",value:"`/god species-change @user <species>`\n`/god species-reset @user`\n`/god species-add @user <rolls>`",inline:false},
+          {name:"🎒 Items",value:"`/god add items @user species_token <quantity>`",inline:false},
           {name:"⚙️ Management",value:"`/god rolls-reset @user`\n`/god quest-reset @user <quest>`\n`/god debug-db`\n`/god repair-user-db`",inline:false}
         ).setFooter({text:"Use /god menu to see this again"})]});
+    }
+
+
+    if (options.getSubcommandGroup() === "add" && sub === "items") {
+      const target = options.getUser("user");
+      const item = options.getString("item");
+      const amount = options.getInteger("quantity");
+      if (item !== "species_token") return safeReply(interaction, { embeds:[createErrorEmbed("Unknown item. No inventory changes were made.")], flags:64 });
+      const result = await database.addSpeciesTokens(target.id, amount);
+      if (!result?.ok) return safeReply(interaction, { embeds:[createErrorEmbed("MongoDB could not confirm the token grant. No success is being reported; check the database before retrying.")], flags:64 });
+      const ud = _state.userSpecies.get(target.id) || { species:humanSpecies, originalSpecies:humanSpecies, questSpecies:{}, rolls:0, requestsEnabled:true, lastSwitch:0, awakening:{}, badges:[] };
+      ud.speciesTokens = result.speciesTokens;
+      _state.userSpecies.set(target.id, ud);
+      return safeReply(interaction, { embeds:[createSuccessEmbed(`Gave **${amount}** ${SPECIES_TOKEN_EMOJI} Species Token(s) to <@${target.id}>. New balance: **${ud.speciesTokens}**. Saved to MongoDB.`)], flags:64 });
     }
 
     if (sub==="species-add") {
@@ -982,6 +1087,56 @@ async function handleCommand(interaction) {
 // ==================== BUTTON HANDLER ====================
 async function handleButton(interaction) {
   const { customId, user, guild, channel, message } = interaction;
+
+
+  // ── SPECIES TOKEN FLOW ─────────────────────────────────────────
+  if (customId.startsWith("species_token_cancel_")) {
+    const expectedUserId = customId.slice("species_token_cancel_".length);
+    if (user.id !== expectedUserId) return safeReply(interaction, { content:"This token menu belongs to another player.", flags:64 });
+    return interaction.update(buildSpeciesTokenResultPayload("Selection Cancelled", "No Species Token was used. Your species has not changed."));
+  }
+  if (customId.startsWith("species_token_review_")) {
+    const parsed = parseSpeciesTokenCustomId(customId, "review");
+    if (!parsed || parsed.userId !== user.id) return safeReply(interaction, { content:"This token menu belongs to another player.", flags:64 });
+    if (!isSpeciesTokenEligible(parsed.speciesName)) return interaction.update(buildSpeciesTokenResultPayload("Invalid Species", "Choose an available species from the dropdown.", 0xff0000));
+    if (isPlayerInFight(user.id) || isPlayerInBotFight(user.id)) return interaction.update(buildSpeciesTokenResultPayload("Can't Change Species During a Fight", "Finish your active fight first.", 0xff0000));
+    const ud = _state.userSpecies.get(user.id);
+    const tokenCount = Number(ud?.speciesTokens) || 0;
+    if (tokenCount < 1) return interaction.update(buildSpeciesTokenResultPayload("No Species Tokens", "Your balance is empty. No token was used.", 0xff0000));
+    return interaction.update(buildSpeciesTokenConfirmPayload(user.id, parsed.speciesName, tokenCount));
+  }
+  if (customId.startsWith("species_token_back_")) {
+    const parsed = parseSpeciesTokenCustomId(customId, "back");
+    if (!parsed || parsed.userId !== user.id) return safeReply(interaction, { content:"This token menu belongs to another player.", flags:64 });
+    return interaction.update(buildSpeciesTokenSelectionPayload(user.id,
+      isSpeciesTokenEligible(parsed.speciesName) ? parsed.speciesName : null,
+      Number(_state.userSpecies.get(user.id)?.speciesTokens)||0));
+  }
+  if (customId.startsWith("species_token_confirm_")) {
+    const parsed = parseSpeciesTokenCustomId(customId, "confirm");
+    if (!parsed || parsed.userId !== user.id) return safeReply(interaction, { content:"This token menu belongs to another player.", flags:64 });
+    if (!isSpeciesTokenEligible(parsed.speciesName)) return interaction.update(buildSpeciesTokenResultPayload("Invalid Species", "This species cannot be selected with a Species Token.", 0xff0000));
+    if (isPlayerInFight(user.id) || isPlayerInBotFight(user.id)) return interaction.update(buildSpeciesTokenResultPayload("Can't Change Species During a Fight", "Finish your active fight first. No token was used.", 0xff0000));
+    const ud = _state.userSpecies.get(user.id);
+    if ((Number(ud?.speciesTokens)||0) < 1) return interaction.update(buildSpeciesTokenResultPayload("No Species Tokens", "Your balance is empty. No token was used.", 0xff0000));
+    const selectedSpecies = getSpeciesByName(parsed.speciesName);
+    if (ud?.species?.name === selectedSpecies.name) return interaction.update(buildSpeciesTokenSelectionPayload(user.id, parsed.speciesName, Number(ud.speciesTokens)||0));
+    const redemption = await database.redeemSpeciesToken(user.id, selectedSpecies);
+    if (!redemption?.ok) {
+      const explanation = redemption?.noTokens
+        ? "MongoDB reports that no Species Tokens remain. No species change was made."
+        : "MongoDB could not confirm the species change. No local change was applied; check the database before retrying.";
+      return interaction.update(buildSpeciesTokenResultPayload("Species Change Not Applied", explanation, 0xff0000));
+    }
+    const updated = ud || { species:humanSpecies, originalSpecies:humanSpecies, questSpecies:{}, rolls:0, requestsEnabled:true, lastSwitch:0, awakening:{}, badges:[] };
+    updated.species = selectedSpecies;
+    updated.originalSpecies = selectedSpecies;
+    updated.speciesTokens = redemption.speciesTokens;
+    _state.userSpecies.set(user.id, updated);
+    return interaction.update(buildSpeciesTokenResultPayload("Species Changed",
+      `Your species is now ${selectedSpecies.emoji} **${selectedSpecies.name}**.\n\nUsed **1** ${SPECIES_TOKEN_EMOJI}. Remaining balance: **${redemption.speciesTokens}**.\n\nThe species change and token deduction have been saved to MongoDB.`,
+      selectedSpecies.color || 0x0891b2));
+  }
 
   if (customId.startsWith("servers_page_")) {
     const parts = customId.slice("servers_page_".length).split("_");
@@ -1447,6 +1602,22 @@ async function handleButton(interaction) {
   }
 }
 
+
+async function handleSelectMenu(interaction) {
+  const { customId, user } = interaction;
+  if (!customId.startsWith("species_token_pick_")) return;
+  const expectedUserId = customId.slice("species_token_pick_".length);
+  if (user.id !== expectedUserId) return safeReply(interaction, { content:"This token menu belongs to another player.", flags:64 });
+  if (isPlayerInFight(user.id) || isPlayerInBotFight(user.id))
+    return interaction.update(buildSpeciesTokenResultPayload("Can't Change Species During a Fight", "Finish your active fight first. No token was used.", 0xff0000));
+  const selectedName = interaction.values?.[0];
+  if (!isSpeciesTokenEligible(selectedName))
+    return interaction.update(buildSpeciesTokenResultPayload("Invalid Species", "Choose an available species from the dropdown.", 0xff0000));
+  const tokenCount = Number(_state.userSpecies.get(user.id)?.speciesTokens) || 0;
+  if (tokenCount < 1) return interaction.update(buildSpeciesTokenResultPayload("No Species Tokens", "Your balance is empty. No token was used.", 0xff0000));
+  return interaction.update(buildSpeciesTokenSelectionPayload(user.id, selectedName, tokenCount));
+}
+
 // ==================== SLASH COMMAND DEFINITIONS ====================
 const commands = [
   new SlashCommandBuilder().setName("help").setDescription("Show all commands"),
@@ -1454,6 +1625,8 @@ const commands = [
   new SlashCommandBuilder().setName("daily").setDescription("Claim your daily species roll"),
   new SlashCommandBuilder().setName("species").setDescription("View species list or a specific species card").addStringOption(o=>o.setName("species").setDescription("Species name for detailed card (leave blank for full list)").addChoices({name:"Demi God ⚡",value:"Demi God"},{name:"Demon Lord 🔥",value:"Demon Lord"},{name:"Demon King 👑😈",value:"Demon King"},{name:"Chimera 🎭",value:"Chimera"},{name:"Angel 👼",value:"Angel"},{name:"Demon 😈",value:"Demon"},{name:"Oni 👿",value:"Oni"},{name:"Orc Lord 👑",value:"Orc Lord"},{name:"Kijin 🎭",value:"Kijin"},{name:"Cyborg 🤖",value:"Cyborg"},{name:"High Orc ⚔️",value:"High Orc"},{name:"Ogre 👹",value:"Ogre"},{name:"Goblin 👺",value:"Goblin"},{name:"Orc 🟢",value:"Orc"},{name:"Half-Blood 🩸",value:"Half-Blood"},{name:"Fire Dragon 🔥🐉",value:"Fire Dragon"},{name:"Thunder Dragon ⚡🐉",value:"Thunder Dragon"},{name:"Ice Dragon ❄️🐉",value:"Ice Dragon"},{name:"Earth Dragon 🌍🐉",value:"Earth Dragon"},{name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"God 👑✨",value:"God"},{name:"Human 👤",value:"Human"})),
   new SlashCommandBuilder().setName("profile").setDescription("View a full player profile").addUserOption(o=>o.setName("user").setDescription("User to check")),
+  new SlashCommandBuilder().setName("items").setDescription("View and use inventory items")
+    .addSubcommand(s=>s.setName("use").setDescription("Use a Species Token to choose a new species")),
   new SlashCommandBuilder().setName("species-roll").setDescription("Roll for a new species"),
   new SlashCommandBuilder().setName("switch").setDescription("Switch between your species (3h cooldown)"),
   new SlashCommandBuilder().setName("awakening").setDescription("Check your species awakening progress"),
@@ -1481,6 +1654,11 @@ const commands = [
   // default_member_permissions=0 hides these from normal members; handlers still enforce the exact allow-list.
   new SlashCommandBuilder().setName("god").setDescription("God-only commands").setDefaultMemberPermissions(0n)
     .addSubcommand(s=>s.setName("menu").setDescription("Show god menu"))
+    .addSubcommandGroup(g=>g.setName("add").setDescription("Give items to a user")
+      .addSubcommand(s=>s.setName("items").setDescription("Give inventory items to a user")
+        .addUserOption(o=>o.setName("user").setDescription("User receiving the item").setRequired(true))
+        .addStringOption(o=>o.setName("item").setDescription("Item to give").setRequired(true).addChoices({name:"Species Token",value:"species_token"}))
+        .addIntegerOption(o=>o.setName("quantity").setDescription("Quantity to give").setRequired(true).setMinValue(1).setMaxValue(1000000))))
     .addSubcommand(s=>s.setName("species-change").setDescription("Change a user's species").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Species to set").setRequired(true).addChoices({name:"Demi God ⚡",value:"Demi God"},{name:"Demon Lord 🔥",value:"Demon Lord"},{name:"Demon King 👑😈",value:"Demon King"},{name:"Chimera 🎭",value:"Chimera"},{name:"Angel 👼",value:"Angel"},{name:"Demon 😈",value:"Demon"},{name:"Oni 👿",value:"Oni"},{name:"Orc Lord 👑",value:"Orc Lord"},{name:"Kijin 🎭",value:"Kijin"},{name:"Cyborg 🤖",value:"Cyborg"},{name:"High Orc ⚔️",value:"High Orc"},{name:"Ogre 👹",value:"Ogre"},{name:"Goblin 👺",value:"Goblin"},{name:"Orc 🟢",value:"Orc"},{name:"Half-Blood 🩸",value:"Half-Blood"},{name:"Fire Dragon 🔥🐉",value:"Fire Dragon"},{name:"Thunder Dragon ⚡🐉",value:"Thunder Dragon"},{name:"Ice Dragon ❄️🐉",value:"Ice Dragon"},{name:"Earth Dragon 🌍🐉",value:"Earth Dragon"},{name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"God 👑✨",value:"God"},{name:"Human 👤",value:"Human"})))
     .addSubcommand(s=>s.setName("species-reset").setDescription("Reset a user to Human").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)))
     .addSubcommand(s=>s.setName("species-add").setDescription("Give rolls to a user").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)).addIntegerOption(o=>o.setName("amount").setDescription("Amount of rolls").setRequired(true).setMinValue(1).setMaxValue(1000000)))
@@ -1490,4 +1668,4 @@ const commands = [
     .addSubcommand(s=>s.setName("repair-user-db").setDescription("Archive and repair duplicate player records")),
 ].map(c=>c.toJSON());
 
-module.exports = { setState, setClient, handleCommand, handleButton, commands };
+module.exports = { setState, setClient, handleCommand, handleButton, handleSelectMenu, commands };
