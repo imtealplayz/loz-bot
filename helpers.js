@@ -133,16 +133,19 @@ function updateFightStats(id, won, oppId, data={}) {
   _state.fightStats.set(id, s);
   database.saveFightStats(id, s);
   if (won) {
-    // FIX: update in-memory fightLeaderboard so /fights reflects wins immediately
+    // Match statistics count a win once; the leaderboard tracks the points earned.
+    const points = Number.isInteger(data.leaderboardPoints) && data.leaderboardPoints > 0
+      ? data.leaderboardPoints
+      : 1;
     const lb = _state.fightLeaderboard.get(id) || { wins:0 };
-    lb.wins = s.wins;
+    lb.wins += points;
     _state.fightLeaderboard.set(id, lb);
-    database.saveFightLeaderboard(id, { wins: s.wins });
+    database.saveFightLeaderboard(id, { wins: lb.wins });
   }
 }
 
 function updateBotStats(id, diff, won) {
-  const s = _state.botStats.get(id) || { easy:{wins:0,losses:0}, medium:{wins:0,losses:0}, hard:{wins:0,losses:0}, impossible:{wins:0,losses:0} };
+  const s = _state.botStats.get(id) || { easy:{wins:0,losses:0}, medium:{wins:0,losses:0}, hard:{wins:0,losses:0}, impossible:{wins:0,losses:0}, brutal:{wins:0,losses:0} };
   if (!s[diff]) s[diff] = { wins:0, losses:0 };
   if (won) { s[diff].wins++; updateReaperQuest(id, diff); } else s[diff].losses++;
   _state.botStats.set(id, s);
