@@ -270,7 +270,7 @@ async function handleCommand(interaction) {
 
       if (prog.awakened) {
         return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x4a0404).setTitle("👿 ARCHDEMON AWAKENING — COMPLETE")
-          .setDescription(`**Current Form:** ${userData.species?.emoji||"👿"} ${userData.species?.name||"Archdemon"}\n**Status:** Permanently Awakened\n\nYour Demon awakening is permanent. After rolling another species, use `/switch` to return to Archdemon. Switching has a 3-hour cooldown.`)
+          .setDescription(`**Current Form:** ${userData.species?.emoji||"👿"} ${userData.species?.name||"Archdemon"}\n**Status:** Permanently Awakened\n\nYour Demon awakening is permanent. After rolling another species, use \`/switch\` to return to Archdemon. Switching has a 3-hour cooldown.`)
           .setFooter({text:"Demon → Archdemon"})],flags:64});
       }
 
@@ -1067,7 +1067,7 @@ async function handleButton(interaction) {
     ud.species=archdemonSpecies; ud.originalSpecies=archdemonSpecies;
     _state.userSpecies.set(user.id,ud); await database.saveUserSpecies(user.id,ud);
     return interaction.update({embeds:[new EmbedBuilder().setColor(0x4a0404).setTitle("👿 ARCHDEMON AWAKENING COMPLETE")
-      .setDescription(`😈 **Demon → 👿 Archdemon**\n\n⚔️ 25 player wins and 👹 20 Demon bot defeats completed.\n\n🎲 Paid: ${req.costRolls} rolls. Remaining: ${ud.rolls}.\n\nYour awakening is permanent. After rolling another species, use `/switch` to return to Archdemon (3-hour cooldown).`)],components:[]});
+      .setDescription(`😈 **Demon → 👿 Archdemon**\n\n⚔️ 25 player wins and 👹 20 Demon bot defeats completed.\n\n🎲 Paid: ${req.costRolls} rolls. Remaining: ${ud.rolls}.\n\nYour awakening is permanent. After rolling another species, use \`/switch\` to return to Archdemon (3-hour cooldown).`)],components:[]});
   }
 }
 
