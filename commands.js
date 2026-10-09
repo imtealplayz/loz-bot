@@ -630,8 +630,19 @@ async function handleCommand(interaction) {
     }
 
     if (sub==="debug-db") {
+      // Acknowledge immediately: MongoDB can take longer than Discord's 3-second initial response window.
+      try {
+        await interaction.deferReply({ flags:64 });
+      } catch(e) {
+        console.error("debug-db deferReply error:", e);
+        return null;
+      }
+
       try {
         const counts = await database.listAllKeys(user.id);
+        if (counts.error) {
+          return safeReply(interaction,{embeds:[createErrorEmbed(`MongoDB diagnostic failed: ${counts.error}`)],flags:64});
+        }
         const databaseName = counts.databaseName || "unknown";
         const databaseHost = counts.databaseHost || "unknown";
         const usersCollection = counts.usersCollection || "unknown";
@@ -641,7 +652,10 @@ async function handleCommand(interaction) {
           ? "**Your MongoDB record:** NOT FOUND"
           : `**Your MongoDB record:** found\n**Stored species:** ${debugUser.species || "none"}\n**Stored original species:** ${debugUser.originalSpecies || "none"}\n**Stored rolls:** ${debugUser.rolls}`;
         return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xffd700).setTitle("📊 MongoDB Persistence Check").setDescription(`**Database:** \`${databaseName}\`\n**MongoDB host:** \`${databaseHost}\`\n**Users collection:** \`${usersCollection}\`\n\n${storedUser}\n\n${lines||"No data found."}\n\nThis checks your actual saved MongoDB record, not just LOZ's in-memory state.`)],flags:64});
-      } catch(e) { return safeReply(interaction,{embeds:[createErrorEmbed(`DB error: ${e.message}`)],flags:64}); }
+      } catch(e) {
+        console.error("debug-db command error:", e);
+        return safeReply(interaction,{embeds:[createErrorEmbed(`DB diagnostic error: ${e?.message || String(e)}`)],flags:64});
+      }
     }
   }
 }
