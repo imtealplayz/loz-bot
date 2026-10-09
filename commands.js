@@ -29,29 +29,62 @@ function setClient(c) { _client = c; }
 
 // Major-update DM payload built entirely with Components V2 and native separators.
 function buildMajorUpdatePayload() {
-  const notes = patchNotes.slice(0, 4);
-  const latest = notes[0] || { version:"current", date:"", changes:[] };
   const container = new ContainerBuilder().setAccentColor(0x0891b2);
 
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      `## 🌑 LOZ — Major Update
-**Version ${latest.version} · ${latest.date}**
+      `## 🌑 LOZ IS BACK
+**Legends of the Rift is back online!**
 
-The Rift has evolved. Here's a recap of the latest gameplay changes, rewards, and awakenings.
+The Rift has grown. We've added new awakenings, a tougher combat challenge, better rewards, and a wave of bug fixes. Here's what's new.
 
-You're receiving this because you opted into LOZ update DMs. Manage your preference any time with \`/updates unsubscribe\`.`
+Thanks to everyone who's played LOZ, tested updates, and helped make the game better.`
     )
   );
 
-  for (const note of notes) {
+  const sections = [
+    {
+      title:"👿 New awakenings",
+      body:[
+        "- **Demon → Archdemon:** Complete 25 player wins, defeat 20 Demon bots, and spend 20 rolls. The awakening is permanent, and you can return to Archdemon after rerolling with \`/switch\`.",
+        "- **Cyborg → Mechangel:** Complete the combat, damage, and ultimate trials to unlock a new form with its own passive and ultimate. Awakening also grants 5 rolls."
+      ].join("\n")
+    },
+    {
+      title:"💀 Brutal difficulty",
+      body:[
+        "- Face powerful opponents including Reaper, Mechangel, and Archdemon.",
+        "- Brutal bots make more species-aware ultimate decisions.",
+        "- A Brutal victory grants **10 leaderboard points and 1 species roll**."
+      ].join("\n")
+    },
+    {
+      title:"⚔️ Combat upgrades and fixes",
+      body:[
+        "- The miss and counter system is back.",
+        "- Chimera copies the opponent's ultimate directly.",
+        "- Fixed ultimate cooldown timing, passives, burns, possession, and other combat edge cases.",
+        "- If a bot fight gets stuck for 60 seconds, the player wins instead of being left waiting.",
+        "- Species rerolls are blocked during active fights."
+      ].join("\n")
+    },
+    {
+      title:"🎁 More ways to progress",
+      body:[
+        "- Use \`/gift\` to send up to 2 rolls per day, with a daily receive limit of 4.",
+        "- Clearer fight results show leaderboard points and species-roll rewards.",
+        "- Fixed Reaper quest progress and improved awakening progress tracking.",
+        "- Custom reroll dice icons and updated patch notes make rewards easier to follow."
+      ].join("\n")
+    }
+  ];
+
+  for (const section of sections) {
     container.addSeparatorComponents(
       new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small)
     );
     container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        `### Version ${note.version} · ${note.date}\n${(note.changes || []).map(change => `- ${change}`).join("\n")}`
-      )
+      new TextDisplayBuilder().setContent(`### ${section.title}\n${section.body}`)
     );
   }
 
@@ -59,7 +92,12 @@ You're receiving this because you opted into LOZ update DMs. Manage your prefere
     new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small)
   );
   container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent("🌐 **Website:** [Visit LOZ](https://lozbot.vercel.app/)")
+    new TextDisplayBuilder().setContent(
+      `### 🔔 Stay updated
+Want more major updates from LOZ? Use \`/updates subscribe\` to opt in to future update DMs. You can unsubscribe at any time with \`/updates unsubscribe\`.
+
+🌐 **Website:** [Visit LOZ](https://lozbot.vercel.app/)`
+    )
   );
 
   return {
