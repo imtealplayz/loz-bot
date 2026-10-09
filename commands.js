@@ -19,7 +19,7 @@ const {
   updateLeaderboard, updateFightStats, updateCyborgProgress,
   isCyborgReadyForAwakening, isDemonReadyForAwakening, updateReaperQuest,
 } = require("./helpers.js");
-const { buildBotFightEmbed, buildBotFightRow, buildFightEmbed, buildFightRow, buildFightMessagePayload, buildBotFightMessagePayload, makeCombatant, calculateDamage, applyUltEffect, tickCooldowns, tickBothUltCooldowns, applyOgreRegen, processCurseTick } = require("./combat.js");
+const { buildFightMessagePayload, buildBotFightMessagePayload, makeCombatant, calculateDamage, applyUltEffect, tickCooldowns, tickBothUltCooldowns, applyOgreRegen, processCurseTick } = require("./combat.js");
 const { startFight, endFight, doBotTurn, endBotFight } = require("./fights.js");
 
 let _state = null;
