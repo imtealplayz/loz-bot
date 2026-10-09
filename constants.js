@@ -1,11 +1,21 @@
 // ==================== PATCH NOTES ====================
 const patchNotes = [
   {
+    version: "4.5", date: "2026-10-09",
+    changes: [
+      "Fixed bot fight leaderboard rewards. Easy grants 1 point, Medium 2, Hard 3, Impossible 5, and Brutal 10.",
+      "Added Brutal difficulty with Reaper, Mechangel, and Archdemon opponents.",
+      "Brutal bots use species-aware ultimate timing for stronger execution and survival decisions.",
+      "Brutal wins grant 10 leaderboard points and one species roll.",
+      "Added Brutal results to `/botstats`.",
+    ],
+  },
+  {
     version: "4.4", date: "2026-10-09",
     changes: [
-      "👿 New Demon awakening — become Archdemon after 25 player-fight wins, 20 wins against Demon bots, and paying 20 rolls",
-      "🔄 Archdemon is a permanent awakening and can be restored with /switch after rerolling, subject to the 3-hour switch cooldown",
-      "📋 Consolidated patch notes into /patchnotes",
+      "Added the Demon awakening. Win 25 player fights, defeat 20 Demon bots, and spend 20 rolls to become Archdemon.",
+      "Archdemon awakening is permanent. After rerolling, use `/switch` to return to Archdemon, subject to the 3-hour cooldown.",
+      "Consolidated patch notes into `/patchnotes`.",
     ],
   },
   {
