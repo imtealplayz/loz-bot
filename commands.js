@@ -631,11 +631,16 @@ async function handleCommand(interaction) {
 
     if (sub==="debug-db") {
       try {
-        const counts = await database.listAllKeys();
+        const counts = await database.listAllKeys(user.id);
         const databaseName = counts.databaseName || "unknown";
-        const recordCounts = Object.entries(counts).filter(([key])=>key!=="databaseName");
-        const lines = recordCounts.map(([k,v])=>`• **${k}**: ${v} records`).join("\n");
-        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xffd700).setTitle("📊 MongoDB Persistence Check").setDescription(`**Connected database:** \`${databaseName}\`\n\n${lines||"No data found."}\n\nCompare **users**, **usersWithSpecies**, and **usersWithRolls** to check whether saved species and rolls exist in MongoDB.`)],flags:64});
+        const databaseHost = counts.databaseHost || "unknown";
+        const usersCollection = counts.usersCollection || "unknown";
+        const { databaseName:_dbName, databaseHost:_dbHost, usersCollection:_collection, debugUser, ...recordCounts } = counts;
+        const lines = Object.entries(recordCounts).map(([k,v])=>`• **${k}**: ${v} records`).join("\n");
+        const storedUser = !debugUser?.found
+          ? "**Your MongoDB record:** NOT FOUND"
+          : `**Your MongoDB record:** found\n**Stored species:** ${debugUser.species || "none"}\n**Stored original species:** ${debugUser.originalSpecies || "none"}\n**Stored rolls:** ${debugUser.rolls}`;
+        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xffd700).setTitle("📊 MongoDB Persistence Check").setDescription(`**Database:** \`${databaseName}\`\n**MongoDB host:** \`${databaseHost}\`\n**Users collection:** \`${usersCollection}\`\n\n${storedUser}\n\n${lines||"No data found."}\n\nThis checks your actual saved MongoDB record, not just LOZ's in-memory state.`)],flags:64});
       } catch(e) { return safeReply(interaction,{embeds:[createErrorEmbed(`DB error: ${e.message}`)],flags:64}); }
     }
   }
