@@ -57,6 +57,13 @@ const userSchema = new mongoose.Schema({
   badges:          { type:Array,  default:[] },
 }, { minimize:false });
 
+// Explicit opt-in for major-update DMs; separate collection avoids modifying player records.
+const notificationPreferenceSchema = new mongoose.Schema({
+  userId:        { type:String, required:true, unique:true },
+  broadcastOptIn:{ type:Boolean, default:false },
+  updatedAt:     { type:Date, default:Date.now },
+}, { minimize:false });
+
 const leaderboardSchema = new mongoose.Schema({
   userId: { type:String, required:true, unique:true },
   wins:   { type:Number, default:0 },
@@ -104,6 +111,7 @@ const fightLeaderboardSchema = new mongoose.Schema({
 
 // ==================== MODELS ====================
 const User             = mongoose.model("User",             userSchema);
+const NotificationPreference = mongoose.model("NotificationPreference", notificationPreferenceSchema);
 const Leaderboard      = mongoose.model("Leaderboard",      leaderboardSchema);
 const FightStats       = mongoose.model("FightStats",       fightStatsSchema);
 const BotStats         = mongoose.model("BotStats",         botStatsSchema);
@@ -158,6 +166,44 @@ async function saveUserRolls(userId, rolls) {
 
 async function saveUserSpeciesFields(userId, species, originalSpecies) {
   return await upsertUser(userId, { species, originalSpecies });
+}
+
+// Users receive major-update DMs only after explicitly opting in.
+async function setBroadcastOptIn(userId, enabled) {
+  try {
+    if (!await connect()) return false;
+    await NotificationPreference.findOneAndUpdate(
+      { userId },
+      { $set: { userId, broadcastOptIn:Boolean(enabled), updatedAt:new Date() } },
+      { upsert:true, new:true, runValidators:true }
+    );
+    return true;
+  } catch(e) {
+    console.error("❌ Broadcast preference save error:", e.message);
+    return false;
+  }
+}
+
+async function getBroadcastOptIn(userId) {
+  try {
+    if (!await connect()) return null;
+    const preference = await NotificationPreference.findOne({ userId }).select({ broadcastOptIn:1 }).lean();
+    return Boolean(preference?.broadcastOptIn);
+  } catch(e) {
+    console.error("❌ Broadcast preference read error:", e.message);
+    return null;
+  }
+}
+
+async function getBroadcastSubscribers() {
+  try {
+    if (!await connect()) return null;
+    const userIds = await NotificationPreference.distinct("userId", { broadcastOptIn:true });
+    return userIds.filter(userId => typeof userId === "string" && /^\d{17,20}$/.test(userId));
+  } catch(e) {
+    console.error("❌ Broadcast subscriber lookup error:", e.message);
+    return null;
+  }
 }
 
 async function saveLeaderboard(userId, data) {
@@ -696,4 +742,5 @@ module.exports = {
   saveQuestProgress, saveDuelChannel,
   loadAllData, loadAllQuestProgress, loadDuelChannel,
   listAllKeys, deleteUser,
+  setBroadcastOptIn, getBroadcastOptIn, getBroadcastSubscribers,
 };
