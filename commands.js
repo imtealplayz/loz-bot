@@ -31,6 +31,29 @@ function setClient(c) { _client = c; }
 async function handleCommand(interaction) {
   const { commandName, options, user, guild, channel } = interaction;
 
+  // ── TOP.GG VOTE REWARDS ────────────────────────────────────────
+  if (commandName === "vote") {
+    const stats = await database.getVoteStats(user.id);
+    const reward = Math.max(1, Number.parseInt(process.env.TOPGG_ROLLS_PER_VOTE || "1", 10) || 1);
+    const embed = new EmbedBuilder()
+      .setColor(0x0891b2)
+      .setTitle("Support LOZ on Top.gg")
+      .setDescription(`Vote for LOZ to help more players discover the bot and earn species rolls automatically.\n\n**Rewards:** +${reward} species roll${reward === 1 ? "" : "s"} per verified vote. Top.gg weekend votes count double.\n\nYou can vote once every **12 hours**. No manual claim is needed; LOZ grants your rolls after Top.gg confirms your vote.`)
+      .addFields({
+        name:"Your vote record",
+        value:`Verified votes: **${stats?.totalVotes || 0}**\nSpecies rolls earned from votes: **${stats?.totalRolls || 0}**`,
+        inline:false,
+      })
+      .setFooter({ text:"If DMs are disabled, rewards are still applied to your profile." });
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel("Vote on Top.gg")
+        .setStyle(ButtonStyle.Link)
+        .setURL(`https://top.gg/bot/${_client.user.id}/vote`)
+    );
+    return safeReply(interaction, { embeds:[embed], components:[row] });
+  }
+
   // ── HELP ──────────────────────────────────────────────────────
   if (commandName === "help") {
     const embed = new EmbedBuilder().setColor(0x0891b2).setTitle("📖 LOZ Commands").setDescription("Complete list of commands")
@@ -39,7 +62,7 @@ async function handleCommand(interaction) {
         {name:"⚔️ Combat",   value:"`/fight @user` `/fightbot`",inline:false},
         {name:"📊 Stats",    value:"`/fightstats` `/botstats` `/history` `/lb` `/fights`",inline:false},
         {name:"🌑 Quests",   value:"`/quest view` `/quest claim` `/awakening`",inline:false},
-        {name:"📋 Info",     value:"`/patchnotes` `/guide` `/profile`",inline:false},
+        {name:"📋 Info",     value:"`/patchnotes` `/guide` `/profile` `/vote`",inline:false},
       ).setFooter({text:"Use /guide for a full tutorial"})
         .addFields({name:"💬 Need Help?",value:"Want any help or have any issues? Join the [Support Server](https://discord.gg/TKBYpjqnPC)!",inline:false});
     return safeReply(interaction,{embeds:[embed]});
@@ -1167,6 +1190,7 @@ async function handleButton(interaction) {
 // ==================== SLASH COMMAND DEFINITIONS ====================
 const commands = [
   new SlashCommandBuilder().setName("help").setDescription("Show all commands"),
+  new SlashCommandBuilder().setName("vote").setDescription("Vote for LOZ on Top.gg and earn species rolls"),
   new SlashCommandBuilder().setName("guide").setDescription("New player tutorial"),
   new SlashCommandBuilder().setName("daily").setDescription("Claim your daily species roll"),
   new SlashCommandBuilder().setName("species").setDescription("View species list or a specific species card").addStringOption(o=>o.setName("species").setDescription("Species name for detailed card (leave blank for full list)").addChoices({name:"Demi God ⚡",value:"Demi God"},{name:"Demon Lord 🔥",value:"Demon Lord"},{name:"Demon King 👑😈",value:"Demon King"},{name:"Chimera 🎭",value:"Chimera"},{name:"Angel 👼",value:"Angel"},{name:"Demon 😈",value:"Demon"},{name:"Oni 👿",value:"Oni"},{name:"Orc Lord 👑",value:"Orc Lord"},{name:"Kijin 🎭",value:"Kijin"},{name:"Cyborg 🤖",value:"Cyborg"},{name:"High Orc ⚔️",value:"High Orc"},{name:"Ogre 👹",value:"Ogre"},{name:"Goblin 👺",value:"Goblin"},{name:"Orc 🟢",value:"Orc"},{name:"Half-Blood 🩸",value:"Half-Blood"},{name:"Fire Dragon 🔥🐉",value:"Fire Dragon"},{name:"Thunder Dragon ⚡🐉",value:"Thunder Dragon"},{name:"Ice Dragon ❄️🐉",value:"Ice Dragon"},{name:"Earth Dragon 🌍🐉",value:"Earth Dragon"},{name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"God 👑✨",value:"God"},{name:"Human 👤",value:"Human"})),

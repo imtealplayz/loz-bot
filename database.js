@@ -102,6 +102,13 @@ const fightLeaderboardSchema = new mongoose.Schema({
   wins:   { type:Number, default:0 },
 });
 
+const voteStatsSchema = new mongoose.Schema({
+  userId:     { type:String, required:true, unique:true },
+  lastVoteAt: { type:Number, default:0 },
+  totalVotes: { type:Number, default:0 },
+  totalRolls: { type:Number, default:0 },
+}, { minimize:false });
+
 // ==================== MODELS ====================
 const User             = mongoose.model("User",             userSchema);
 const Leaderboard      = mongoose.model("Leaderboard",      leaderboardSchema);
@@ -111,6 +118,7 @@ const Daily            = mongoose.model("Daily",            dailySchema);
 const Quest            = mongoose.model("Quest",            questSchema);
 const DuelChannel      = mongoose.model("DuelChannel",      duelChannelSchema);
 const FightLeaderboard = mongoose.model("FightLeaderboard", fightLeaderboardSchema);
+const VoteStats = mongoose.model("VoteStats", voteStatsSchema, "topgg_vote_stats");
 
 // ==================== HELPERS ====================
 async function upsert(Model, filter, data) {
@@ -591,6 +599,88 @@ async function repairUserRecords() {
   }
 }
 
+
+const TOPGG_VOTE_COOLDOWN_MS = 12 * 60 * 60 * 1000;
+
+// Award rolls and update vote statistics in the same transaction. A vote received
+// again during the 12-hour window is treated as a webhook retry, not a new reward.
+async function recordTopggVote(userId, rollsAdded) {
+  if (!/^\d{17,20}$/.test(String(userId || ""))) return { ok:false, error:"Invalid Discord user ID." };
+  if (!Number.isSafeInteger(rollsAdded) || rollsAdded < 1 || rollsAdded > 100) {
+    return { ok:false, error:"Invalid vote reward amount." };
+  }
+  if (!await connect()) return { ok:false, error:"MongoDB connection failed." };
+
+  const session = await mongoose.startSession();
+  let outcome = null;
+  try {
+    await VoteStats.init();
+    await session.withTransaction(async () => {
+      outcome = null;
+      const now = Date.now();
+      const existing = await VoteStats.findOne({ userId }).session(session).lean();
+
+      if (existing && now - (Number(existing.lastVoteAt) || 0) < TOPGG_VOTE_COOLDOWN_MS) {
+        outcome = {
+          ok:true,
+          awarded:false,
+          duplicate:true,
+          lastVoteAt:Number(existing.lastVoteAt) || 0,
+          totalVotes:Number(existing.totalVotes) || 0,
+          totalRolls:Number(existing.totalRolls) || 0,
+        };
+        return;
+      }
+
+      const playerDoc = await User.findOneAndUpdate(
+        { userId, archivedForRepair:false },
+        { $inc:{ rolls:rollsAdded } },
+        { upsert:true, new:true, session, setDefaultsOnInsert:false },
+      );
+      if (!playerDoc) throw new Error("MongoDB did not return the updated player record.");
+
+      const statsDoc = await VoteStats.findOneAndUpdate(
+        { userId },
+        { $set:{ lastVoteAt:now }, $inc:{ totalVotes:1, totalRolls:rollsAdded } },
+        { upsert:true, new:true, session, setDefaultsOnInsert:false },
+      );
+
+      outcome = {
+        ok:true,
+        awarded:true,
+        rollsAdded,
+        rollsTotal:Number(playerDoc.rolls) || 0,
+        totalVotes:Number(statsDoc.totalVotes) || 0,
+        totalRolls:Number(statsDoc.totalRolls) || 0,
+        lastVoteAt:now,
+        player:playerDoc.toObject(),
+      };
+    });
+    return outcome || { ok:false, error:"Vote reward transaction completed without a result." };
+  } catch (error) {
+    console.error("❌ Top.gg vote transaction failed:", error);
+    return { ok:false, error:error?.message || String(error) };
+  } finally {
+    await session.endSession().catch(() => {});
+  }
+}
+
+async function getVoteStats(userId) {
+  try {
+    if (!await connect()) return null;
+    const doc = await VoteStats.findOne({ userId }).lean();
+    if (!doc) return { totalVotes:0, totalRolls:0, lastVoteAt:0 };
+    return {
+      totalVotes:Number(doc.totalVotes) || 0,
+      totalRolls:Number(doc.totalRolls) || 0,
+      lastVoteAt:Number(doc.lastVoteAt) || 0,
+    };
+  } catch (error) {
+    console.error("❌ Top.gg vote stats read failed:", error.message);
+    return null;
+  }
+}
+
 // ==================== UTILITY ====================
 // Used by /god debug-db to show collection counts
 async function listAllKeys(debugUserId) {
@@ -694,6 +784,7 @@ module.exports = {
   saveLeaderboard, saveFightLeaderboard,
   saveFightStats, saveBotStats, saveDailyClaim,
   saveQuestProgress, saveDuelChannel,
+  recordTopggVote, getVoteStats,
   loadAllData, loadAllQuestProgress, loadDuelChannel,
   listAllKeys, deleteUser,
 };
