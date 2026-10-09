@@ -311,11 +311,11 @@ function cleanFightLog(logLines = []) {
   return logLines
     .flatMap(line => String(line ?? "").split("\n"))
     .map(line => line
-      .replace(/\\s*[—–]\\s*/g, ": ")
-      .replace(/\\s{2,}/g, " ")
+      .replace(/\s*[—–]\s*/g, ": ")
+      .replace(/\s{2,}/g, " ")
       .trim()
-      .replace(/\\b(for|deals?|heals?|healed|damage|burn|curse|HP:?)\\s+(\\d+(?:\\.\\d+)?(?:\\/\\d+)?%?)/gi, (match, label, amount) => label + " " + inlineCode(amount))
-      .replace(/\\bRound\\s+(\\d+)\\b/gi, (match, round) => "Round " + inlineCode(round)))
+      .replace(/\b(for|deals?|heals?|healed|damage|burn|curse|HP:?)\s+(\d+(?:\.\d+)?(?:\/\d+)?%?)/gi, (match, label, amount) => label + " " + inlineCode(amount))
+      .replace(/\bRound\s+(\d+)\b/gi, (match, round) => "Round " + inlineCode(round)))
     .filter(Boolean)
     .map(line => {
       if (/ULT|ULTIMATE|DIVINE|EXECUTION|REAPER|MECHANGEL|ARCHDEMON|CRITICAL|COUNTER|MASSIVE BLOW|SMITE|PRAYER/i.test(line)) return "✦ " + line;
