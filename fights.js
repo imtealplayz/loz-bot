@@ -113,12 +113,14 @@ async function doBotTurn(channel, fightId) {
 
     if (fight.difficulty==="brutal") {
       const speciesName=botC.species.name;
+      const hasQueuedAttackUlt=botC.ultBuff&&["nextAttack","reaperKill","buff","thunderActive"].includes(botC.ultBuff.type);
       const useStrategicUlt=ultReady&&(
         (speciesName==="Reaper"&&(playerHpRatio<=0.35||botHpRatio<=0.5))||
-        (speciesName==="Mechangel"&&botHpRatio<=0.78)||
+        (speciesName==="Mechangel"&&botHpRatio<=0.68)||
         (speciesName==="Archdemon"&&playerHpRatio>0.15)
       );
-      if (useStrategicUlt) botAction="ult";
+      if (hasQueuedAttackUlt) botAction="attack";
+      else if (useStrategicUlt) botAction="ult";
       else if (healAvailable) botAction="heal";
       else botAction="attack";
     } else if (healAvailable) botAction="heal";
