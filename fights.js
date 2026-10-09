@@ -8,7 +8,6 @@ const {
 const {
   makeCombatant, calculateDamage, applyUltEffect,
   tickCooldowns, applyOgreRegen, processCurseTick,
-  buildFightEmbed, buildFightRow, buildBotFightEmbed, buildBotFightRow,
   buildFightMessagePayload, buildBotFightMessagePayload, buildFightResultPayload, formatFightHealth,
 } = require("./combat.js");
 
@@ -126,7 +125,7 @@ async function startFight(channel, player1Id, player2Id) {
   const firstTurn = Math.random()<0.5?player1Id:player2Id;
   const fightId = `${player1Id}-${player2Id}-${Date.now()}`;
   const fight = { fightId, player1Id, player2Id, player1, player2, currentTurn:firstTurn, round:1, lastActionTime:Date.now(), timeout:null };
-  const msg = await channel.send(buildFightMessagePayload(fight, ["Fight started. <@" + firstTurn + "> goes first."], "playing"));
+  const msg = await channel.send(buildFightMessagePayload(fight, ["Fight started."], "playing"));
   _state.fightMessages.set(fightId, msg);
   _state.activeFights.set(fightId, fight);
   fight.timeout = setTimeout(()=>{
