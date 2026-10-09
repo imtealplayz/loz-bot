@@ -1,6 +1,13 @@
 // ==================== PATCH NOTES ====================
 const patchNotes = [
   {
+    version: "4.8", date: "2026-10-09",
+    changes: [
+      "Added Species Tokens. Use `/items use` to choose and confirm a new species; Reaper, Archdemon, Mechangel, and God are excluded.",
+      "Gods can grant Species Tokens with `/god add items`.",
+    ],
+  },
+  {
     version: "4.7", date: "2026-10-09",
     changes: [
       "Replaced generic dice icons with the custom reroll dice emoji throughout species-roll displays and rewards.",
