@@ -287,34 +287,46 @@ async function loadDuelChannel(guildId) {
 // Used by /god debug-db to show collection counts
 async function listAllKeys(debugUserId) {
   try {
-    if (!await connect()) return {};
-    const debugUser = debugUserId
-      ? await User.findOne({ userId: debugUserId }).select({ userId:1, species:1, originalSpecies:1, rolls:1 }).lean()
-      : null;
+    if (!await connect()) return { error: "MongoDB connection failed. Check Railway logs for the connection error." };
+
+    // Run independent reads concurrently so the diagnostic can reply quickly.
+    const [
+      debugUser, users, usersWithSpecies, usersWithRolls,
+      leaderboard, fightLeaderboard, fightStats, botStats,
+      dailyClaims, quests, duelChannels,
+    ] = await Promise.all([
+      debugUserId
+        ? User.findOne({ userId: debugUserId }).select({ userId:1, species:1, originalSpecies:1, rolls:1 }).lean()
+        : Promise.resolve(null),
+      User.countDocuments(),
+      User.countDocuments({ "species.name": { $exists:true, $ne:null } }),
+      User.countDocuments({ rolls: { $gt:0 } }),
+      Leaderboard.countDocuments(),
+      FightLeaderboard.countDocuments(),
+      FightStats.countDocuments(),
+      BotStats.countDocuments(),
+      Daily.countDocuments(),
+      Quest.countDocuments(),
+      DuelChannel.countDocuments(),
+    ]);
+
     return {
-      databaseName:     mongoose.connection.name || "unknown",
-      databaseHost:     mongoose.connection.host || "unknown",
-      usersCollection:  User.collection.name,
+      databaseName: mongoose.connection.name || "unknown",
+      databaseHost: mongoose.connection.host || "unknown",
+      usersCollection: User.collection.name,
       debugUser: debugUser ? {
         found: true,
         species: debugUser.species?.name || null,
         originalSpecies: debugUser.originalSpecies?.name || null,
         rolls: Number(debugUser.rolls) || 0,
       } : (debugUserId ? { found:false } : null),
-      users:            await User.countDocuments(),
-      usersWithSpecies: await User.countDocuments({ "species.name": { $exists:true, $ne:null } }),
-      usersWithRolls:   await User.countDocuments({ rolls: { $gt:0 } }),
-      leaderboard:      await Leaderboard.countDocuments(),
-      fightLeaderboard: await FightLeaderboard.countDocuments(),
-      fightStats:       await FightStats.countDocuments(),
-      botStats:         await BotStats.countDocuments(),
-      dailyClaims:      await Daily.countDocuments(),
-      quests:           await Quest.countDocuments(),
-      duelChannels:     await DuelChannel.countDocuments(),
+      users, usersWithSpecies, usersWithRolls,
+      leaderboard, fightLeaderboard, fightStats, botStats,
+      dailyClaims, quests, duelChannels,
     };
   } catch(e) {
-    console.error("listAllKeys error:", e.message);
-    return {};
+    console.error("listAllKeys error:", e);
+    return { error: e?.message || String(e) };
   }
 }
 
