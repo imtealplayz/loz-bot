@@ -1,9 +1,15 @@
 // ==================== PATCH NOTES ====================
 const patchNotes = [
   {
+    version: "4.7", date: "2026-10-09",
+    changes: [
+      "Replaced generic dice icons with the custom reroll dice emoji throughout species-roll displays and rewards.",
+    ],
+  },
+  {
     version: "4.6", date: "2026-10-09",
     changes: [
-      "Fight result screens now show ⚔️ leaderboard rewards and 🎲 species-roll rewards with clear icons.",
+      "Fight result screens now show ⚔️ leaderboard rewards and <:reroll_dice:1558042108965822515> species-roll rewards with clear icons.",
     ],
   },
   {
