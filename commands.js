@@ -255,6 +255,12 @@ async function handleCommand(interaction) {
 
 
   // ── UPDATE DM PREFERENCES ─────────────────────────────────────
+  if (commandName === "servers") {
+    if (user.id !== _state.ownerId) return safeReply(interaction, { content:"Owner only.", flags:64 });
+    await interaction.deferReply({ flags:64 });
+    return interaction.editReply(await buildServersPagePayload(0, user.id));
+  }
+
   if (commandName === "updates") {
     const sub = options.getSubcommand();
 
