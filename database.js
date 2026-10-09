@@ -169,6 +169,28 @@ async function saveDuelChannel(guildId, channelId) {
   await upsert(DuelChannel, { guildId }, { guildId, channelId });
 }
 
+// Prefer the most complete player record when legacy duplicate userId documents exist.
+// This only affects the in-memory startup cache; it never deletes or edits MongoDB records.
+function playerRecordScore(obj) {
+  if (!obj) return -1;
+  return (obj.species?.name ? 1000 : 0)
+    + (obj.originalSpecies?.name ? 400 : 0)
+    + ((Number(obj.rolls) || 0) > 0 ? 100 : 0)
+    + (Object.keys(obj.questSpecies || {}).length ? 20 : 0)
+    + (Object.keys(obj.awakening || {}).length ? 10 : 0)
+    + (Array.isArray(obj.badges) && obj.badges.length ? 5 : 0)
+    + (obj.lastSwitch ? 1 : 0);
+}
+
+function chooseBestPlayerRecord(records) {
+  return [...records].sort((a, b) => {
+    const scoreDifference = playerRecordScore(b) - playerRecordScore(a);
+    if (scoreDifference !== 0) return scoreDifference;
+    // Deterministic tie-breaker: prefer the newest ObjectId timestamp.
+    return String(b._id || "").localeCompare(String(a._id || ""));
+  })[0] || null;
+}
+
 // ==================== LOAD FUNCTIONS ====================
 async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStats, dailyClaims, botStats) {
   try {
@@ -179,10 +201,22 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
     console.log(`📂 Loading data from MongoDB — host=${mongoose.connection.host || "unknown"}, database=${mongoose.connection.name || "unknown"}, usersCollection=${User.collection.name}`);
 
     const users = await User.find({});
-    let withSpecies = 0, withRolls = 0;
-    for (const u of users) {
-      const obj = u.toObject();
-      const uid = obj.userId;
+    // Multiple MongoDB documents with the same userId collapse to one Map key.
+    // Never let a later blank/default duplicate overwrite a complete saved profile.
+    const recordsByUserId = new Map();
+    let recordsWithoutUserId = 0;
+    for (const userDoc of users) {
+      const obj = userDoc.toObject();
+      if (!obj.userId) { recordsWithoutUserId++; continue; }
+      const existing = recordsByUserId.get(obj.userId) || [];
+      existing.push(obj);
+      recordsByUserId.set(obj.userId, existing);
+    }
+
+    let withSpecies = 0, withRolls = 0, duplicateExtraDocs = 0;
+    for (const [uid, records] of recordsByUserId.entries()) {
+      if (records.length > 1) duplicateExtraDocs += records.length - 1;
+      const obj = chooseBestPlayerRecord(records);
       const d = {
         species:         obj.species         || null,
         originalSpecies: obj.originalSpecies || null,
@@ -197,7 +231,11 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
       if (d.species && d.species.name) withSpecies++;
       if (d.rolls > 0) withRolls++;
     }
-    console.log(`✅ Loaded ${users.length} users — ${withSpecies} have species, ${withRolls} have rolls`);
+
+    console.log(`✅ Loaded ${recordsByUserId.size} unique players from ${users.length} MongoDB documents — ${withSpecies} have species, ${withRolls} have rolls`);
+    if (duplicateExtraDocs > 0 || recordsWithoutUserId > 0) {
+      console.error(`🚨 Player data integrity warning: ${duplicateExtraDocs} extra duplicate user documents, ${recordsWithoutUserId} documents missing userId. Loader chose the most complete record per userId in memory; no MongoDB documents were deleted.`);
+    }
 
     const lb = await Leaderboard.find({});
     for (const l of lb) leaderboard.set(l.userId, { wins:l.wins });
@@ -291,16 +329,23 @@ async function listAllKeys(debugUserId) {
 
     // Run independent reads concurrently so the diagnostic can reply quickly.
     const [
-      debugUser, users, usersWithSpecies, usersWithRolls,
+      debugUserDocs, users, usersWithSpecies, usersWithRolls,
+      duplicateStats, userIndexes,
       leaderboard, fightLeaderboard, fightStats, botStats,
       dailyClaims, quests, duelChannels,
     ] = await Promise.all([
       debugUserId
-        ? User.findOne({ userId: debugUserId }).select({ userId:1, species:1, originalSpecies:1, rolls:1 }).lean()
-        : Promise.resolve(null),
+        ? User.find({ userId: debugUserId }).select({ _id:1, userId:1, species:1, originalSpecies:1, rolls:1, questSpecies:1, awakening:1, badges:1, lastSwitch:1 }).lean()
+        : Promise.resolve([]),
       User.countDocuments(),
       User.countDocuments({ "species.name": { $exists:true, $ne:null } }),
       User.countDocuments({ rolls: { $gt:0 } }),
+      User.aggregate([
+        { $group: { _id:"$userId", count:{ $sum:1 } } },
+        { $match: { _id:{ $ne:null }, count:{ $gt:1 } } },
+        { $group: { _id:null, duplicateUserIdGroups:{ $sum:1 }, extraDuplicateUserDocs:{ $sum:{ $subtract:["$count",1] } } } },
+      ]),
+      User.collection.indexes().catch(() => []),
       Leaderboard.countDocuments(),
       FightLeaderboard.countDocuments(),
       FightStats.countDocuments(),
@@ -309,6 +354,13 @@ async function listAllKeys(debugUserId) {
       Quest.countDocuments(),
       DuelChannel.countDocuments(),
     ]);
+
+    const sortedDebugDocs = (debugUserDocs || [])
+      .sort((a, b) => playerRecordScore(b) - playerRecordScore(a)
+        || String(b._id || "").localeCompare(String(a._id || "")));
+    const debugUser = chooseBestPlayerRecord(sortedDebugDocs);
+    const duplicateInfo = duplicateStats[0] || { duplicateUserIdGroups:0, extraDuplicateUserDocs:0 };
+    const hasUniqueUserIdIndex = userIndexes.some(index => index.unique === true && index.key?.userId === 1);
 
     return {
       databaseName: mongoose.connection.name || "unknown",
@@ -320,7 +372,18 @@ async function listAllKeys(debugUserId) {
         originalSpecies: debugUser.originalSpecies?.name || null,
         rolls: Number(debugUser.rolls) || 0,
       } : (debugUserId ? { found:false } : null),
-      users, usersWithSpecies, usersWithRolls,
+      debugUserRecordCount: debugUserDocs.length,
+      debugUserRecords: sortedDebugDocs.map(record => ({
+        documentId: String(record._id || "").slice(-8),
+        species: record.species?.name || null,
+        originalSpecies: record.originalSpecies?.name || null,
+        rolls: Number(record.rolls) || 0,
+        score: playerRecordScore(record),
+      })),
+      duplicateUserIdGroups: duplicateInfo.duplicateUserIdGroups || 0,
+      extraDuplicateUserDocs: duplicateInfo.extraDuplicateUserDocs || 0,
+      hasUniqueUserIdIndex,
+      users, uniqueUserIds: users - (duplicateInfo.extraDuplicateUserDocs || 0), usersWithSpecies, usersWithRolls,
       leaderboard, fightLeaderboard, fightStats, botStats,
       dailyClaims, quests, duelChannels,
     };
