@@ -127,7 +127,7 @@ async function handleCommand(interaction) {
       });
       desc += `
 🌑 **Reaper** — Quest unlock only
-👿 **Archdemon** — Special event only
+👿 **Archdemon** — Quest unlock only
 ⚡🤖 **Mechangel** — Cyborg awakening only`;
       const embed = new EmbedBuilder()
         .setColor(0x0891b2)
@@ -410,6 +410,7 @@ async function handleCommand(interaction) {
       const target=options.getUser("user")||user;
       const qd=_state.questProgress.get(target.id)||{};
       const r=qd.reaper||{easyBots:0,mediumBots:0,hardBots:0,impossibleBots:0,playerFights:0,completed:false,claimed:false};
+      const a=qd.archdemon||{hardBots:0,impossibleBots:0,playerFights:0,completed:false,claimed:false};
       const bar=(c,m)=>{ const f=Math.round((c/m)*10); return "█".repeat(f)+"░".repeat(10-f)+` ${c}/${m}`; };
       const now=Date.now();
       const REAPER_EXPIRY=1774355400000;
@@ -424,6 +425,9 @@ async function handleCommand(interaction) {
         rvalue=`⏰ **Quest ends:** <t:${Math.floor(REAPER_EXPIRY/1000)}:R>\n*(Deadline: **24 March 2026 at 6:00 PM**)*\n\n🧸 Easy Bots: ${bar(r.easyBots,35)}\n⚔️ Medium Bots: ${bar(r.mediumBots,25)}\n👹 Hard Bots: ${bar(r.hardBots,15)}\n💀 Impossible: ${bar(r.impossibleBots,5)}\n👤 Player Fights: ${bar(r.playerFights,15)}`;
       }
       embed.addFields({name:`🌑 Reaper Quest — ${rstatus}`,value:rvalue,inline:false});
+      const astatus=a.claimed?"✅ CLAIMED":a.completed?"🎁 CLAIM READY":"🔄 In Progress";
+      const avalue=a.claimed?"Archdemon unlocked! Use `/switch` to equip.":a.completed?"Use `/quest claim quest:archdemon` to claim!":`👹 Hard Bot Wins: ${bar(a.hardBots||0,10)}\n💀 Impossible Bot Wins: ${bar(a.impossibleBots||0,5)}\n⚔️ Player Fight Wins: ${bar(a.playerFights||0,10)}\n\nComplete all objectives to permanently unlock Archdemon.`;
+      embed.addFields({name:`👿 Archdemon Trial — ${astatus}`,value:avalue,inline:false});
       return safeReply(interaction,{embeds:[embed]});
     }
     if (sub==="claim") {
@@ -440,6 +444,21 @@ async function handleCommand(interaction) {
         ud.questSpecies.reaper={unlocked:true,equipped:false};
         _state.userSpecies.set(user.id,ud); database.saveUserSpecies(user.id,ud);
         return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x2f4f4f).setTitle("🌑 Reaper Unlocked!").setDescription("Use `/switch` to equip Reaper!")]});
+      }
+      if (qn==="archdemon") {
+        const qd=_state.questProgress.get(user.id)||{};
+        const a=qd.archdemon||{hardBots:0,impossibleBots:0,playerFights:0,completed:false,claimed:false};
+        const udExisting=_state.userSpecies.get(user.id);
+        if (a.claimed||udExisting?.questSpecies?.archdemon?.unlocked) return safeReply(interaction,{embeds:[createErrorEmbed("Archdemon is already unlocked! Use `/switch` to equip it.")],flags:64});
+        if (!a.completed) return safeReply(interaction,{embeds:[createErrorEmbed("Archdemon Trial not complete yet! Check `/quest view`.")],flags:64});
+        a.claimed=true; qd.archdemon=a; _state.questProgress.set(user.id,qd);
+        await database.saveQuestProgress(user.id,"archdemon",a);
+        const ud=udExisting||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0};
+        if (!ud.questSpecies) ud.questSpecies={};
+        ud.questSpecies.archdemon={unlocked:true,equipped:false};
+        _state.userSpecies.set(user.id,ud);
+        await database.saveUserSpecies(user.id,ud);
+        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x4a0404).setTitle("👿 ARCHDEMON UNLOCKED").setDescription("You have completed the Archdemon Trial!\n\nYour unlock is permanent. Use `/switch` to equip Archdemon again after rolling another species.")]});
       }
     }
   }
@@ -1041,7 +1060,7 @@ const commands = [
   new SlashCommandBuilder().setName("togglerequests").setDescription("Toggle receiving challenge requests").addStringOption(o=>o.setName("status").setDescription("Enable or disable").setRequired(true).addChoices({name:"Enable",value:"enable"},{name:"Disable",value:"disable"})),
   new SlashCommandBuilder().setName("quest").setDescription("Quest system")
     .addSubcommand(s=>s.setName("view").setDescription("View your quests").addUserOption(o=>o.setName("user").setDescription("User to check")))
-    .addSubcommand(s=>s.setName("claim").setDescription("Claim a quest reward").addStringOption(o=>o.setName("quest").setDescription("Quest to claim").setRequired(true).addChoices({name:"Reaper",value:"reaper"}))),
+    .addSubcommand(s=>s.setName("claim").setDescription("Claim a quest reward").addStringOption(o=>o.setName("quest").setDescription("Quest to claim").setRequired(true).addChoices({name:"Reaper",value:"reaper"},{name:"Archdemon",value:"archdemon"}))),
   new SlashCommandBuilder().setName("god").setDescription("God-only commands")
     .addSubcommand(s=>s.setName("menu").setDescription("Show god menu"))
     .addSubcommand(s=>s.setName("species-change").setDescription("Change a user's species").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Species to set").setRequired(true).addChoices({name:"Demi God ⚡",value:"Demi God"},{name:"Demon Lord 🔥",value:"Demon Lord"},{name:"Demon King 👑😈",value:"Demon King"},{name:"Chimera 🎭",value:"Chimera"},{name:"Angel 👼",value:"Angel"},{name:"Demon 😈",value:"Demon"},{name:"Oni 👿",value:"Oni"},{name:"Orc Lord 👑",value:"Orc Lord"},{name:"Kijin 🎭",value:"Kijin"},{name:"Cyborg 🤖",value:"Cyborg"},{name:"High Orc ⚔️",value:"High Orc"},{name:"Ogre 👹",value:"Ogre"},{name:"Goblin 👺",value:"Goblin"},{name:"Orc 🟢",value:"Orc"},{name:"Half-Blood 🩸",value:"Half-Blood"},{name:"Fire Dragon 🔥🐉",value:"Fire Dragon"},{name:"Thunder Dragon ⚡🐉",value:"Thunder Dragon"},{name:"Ice Dragon ❄️🐉",value:"Ice Dragon"},{name:"Earth Dragon 🌍🐉",value:"Earth Dragon"},{name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"God 👑✨",value:"God"},{name:"Human 👤",value:"Human"})))
