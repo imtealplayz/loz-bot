@@ -120,19 +120,36 @@ async function upsert(Model, filter, data) {
   }
 }
 
+// User records may contain legacy duplicate userId documents. Update all matching
+// copies so a stale duplicate cannot bring back old species/roll values next boot.
+async function upsertUser(userId, data) {
+  try {
+    if (!await connect()) return false;
+    await User.updateMany(
+      { userId },
+      { $set: { userId, ...data } },
+      { upsert:true }
+    );
+    return true;
+  } catch(e) {
+    console.error("❌ DB upsert error (User):", e.message);
+    return false;
+  }
+}
+
 // ==================== SAVE FUNCTIONS ====================
 async function saveUserSpecies(userId, data) {
-  return await upsert(User, { userId }, { userId, ...data });
+  return await upsertUser(userId, data);
 }
 
 // Update only the intended fields so a partial/stale in-memory user object
 // cannot overwrite unrelated persisted player data.
 async function saveUserRolls(userId, rolls) {
-  return await upsert(User, { userId }, { userId, rolls });
+  return await upsertUser(userId, { rolls });
 }
 
 async function saveUserSpeciesFields(userId, species, originalSpecies) {
-  return await upsert(User, { userId }, { userId, species, originalSpecies });
+  return await upsertUser(userId, { species, originalSpecies });
 }
 
 async function saveLeaderboard(userId, data) {
