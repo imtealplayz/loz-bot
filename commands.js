@@ -584,7 +584,7 @@ async function handleCommand(interaction) {
       const target=options.getUser("user"), amount=options.getInteger("amount");
       const ud=_state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0,badges:[]};
       ud.rolls=(ud.rolls||0)+amount; _state.userSpecies.set(target.id,ud);
-      if (!await database.saveUserSpecies(target.id,ud)) return safeReply(interaction,{embeds:[createErrorEmbed("MongoDB save failed. This change is not confirmed as saved; check the database before redeploying.")],flags:64});
+      if (!await database.saveUserRolls(target.id,ud.rolls)) return safeReply(interaction,{embeds:[createErrorEmbed("MongoDB save failed. This change is not confirmed as saved; check the database before redeploying.")],flags:64});
       return safeReply(interaction,{embeds:[createSuccessEmbed(`Gave **${amount}** rolls to <@${target.id}>! They now have **${ud.rolls}** rolls, saved to MongoDB.`)],flags:64});
     }
 
@@ -599,7 +599,7 @@ async function handleCommand(interaction) {
       ud.originalSpecies=newSp;
       ud.species=newSp;
       _state.userSpecies.set(target.id,ud);
-      if (!await database.saveUserSpecies(target.id,ud)) return safeReply(interaction,{embeds:[createErrorEmbed("MongoDB save failed. This change is not confirmed as saved; check the database before redeploying.")],flags:64});
+      if (!await database.saveUserSpeciesFields(target.id,ud.species,ud.originalSpecies)) return safeReply(interaction,{embeds:[createErrorEmbed("MongoDB save failed. This change is not confirmed as saved; check the database before redeploying.")],flags:64});
       return safeReply(interaction,{embeds:[createSuccessEmbed(`Changed <@${target.id}>'s species to ${newSp.emoji} **${newSp.name}** and saved it to MongoDB!`)]});
     }
 
@@ -608,7 +608,7 @@ async function handleCommand(interaction) {
       const ud=_state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0,badges:[]};
       ud.species=humanSpecies; ud.originalSpecies=humanSpecies;
       _state.userSpecies.set(target.id,ud);
-      if (!await database.saveUserSpecies(target.id,ud)) return safeReply(interaction,{embeds:[createErrorEmbed("MongoDB save failed. This change is not confirmed as saved; check the database before redeploying.")],flags:64});
+      if (!await database.saveUserSpeciesFields(target.id,ud.species,ud.originalSpecies)) return safeReply(interaction,{embeds:[createErrorEmbed("MongoDB save failed. This change is not confirmed as saved; check the database before redeploying.")],flags:64});
       return safeReply(interaction,{embeds:[createSuccessEmbed(`Reset <@${target.id}> to 👤 **Human** and saved it to MongoDB.`)]});
     }
 
@@ -616,7 +616,7 @@ async function handleCommand(interaction) {
       const target=options.getUser("user");
       const ud=_state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0,badges:[]};
       const old=ud.rolls||0; ud.rolls=0; _state.userSpecies.set(target.id,ud);
-      if (!await database.saveUserSpecies(target.id,ud)) return safeReply(interaction,{embeds:[createErrorEmbed("MongoDB save failed. This change is not confirmed as saved; check the database before redeploying.")],flags:64});
+      if (!await database.saveUserRolls(target.id,ud.rolls)) return safeReply(interaction,{embeds:[createErrorEmbed("MongoDB save failed. This change is not confirmed as saved; check the database before redeploying.")],flags:64});
       return safeReply(interaction,{embeds:[createSuccessEmbed(`Reset **${old}** rolls for <@${target.id}> to 0. Species stays **${ud.species?.name||"Human"}**. Saved to MongoDB.`)],flags:64});
     }
 
