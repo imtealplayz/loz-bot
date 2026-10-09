@@ -122,7 +122,7 @@ async function upsert(Model, filter, data) {
 
 // ==================== SAVE FUNCTIONS ====================
 async function saveUserSpecies(userId, data) {
-  await upsert(User, { userId }, { userId, ...data });
+  return await upsert(User, { userId }, { userId, ...data });
 }
 
 async function saveLeaderboard(userId, data) {
