@@ -46,7 +46,7 @@ function buildSpeciesTokenResultPayload(title, description, color = 0x0891b2) {
   const container = new ContainerBuilder().setAccentColor(color);
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${title}\n${description}`));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-  return { components:[container], flags:MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, allowedMentions:{ parse:[] } };
+  return { components:[container], flags:MessageFlags.IsComponentsV2, allowedMentions:{ parse:[] } };
 }
 function buildSpeciesTokenSelectionPayload(userId, selectedName = null, tokenCount = 0) {
   const selectedSpecies = selectedName ? getSpeciesByName(selectedName) : null;
@@ -85,7 +85,7 @@ function buildSpeciesTokenSelectionPayload(userId, selectedName = null, tokenCou
       .setCustomId(`species_token_cancel_${userId}`)
       .setLabel("Cancel").setStyle(ButtonStyle.Secondary)
   ));
-  return { components:[container], flags:MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, allowedMentions:{ parse:[] } };
+  return { components:[container], flags:MessageFlags.IsComponentsV2, allowedMentions:{ parse:[] } };
 }
 function buildSpeciesTokenConfirmPayload(userId, speciesName, tokenCount) {
   const species = getSpeciesByName(speciesName);
@@ -99,7 +99,11 @@ function buildSpeciesTokenConfirmPayload(userId, speciesName, tokenCount) {
     new ButtonBuilder().setCustomId(`species_token_confirm_${userId}_${encodeURIComponent(speciesName)}`).setLabel("Confirm").setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId(`species_token_back_${userId}_${encodeURIComponent(speciesName)}`).setLabel("Go Back").setStyle(ButtonStyle.Secondary)
   ));
-  return { components:[container], flags:MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, allowedMentions:{ parse:[] } };
+  return { components:[container], flags:MessageFlags.IsComponentsV2, allowedMentions:{ parse:[] } };
+}
+
+function asEphemeralSpeciesTokenPayload(payload) {
+  return { ...payload, flags:MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral };
 }
 
 // Major-update DM payload built entirely with Components V2 and native separators.
@@ -917,12 +921,12 @@ async function handleCommand(interaction) {
   if (commandName === "items") {
     if (options.getSubcommand() === "use") {
       if (isPlayerInFight(user.id) || isPlayerInBotFight(user.id))
-        return safeReply(interaction, buildSpeciesTokenResultPayload("Can't Use Items During a Fight", "Finish your active fight before using a Species Token.", 0xff0000));
+        return safeReply(interaction, asEphemeralSpeciesTokenPayload(buildSpeciesTokenResultPayload("Can't Use Items During a Fight", "Finish your active fight before using a Species Token.", 0xff0000)));
       const ud = _state.userSpecies.get(user.id) || { species:humanSpecies, originalSpecies:humanSpecies, questSpecies:{}, rolls:0, speciesTokens:0, requestsEnabled:true, lastSwitch:0, badges:[] };
       const tokenCount = Number(ud.speciesTokens) || 0;
       if (tokenCount < 1)
-        return safeReply(interaction, buildSpeciesTokenResultPayload("No Species Tokens", `You don't have any ${SPECIES_TOKEN_EMOJI} Species Tokens. A God can grant them to you.`, 0xff0000));
-      return safeReply(interaction, buildSpeciesTokenSelectionPayload(user.id, null, tokenCount));
+        return safeReply(interaction, asEphemeralSpeciesTokenPayload(buildSpeciesTokenResultPayload("No Species Tokens", `You don't have any ${SPECIES_TOKEN_EMOJI} Species Tokens. A God can grant them to you.`, 0xff0000)));
+      return safeReply(interaction, asEphemeralSpeciesTokenPayload(buildSpeciesTokenSelectionPayload(user.id, null, tokenCount)));
     }
   }
 
