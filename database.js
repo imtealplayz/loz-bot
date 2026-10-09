@@ -42,7 +42,11 @@ async function connect() {
 
 // ==================== SCHEMAS ====================
 const userSchema = new mongoose.Schema({
-  userId:          { type:String, required:true, unique:true },
+  userId:          { type:String, required:true },
+  // Legacy duplicate documents are retained for recovery but excluded from active player reads.
+  archivedForRepair: { type:Boolean, default:false },
+  duplicateOf:     { type:mongoose.Schema.Types.ObjectId, default:null },
+  archivedAt:      { type:Date, default:null },
   species:         { type:Object, default:null },
   originalSpecies: { type:Object, default:null },
   questSpecies:    { type:Object, default:{} },
@@ -130,8 +134,8 @@ async function upsertUser(userId, data) {
     if (userRepairPromise) await userRepairPromise;
     if (!await connect()) return false;
     await User.updateMany(
-      { userId },
-      { $set: { userId, ...data } },
+      { userId, archivedForRepair: { $ne:true } },
+      { $set: { userId, archivedForRepair:false, ...data } },
       { upsert:true }
     );
     return true;
@@ -269,13 +273,12 @@ function mergeDuplicatePlayerRecords(records) {
   };
 }
 
-function hasGlobalUniqueUserIdIndex(indexes) {
+function hasActiveUniqueUserIdIndex(indexes) {
   return indexes.some(index =>
     index.unique === true
     && Object.keys(index.key || {}).length === 1
     && index.key.userId === 1
-    && !index.sparse
-    && !index.partialFilterExpression
+    && index.partialFilterExpression?.archivedForRepair === false
   );
 }
 
@@ -288,7 +291,7 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
     }
     console.log(`📂 Loading data from MongoDB — host=${mongoose.connection.host || "unknown"}, database=${mongoose.connection.name || "unknown"}, usersCollection=${User.collection.name}`);
 
-    const users = await User.find({});
+    const users = await User.find({ archivedForRepair: { $ne:true } });
     // Multiple MongoDB documents with the same userId collapse to one Map key.
     // Never let a later blank/default duplicate overwrite a complete saved profile.
     const recordsByUserId = new Map();
@@ -409,15 +412,14 @@ async function loadDuelChannel(guildId) {
   }
 }
 
-// Archive duplicate player documents, merge recoverable progress, deduplicate,
-// and enforce a true single-field unique userId index. This runs only when the
-// owner explicitly invokes /god repair-user-db; it is not an automatic startup migration.
+// Safely archive and mark duplicate player documents as inactive; no user documents
+// are deleted. Original snapshots are retained in user_duplicate_archive.
 async function repairUserRecords() {
   if (userRepairPromise) return userRepairPromise;
 
   const task = (async () => {
     if (!await connect()) return { ok:false, error:"MongoDB connection failed." };
-    const docs = await User.find({}).lean();
+    const docs = await User.find({ archivedForRepair: { $ne:true } }).lean();
     const groups = new Map();
     const invalidDocs = [];
 
@@ -430,20 +432,16 @@ async function repairUserRecords() {
       group.push(doc);
       groups.set(doc.userId, group);
     }
-
     if (invalidDocs.length) {
-      return { ok:false, error:`Found ${invalidDocs.length} user documents without a valid userId. No records were changed.` };
+      return { ok:false, error:`Found ${invalidDocs.length} active player documents without a valid userId. No records were changed.` };
     }
 
     const duplicateGroups = [...groups.entries()].filter(([, records]) => records.length > 1);
     const duplicateDocuments = duplicateGroups.flatMap(([, records]) => records);
-
     const db = mongoose.connection.db;
     if (!db) return { ok:false, error:"MongoDB database handle is unavailable." };
     const archive = db.collection("user_duplicate_archive");
 
-    // Archive every document in every affected group (including the canonical
-    // record) using its original _id as an idempotency key.
     if (duplicateDocuments.length) {
       const now = new Date();
       await archive.bulkWrite(duplicateDocuments.map(doc => ({
@@ -466,91 +464,105 @@ async function repairUserRecords() {
       if (archivedCount !== duplicateDocuments.length) {
         return {
           ok:false,
-          error:`Archive verification failed (${archivedCount}/${duplicateDocuments.length}). No duplicate user documents were deleted.`,
-          archivedCount,
+          error:`Archive verification failed (${archivedCount}/${duplicateDocuments.length}). No player documents were changed.`,
+          archivedDocuments: archivedCount,
           expectedArchiveCount: duplicateDocuments.length,
         };
       }
     }
 
-    let groupsRepaired = 0, extraDocumentsRemoved = 0;
+    let groupsRepaired = 0, extraDocumentsMarked = 0;
     for (const [userId, records] of duplicateGroups) {
       const canonical = chooseBestPlayerRecord(records);
       const merged = mergeDuplicatePlayerRecords(records);
+      const extras = records.filter(record => String(record._id) !== String(canonical._id));
+
+      // Mark extras inactive first so the partial unique index can be created or
+      // already be present without ever having two active documents for a user.
+      if (extras.length) {
+        const markResult = await User.collection.updateMany(
+          { userId, _id: { $in: extras.map(record => record._id) } },
+          { $set: { archivedForRepair:true, duplicateOf:canonical._id, archivedAt:new Date() } }
+        );
+        if (markResult.matchedCount !== extras.length) {
+          return {
+            ok:false,
+            error:`Could not mark all duplicate copies for a player. Original documents remain archived for recovery; rerun repair.`,
+            groupsRepaired,
+            extraDocumentsMarked,
+            archivedDocuments: duplicateDocuments.length,
+          };
+        }
+        extraDocumentsMarked += markResult.modifiedCount;
+      }
+
       const updateResult = await User.collection.updateOne(
         { _id: canonical._id, userId },
-        { $set: merged }
+        { $set: { ...merged, archivedForRepair:false, duplicateOf:null, archivedAt:null } }
       );
       if (updateResult.matchedCount !== 1) {
         return {
           ok:false,
-          error:`Could not safely update the canonical document for userId ${userId}. The original copies are archived; no more documents were removed.`,
+          error:`Could not safely update the active document for a player. All originals are archived; rerun repair.`,
           groupsRepaired,
-          extraDocumentsRemoved,
+          extraDocumentsMarked,
           archivedDocuments: duplicateDocuments.length,
         };
-      }
-
-      const extras = records.filter(record => String(record._id) !== String(canonical._id));
-      if (extras.length) {
-        const deletion = await User.collection.deleteMany({
-          userId,
-          _id: { $in: extras.map(record => record._id) },
-        });
-        if (deletion.deletedCount !== extras.length) {
-          return {
-            ok:false,
-            error:`Only deleted ${deletion.deletedCount}/${extras.length} duplicate copies for one player. All originals are archived; rerun the repair command to finish.`,
-            groupsRepaired,
-            extraDocumentsRemoved: extraDocumentsRemoved + deletion.deletedCount,
-            archivedDocuments: duplicateDocuments.length,
-          };
-        }
-        extraDocumentsRemoved += deletion.deletedCount;
       }
       groupsRepaired++;
     }
 
-    const remainingDuplicateGroups = await User.aggregate([
+    // Every non-duplicate legacy document becomes an active record too.
+    await User.collection.updateMany(
+      { archivedForRepair: { $exists:false } },
+      { $set: { archivedForRepair:false, duplicateOf:null, archivedAt:null } }
+    );
+
+    const activeGroups = await User.aggregate([
+      { $match: { archivedForRepair: { $ne:true } } },
       { $group: { _id:"$userId", count:{ $sum:1 } } },
       { $match: { _id:{ $ne:null }, count:{ $gt:1 } } },
       { $count:"groups" },
     ]);
-    const duplicatesLeft = remainingDuplicateGroups[0]?.groups || 0;
+    const duplicatesLeft = activeGroups[0]?.groups || 0;
     if (duplicatesLeft) {
       return {
         ok:false,
-        error:`Still found ${duplicatesLeft} duplicate userId groups after cleanup. Originals are archived; refusing to create the unique index.`,
+        error:`Still found ${duplicatesLeft} duplicate active userId groups. No player documents were deleted; originals are archived.`,
         groupsRepaired,
-        extraDocumentsRemoved,
+        extraDocumentsMarked,
         archivedDocuments: duplicateDocuments.length,
-        duplicateUserIdGroups: duplicatesLeft,
+        remainingDuplicateUserIdGroups:duplicatesLeft,
       };
     }
 
     let indexes = await User.collection.indexes();
-    let globalUniqueIndex = hasGlobalUniqueUserIdIndex(indexes);
-    if (!globalUniqueIndex) {
-      // A non-unique, sparse, or partial single-key index on userId cannot replace
-      // the required global uniqueness constraint. It is safe to rebuild the index
-      // after the duplicate documents have been archived and consolidated.
+    let activeUniqueIndex = hasActiveUniqueUserIdIndex(indexes);
+    if (!activeUniqueIndex) {
+      // Remove only simple userId indexes whose key pattern conflicts with the
+      // partial active-record index. This changes indexes, not player documents.
       const simpleUserIdIndexes = indexes.filter(index =>
-        Object.keys(index.key || {}).length === 1 && index.key.userId === 1
+        Object.keys(index.key || {}).length === 1
+        && index.key.userId === 1
+        && index.name !== "userId_active_unique"
       );
       for (const index of simpleUserIdIndexes) {
         if (index.name && index.name !== "_id_") await User.collection.dropIndex(index.name);
       }
-      await User.collection.createIndex({ userId:1 }, { unique:true, name:"userId_1" });
+      await User.collection.createIndex(
+        { userId:1 },
+        { unique:true, name:"userId_active_unique", partialFilterExpression:{ archivedForRepair:false } }
+      );
       indexes = await User.collection.indexes();
-      globalUniqueIndex = hasGlobalUniqueUserIdIndex(indexes);
+      activeUniqueIndex = hasActiveUniqueUserIdIndex(indexes);
     }
 
-    if (!globalUniqueIndex) {
+    if (!activeUniqueIndex) {
       return {
         ok:false,
-        error:"Duplicate cleanup completed, but MongoDB did not confirm a global unique userId index.",
+        error:"Duplicates have been marked inactive, but MongoDB did not confirm the active-user unique index. No player documents were deleted.",
         groupsRepaired,
-        extraDocumentsRemoved,
+        extraDocumentsMarked,
         archivedDocuments: duplicateDocuments.length,
       };
     }
@@ -558,12 +570,13 @@ async function repairUserRecords() {
     return {
       ok:true,
       groupsRepaired,
-      extraDocumentsRemoved,
+      extraDocumentsMarked,
       archivedDocuments: duplicateDocuments.length,
-      archiveCollection: "user_duplicate_archive",
-      uniqueUserIdIndex: true,
-      totalUserDocuments: await User.countDocuments(),
-      remainingDuplicateUserIdGroups: 0,
+      archiveCollection:"user_duplicate_archive",
+      uniqueUserIdIndex:true,
+      activePlayerDocuments:await User.countDocuments({ archivedForRepair:{ $ne:true } }),
+      archivedPlayerDocuments:await User.countDocuments({ archivedForRepair:true }),
+      remainingDuplicateUserIdGroups:0,
     };
   })();
 
@@ -592,18 +605,20 @@ async function listAllKeys(debugUserId) {
       dailyClaims, quests, duelChannels,
     ] = await Promise.all([
       debugUserId
-        ? User.find({ userId: debugUserId }).select({ _id:1, userId:1, species:1, originalSpecies:1, rolls:1, questSpecies:1, awakening:1, badges:1, lastSwitch:1 }).lean()
+        ? User.find({ userId: debugUserId, archivedForRepair: { $ne:true } }).select({ _id:1, userId:1, species:1, originalSpecies:1, rolls:1, questSpecies:1, awakening:1, badges:1, lastSwitch:1 }).lean()
         : Promise.resolve([]),
-      User.countDocuments(),
-      User.countDocuments({ "species.name": { $exists:true, $ne:null } }),
+      User.countDocuments({ archivedForRepair: { $ne:true } }),
+      User.countDocuments({ archivedForRepair:true }),
+      User.countDocuments({ archivedForRepair: { $ne:true }, "species.name": { $exists:true, $ne:null } }),
       User.countDocuments({ rolls: { $gt:0 } }),
       User.aggregate([
+        { $match: { archivedForRepair: { $ne:true } } },
         { $group: { _id:"$userId", count:{ $sum:1 } } },
         { $match: { _id:{ $ne:null }, count:{ $gt:1 } } },
         { $group: { _id:null, duplicateUserIdGroups:{ $sum:1 }, extraDuplicateUserDocs:{ $sum:{ $subtract:["$count",1] } } } },
       ]),
       User.collection.indexes().catch(() => []),
-      User.distinct("userId"),
+      User.distinct("userId", { archivedForRepair: { $ne:true } }),
       Leaderboard.countDocuments(),
       FightLeaderboard.countDocuments(),
       FightStats.countDocuments(),
@@ -618,7 +633,7 @@ async function listAllKeys(debugUserId) {
         || String(b._id || "").localeCompare(String(a._id || "")));
     const debugUser = chooseBestPlayerRecord(sortedDebugDocs);
     const duplicateInfo = duplicateStats[0] || { duplicateUserIdGroups:0, extraDuplicateUserDocs:0 };
-    const hasUniqueUserIdIndex = hasGlobalUniqueUserIdIndex(userIndexes);
+    const hasUniqueUserIdIndex = hasActiveUniqueUserIdIndex(userIndexes);
     const userIdIndexDefinitions = userIndexes.filter(index => index.key?.userId === 1).map(index => ({
       name: index.name || "unnamed",
       key: Object.entries(index.key || {}).map(([field, direction]) => `${field}:${direction}`).join(", "),
@@ -650,7 +665,7 @@ async function listAllKeys(debugUserId) {
       duplicateUserIdGroups: duplicateInfo.duplicateUserIdGroups || 0,
       extraDuplicateUserDocs: duplicateInfo.extraDuplicateUserDocs || 0,
       hasUniqueUserIdIndex, userIdIndexDefinitions, uniqueUserIds, usersWithoutUserId,
-      users, usersWithSpecies, usersWithRolls,
+      users, archivedUserDocs, usersWithSpecies, usersWithRolls,
       leaderboard, fightLeaderboard, fightStats, botStats,
       dailyClaims, quests, duelChannels,
     };
