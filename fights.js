@@ -373,7 +373,7 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
   }
   const personality=botPersonalities[difficulty], won=winner==="player";
   const timeoutMsg=reason==="timeout"
-    ? (won ? "\n⏰ You took too long to respond. The bot wins by timeout!" : "\n⏰ The bot turn timed out. You win by default!")
+    ? (won ? "\n⏰ The bot took too long to respond. You win by default!" : "\n⏰ You took too long to respond. The bot wins by timeout!")
     : reason==="counter" ? "\n⚡ Bot was killed by your counter-strike!" : "";
   const pName=fight.playerName||`<@${fight.playerId}>`;
   const desc=won
