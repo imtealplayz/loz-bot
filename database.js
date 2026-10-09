@@ -225,6 +225,15 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
     }
     console.log(`✅ Loaded ${bs.length} bot stat entries`);
 
+    // Protect against silently starting from an empty/wrong users collection.
+    // Fight history is durable data; if it exists but every player species is
+    // missing, keep LOZ offline rather than accepting mutations on suspect data.
+    const hasRelatedHistory = lb.length > 0 || flb.length > 0 || fs.length > 0 || bs.length > 0;
+    if (hasRelatedHistory && (users.length === 0 || withSpecies === 0)) {
+      console.error(`🚨 SAFETY STOP: MongoDB host=${mongoose.connection.host || "unknown"}, database=${mongoose.connection.name || "unknown"}, collection=${User.collection.name}; users=${users.length}, usersWithSpecies=${withSpecies}, usersWithRolls=${withRolls}, fightLeaderboard=${flb.length}, fightStats=${fs.length}. Persistent fight data exists but user species data appears missing. Refusing startup to avoid overwriting from a suspicious database state.`);
+      return false;
+    }
+
     return true;
   } catch(e) {
     console.error("❌ loadAllData error:", e.message);
