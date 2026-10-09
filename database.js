@@ -51,6 +51,7 @@ const userSchema = new mongoose.Schema({
   originalSpecies: { type:Object, default:null },
   questSpecies:    { type:Object, default:{} },
   rolls:           { type:Number, default:0 },
+  speciesTokens:   { type:Number, default:0 },
   requestsEnabled: { type:Boolean, default:true },
   lastSwitch:      { type:Number, default:0 },
   awakening:       { type:Object, default:{} },
@@ -162,6 +163,38 @@ async function saveUserSpecies(userId, data) {
 // cannot overwrite unrelated persisted player data.
 async function saveUserRolls(userId, rolls) {
   return await upsertUser(userId, { rolls });
+}
+
+async function addSpeciesTokens(userId, amount) {
+  try {
+    if (!await connect()) return { ok:false, error:true };
+    const updated = await User.findOneAndUpdate(
+      { userId, archivedForRepair:{ $ne:true } },
+      { $inc:{ speciesTokens:amount }, $set:{ userId, archivedForRepair:false } },
+      { new:true, upsert:true, setDefaultsOnInsert:true }
+    );
+    if (!updated) return { ok:false, error:true };
+    return { ok:true, speciesTokens:Number(updated.speciesTokens)||0 };
+  } catch(e) {
+    console.error("❌ Species token grant error:", e.message);
+    return { ok:false, error:true };
+  }
+}
+
+async function redeemSpeciesToken(userId, species) {
+  try {
+    if (!await connect()) return { ok:false, error:true };
+    const updated = await User.findOneAndUpdate(
+      { userId, archivedForRepair:{ $ne:true }, speciesTokens:{ $gt:0 } },
+      { $inc:{ speciesTokens:-1 }, $set:{ species, originalSpecies:species } },
+      { new:true }
+    );
+    if (!updated) return { ok:false, noTokens:true };
+    return { ok:true, speciesTokens:Number(updated.speciesTokens)||0 };
+  } catch(e) {
+    console.error("❌ Species token redemption error:", e.message);
+    return { ok:false, error:true };
+  }
 }
 
 async function saveUserSpeciesFields(userId, species, originalSpecies) {
@@ -359,6 +392,7 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
         originalSpecies: obj.originalSpecies || null,
         questSpecies:    obj.questSpecies    || {},
         rolls:           obj.rolls           || 0,
+        speciesTokens:   Number(obj.speciesTokens) || 0,
         requestsEnabled: obj.requestsEnabled !== false,
         lastSwitch:      obj.lastSwitch      || 0,
         awakening:       obj.awakening       || {},
@@ -736,7 +770,7 @@ async function deleteUser(userId) {
 
 // ==================== EXPORTS ====================
 module.exports = {
-  saveUserSpecies, saveUserRolls, saveUserSpeciesFields, repairUserRecords,
+  saveUserSpecies, saveUserRolls, saveUserSpeciesFields, addSpeciesTokens, redeemSpeciesToken, repairUserRecords,
   saveLeaderboard, saveFightLeaderboard,
   saveFightStats, saveBotStats, saveDailyClaim,
   saveQuestProgress, saveDuelChannel,
