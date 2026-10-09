@@ -167,14 +167,18 @@ async function saveUserRolls(userId, rolls) {
 
 async function addSpeciesTokens(userId, amount) {
   try {
+    if (userRepairPromise) await userRepairPromise;
     if (!await connect()) return { ok:false, error:true };
-    const updated = await User.findOneAndUpdate(
+    // Update every active copy so a later duplicate repair cannot discard a grant.
+    await User.updateMany(
       { userId, archivedForRepair:{ $ne:true } },
       { $inc:{ speciesTokens:amount }, $set:{ userId, archivedForRepair:false } },
-      { new:true, upsert:true, setDefaultsOnInsert:true }
+      { upsert:true }
     );
-    if (!updated) return { ok:false, error:true };
-    return { ok:true, speciesTokens:Number(updated.speciesTokens)||0 };
+    const records = await User.find({ userId, archivedForRepair:{ $ne:true } })
+      .select({ speciesTokens:1 }).lean();
+    if (!records.length) return { ok:false, error:true };
+    return { ok:true, speciesTokens:Math.max(0, ...records.map(record => Number(record.speciesTokens)||0)) };
   } catch(e) {
     console.error("❌ Species token grant error:", e.message);
     return { ok:false, error:true };
@@ -183,14 +187,36 @@ async function addSpeciesTokens(userId, amount) {
 
 async function redeemSpeciesToken(userId, species) {
   try {
+    if (userRepairPromise) await userRepairPromise;
     if (!await connect()) return { ok:false, error:true };
-    const updated = await User.findOneAndUpdate(
-      { userId, archivedForRepair:{ $ne:true }, speciesTokens:{ $gt:0 } },
-      { $inc:{ speciesTokens:-1 }, $set:{ species, originalSpecies:species } },
-      { new:true }
+    // Requiring the species to differ makes repeated confirmation clicks idempotent
+    // for a single active player record, even when the user owns multiple tokens.
+    const result = await User.updateMany(
+      {
+        userId,
+        archivedForRepair:{ $ne:true },
+        speciesTokens:{ $gt:0 },
+        "species.name":{ $ne:species.name },
+      },
+      { $inc:{ speciesTokens:-1 }, $set:{ species, originalSpecies:species } }
     );
-    if (!updated) return { ok:false, noTokens:true };
-    return { ok:true, speciesTokens:Number(updated.speciesTokens)||0 };
+    if (!result.modifiedCount) {
+      const current = await User.findOne({ userId, archivedForRepair:{ $ne:true } })
+        .select({ species:1, speciesTokens:1 }).lean();
+      if (!current || (Number(current.speciesTokens)||0) < 1) {
+        return { ok:false, noTokens:true, speciesTokens:Number(current?.speciesTokens)||0 };
+      }
+      if (current.species?.name === species.name) {
+        return { ok:false, sameSpecies:true, speciesTokens:Number(current.speciesTokens)||0 };
+      }
+      return { ok:false, error:true };
+    }
+    const records = await User.find({ userId, archivedForRepair:{ $ne:true } })
+      .select({ speciesTokens:1 }).lean();
+    return {
+      ok:true,
+      speciesTokens:Math.max(0, ...records.map(record => Number(record.speciesTokens)||0)),
+    };
   } catch(e) {
     console.error("❌ Species token redemption error:", e.message);
     return { ok:false, error:true };
@@ -349,6 +375,8 @@ function mergeDuplicatePlayerRecords(records) {
     lastSwitch: Number(base.lastSwitch) || Math.max(0, ...ordered.map(record => Number(record.lastSwitch) || 0)),
     awakening: mergePlayerProgress(ordered.map(record => record.awakening || {})),
     badges: mergePlayerProgress(ordered.map(record => record.badges || [])),
+    // Token balances are not additive across duplicates; retain the highest known balance.
+    speciesTokens: Math.max(0, ...ordered.map(record => Number(record.speciesTokens)||0)),
   };
 }
 
@@ -392,7 +420,7 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
         originalSpecies: obj.originalSpecies || null,
         questSpecies:    obj.questSpecies    || {},
         rolls:           obj.rolls           || 0,
-        speciesTokens:   Number(obj.speciesTokens) || 0,
+        speciesTokens:   Math.max(0, ...records.map(record => Number(record.speciesTokens)||0)),
         requestsEnabled: obj.requestsEnabled !== false,
         lastSwitch:      obj.lastSwitch      || 0,
         awakening:       obj.awakening       || {},
