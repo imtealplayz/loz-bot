@@ -27,7 +27,7 @@ let _client = null;
 function setState(s) { _state = s; }
 function setClient(c) { _client = c; }
 
-const SPECIES_TOKEN_EMOJI = "<:species_token:1558174976904007760>";
+const SPECIES_TOKEN_EMOJI = "<:species_token:1558181624296771634>";
 const SPECIES_TOKEN_SPECIES_NAMES = [
   "Demi God", "Demon Lord", "Demon King", "Demon", "Oni", "Orc Lord",
   "Kijin", "High Orc", "Ogre", "Goblin", "Orc", "Angel", "Chimera",
@@ -920,6 +920,14 @@ async function handleCommand(interaction) {
   // ── INVENTORY ITEMS ───────────────────────────────────────────
   if (commandName === "items") {
     if (options.getSubcommand() === "use") {
+      const item = options.getString("item");
+      if (item !== "species_token") {
+        return safeReply(interaction, asEphemeralSpeciesTokenPayload(buildSpeciesTokenResultPayload(
+          "Item Not Available",
+          "That item is not supported yet. Choose an available item from the item dropdown.",
+          0xff0000
+        )));
+      }
       if (isPlayerInFight(user.id) || isPlayerInBotFight(user.id))
         return safeReply(interaction, asEphemeralSpeciesTokenPayload(buildSpeciesTokenResultPayload("Can't Use Items During a Fight", "Finish your active fight before using a Species Token.", 0xff0000)));
       const ud = _state.userSpecies.get(user.id) || { species:humanSpecies, originalSpecies:humanSpecies, questSpecies:{}, rolls:0, speciesTokens:0, requestsEnabled:true, lastSwitch:0, badges:[] };
@@ -1642,7 +1650,9 @@ const commands = [
   new SlashCommandBuilder().setName("species").setDescription("View species list or a specific species card").addStringOption(o=>o.setName("species").setDescription("Species name for detailed card (leave blank for full list)").addChoices({name:"Demi God ⚡",value:"Demi God"},{name:"Demon Lord 🔥",value:"Demon Lord"},{name:"Demon King 👑😈",value:"Demon King"},{name:"Chimera 🎭",value:"Chimera"},{name:"Angel 👼",value:"Angel"},{name:"Demon 😈",value:"Demon"},{name:"Oni 👿",value:"Oni"},{name:"Orc Lord 👑",value:"Orc Lord"},{name:"Kijin 🎭",value:"Kijin"},{name:"Cyborg 🤖",value:"Cyborg"},{name:"High Orc ⚔️",value:"High Orc"},{name:"Ogre 👹",value:"Ogre"},{name:"Goblin 👺",value:"Goblin"},{name:"Orc 🟢",value:"Orc"},{name:"Half-Blood 🩸",value:"Half-Blood"},{name:"Fire Dragon 🔥🐉",value:"Fire Dragon"},{name:"Thunder Dragon ⚡🐉",value:"Thunder Dragon"},{name:"Ice Dragon ❄️🐉",value:"Ice Dragon"},{name:"Earth Dragon 🌍🐉",value:"Earth Dragon"},{name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"God 👑✨",value:"God"},{name:"Human 👤",value:"Human"})),
   new SlashCommandBuilder().setName("profile").setDescription("View a full player profile").addUserOption(o=>o.setName("user").setDescription("User to check")),
   new SlashCommandBuilder().setName("items").setDescription("View and use inventory items")
-    .addSubcommand(s=>s.setName("use").setDescription("Use a Species Token to choose a new species")),
+    .addSubcommand(s=>s.setName("use").setDescription("Use an inventory item")
+      .addStringOption(o=>o.setName("item").setDescription("Item to use").setRequired(true)
+        .addChoices({name:"Species Token",value:"species_token"}))),
   new SlashCommandBuilder().setName("species-roll").setDescription("Roll for a new species"),
   new SlashCommandBuilder().setName("switch").setDescription("Switch between your species (3h cooldown)"),
   new SlashCommandBuilder().setName("awakening").setDescription("Check your species awakening progress"),
