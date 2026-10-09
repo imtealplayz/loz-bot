@@ -72,6 +72,7 @@ const botStatsSchema = new mongoose.Schema({
   medium:     { type:Object, default:{ wins:0, losses:0 } },
   hard:       { type:Object, default:{ wins:0, losses:0 } },
   impossible: { type:Object, default:{ wins:0, losses:0 } },
+  brutal:     { type:Object, default:{ wins:0, losses:0 } },
 }, { minimize:false });
 
 const dailySchema = new mongoose.Schema({

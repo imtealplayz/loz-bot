@@ -1,6 +1,8 @@
 const {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
   SlashCommandBuilder, REST, Routes,
+  ContainerBuilder, TextDisplayBuilder, SeparatorBuilder,
+  SeparatorSpacingSize, MessageFlags,
 } = require("discord.js");
 const {
   patchNotes, humanSpecies, reaperSpecies, archdemonSpecies,
@@ -79,11 +81,27 @@ async function handleCommand(interaction) {
 
   // ── PATCHNOTES ────────────────────────────────────────────────
   if (commandName === "patchnotes") {
-    const latest=patchNotes[0];
-    return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x0891b2).setTitle(`📋 Patch Notes — v${latest.version}`).setDescription(`**Date:** ${latest.date}\n\n${latest.changes.map(c=>`• ${c}`).join("\n")}`).setFooter({text:`v${latest.version} is the latest`})]});
+    const visibleNotes=patchNotes.slice(0,2);
+    const container=new ContainerBuilder().setAccentColor(0x0891b2);
+
+    visibleNotes.forEach((note,index)=>{
+      if (index>0) {
+        container.addSeparatorComponents(
+          new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small)
+        );
+      }
+      const heading=index===0?"## LOZ Patch Notes\n\n":"";
+      const changes=note.changes.map(change=>`- ${change}`).join("\n");
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(`${heading}### Version ${note.version} | ${note.date}\n${changes}`)
+      );
+    });
+
+    return interaction.reply({components:[container],flags:MessageFlags.IsComponentsV2});
   }
 
 
+  // ── SPECIES ───────────────────────────────────────────────────
   // ── SPECIES ───────────────────────────────────────────────────
   if (commandName === "species") {
     const spName = options.getString("species");
@@ -427,7 +445,8 @@ async function handleCommand(interaction) {
         {name:"🧸 Easy",    value:`W:${stats.easy?.wins||0} L:${stats.easy?.losses||0}`,    inline:true},
         {name:"⚔️ Medium",  value:`W:${stats.medium?.wins||0} L:${stats.medium?.losses||0}`,inline:true},
         {name:"👹 Hard",    value:`W:${stats.hard?.wins||0} L:${stats.hard?.losses||0}`,    inline:true},
-        {name:"💀 Impossible",value:`W:${stats.impossible?.wins||0} L:${stats.impossible?.losses||0}`,inline:true})]});
+        {name:"💀 Impossible",value:`W:${stats.impossible?.wins||0} L:${stats.impossible?.losses||0}`,inline:true},
+        {name:"Brutal",value:`W:${stats.brutal?.wins||0} L:${stats.brutal?.losses||0}`,inline:true})]});
   }
 
   // ── QUEST ─────────────────────────────────────────────────────
@@ -1073,7 +1092,7 @@ const commands = [
   new SlashCommandBuilder().setName("switch").setDescription("Switch between your species (3h cooldown)"),
   new SlashCommandBuilder().setName("awakening").setDescription("Check your species awakening progress"),
   new SlashCommandBuilder().setName("fight").setDescription("Challenge a player to a fight").addUserOption(o=>o.setName("user").setDescription("Player to fight").setRequired(true)),
-  new SlashCommandBuilder().setName("fightbot").setDescription("Fight a bot").addStringOption(o=>o.setName("difficulty").setDescription("Bot difficulty").setRequired(true).addChoices({name:"🧸 Easy",value:"easy"},{name:"⚔️ Medium",value:"medium"},{name:"👹 Hard",value:"hard"},{name:"💀 Impossible",value:"impossible"})),
+  new SlashCommandBuilder().setName("fightbot").setDescription("Fight a bot").addStringOption(o=>o.setName("difficulty").setDescription("Bot difficulty").setRequired(true).addChoices({name:"🧸 Easy",value:"easy"},{name:"⚔️ Medium",value:"medium"},{name:"👹 Hard",value:"hard"},{name:"💀 Impossible",value:"impossible"},{name:"Brutal",value:"brutal"})),
   new SlashCommandBuilder().setName("fightstats").setDescription("View fight stats").addUserOption(o=>o.setName("user").setDescription("User to check")),
   new SlashCommandBuilder().setName("history").setDescription("View fight history").addUserOption(o=>o.setName("user").setDescription("User to check")),
   new SlashCommandBuilder().setName("botstats").setDescription("View bot fight stats").addUserOption(o=>o.setName("user").setDescription("User to check")),

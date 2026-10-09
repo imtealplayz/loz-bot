@@ -52,7 +52,7 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
     if (Math.random()<0.3)  { rollEarned=true; const ud=_state.userSpecies.get(winnerId); if(ud){ ud.rolls=(ud.rolls||0)+1; _state.userSpecies.set(winnerId,ud); database.saveUserSpecies(winnerId,ud); } }
   }
   // FIX: only update fightLeaderboard via updateFightStats, not bomb tag leaderboard
-  updateFightStats(winnerId,true,loserId,{opponentName:loser.species.name,opponentSpecies:loser.species,hpLeft:winner.currentHp,special:reason==="forfeit"?"😵 forfeit":reason==="counter"?"💥 counter":"",doubleWin,rollEarned});
+  updateFightStats(winnerId,true,loserId,{opponentName:loser.species.name,opponentSpecies:loser.species,hpLeft:winner.currentHp,special:reason==="forfeit"?"😵 forfeit":reason==="counter"?"💥 counter":"",doubleWin,rollEarned,leaderboardPoints:winPoints});
   updateFightStats(loserId,false,winnerId,{opponentName:winner.species.name,opponentSpecies:winner.species,hpLeft:loser.currentHp,special:reason==="forfeit"?"😵 forfeited":"",doubleWin:false,rollEarned:false});
   updateReaperQuest(winnerId,"player");
   if (reason!=="disintegration" && reason!=="judge" && winner.species.name==="Demon")
@@ -106,7 +106,24 @@ async function doBotTurn(channel, fightId) {
     log.push(`🎭 **POSSESSION!** <@${fight.playerId}> attacks themselves for ${selfHit}!`);
   } else {
     let botAction="attack";
-    if (fight.botHealCooldown===0&&fight.botHp<fight.botMaxHp*personality.healThreshold) botAction="heal";
+    const botHpRatio=botC.currentHp/botC.maxHp;
+    const playerHpRatio=playerC.currentHp/playerC.maxHp;
+    const healAvailable=fight.botHealCooldown===0&&botC.currentHp<botC.maxHp*personality.healThreshold;
+    const ultReady=fight.botUltCooldown===0&&!botC.ultBuff;
+
+    if (fight.difficulty==="brutal") {
+      const speciesName=botC.species.name;
+      const hasQueuedAttackUlt=botC.ultBuff&&["nextAttack","reaperKill","buff","thunderActive"].includes(botC.ultBuff.type);
+      const useStrategicUlt=ultReady&&(
+        (speciesName==="Reaper"&&(playerHpRatio<=0.35||botHpRatio<=0.5))||
+        (speciesName==="Mechangel"&&botHpRatio<=0.68)||
+        (speciesName==="Archdemon"&&playerHpRatio>0.15)
+      );
+      if (hasQueuedAttackUlt) botAction="attack";
+      else if (useStrategicUlt) botAction="ult";
+      else if (healAvailable) botAction="heal";
+      else botAction="attack";
+    } else if (healAvailable) botAction="heal";
     else if (fight.botUltCooldown===0&&Math.random()<personality.ultChance) botAction="ult";
 
     if (botAction==="heal") {
@@ -230,9 +247,10 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
       case "medium":     winsEarned=2; if(Math.random()<0.2) rollEarned=true; break;
       case "hard":       winsEarned=3; if(Math.random()<0.5) rollEarned=true; break;
       case "impossible": winsEarned=5; if(Math.random()<0.9) rollEarned=true; break;
+      case "brutal":     winsEarned=10; rollEarned=true; break;
     }
     if (rollEarned) { const ud=_state.userSpecies.get(fight.playerId); if(ud){ ud.rolls=(ud.rolls||0)+1; _state.userSpecies.set(fight.playerId,ud); database.saveUserSpecies(fight.playerId,ud); } }
-    if (winsEarned>0) { updateFightStats(fight.playerId,true,"BOT",{opponentName:fight.botSpecies.name,opponentSpecies:fight.botSpecies,hpLeft:fight.playerHp,special:`🤖 ${difficulty} bot`}); }
+    if (winsEarned>0) { updateFightStats(fight.playerId,true,"BOT",{opponentName:fight.botSpecies.name,opponentSpecies:fight.botSpecies,hpLeft:fight.playerHp,special:`🤖 ${difficulty} bot`,leaderboardPoints:winsEarned}); }
     updateBotStats(fight.playerId,difficulty,true);
   } else {
     updateBotStats(fight.playerId,difficulty,false);

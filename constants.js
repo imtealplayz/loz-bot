@@ -1,57 +1,66 @@
 // ==================== PATCH NOTES ====================
 const patchNotes = [
   {
+    version: "4.5", date: "2026-10-09",
+    changes: [
+      "Fixed bot fight leaderboard rewards. Easy awards 1 point, Medium 2, Hard 3, and Impossible 5.",
+      "Added Brutal bot difficulty with Reaper, Mechangel, and Archdemon opponents.",
+      "Brutal bots make species-aware ultimate decisions and prioritize effective timing.",
+      "Brutal victories award 10 leaderboard points and one species roll.",
+      "Added Brutal results to `/botstats`.",
+    ],
+  },
+  {
     version: "4.4", date: "2026-10-09",
     changes: [
-      "👿 New Demon awakening — become Archdemon after 25 player-fight wins, 20 wins against Demon bots, and paying 20 rolls",
-      "🔄 Archdemon is a permanent awakening and can be restored with /switch after rerolling, subject to the 3-hour switch cooldown",
-      "📋 Consolidated patch notes into /patchnotes",
+      "Added the Demon awakening. Win 25 player fights, defeat 20 Demon bots, and spend 20 rolls to become Archdemon.",
+      "Archdemon awakening is permanent. After rerolling, use `/switch` to return to Archdemon, subject to the 3-hour cooldown.",
+      "Consolidated patch notes into `/patchnotes`.",
     ],
   },
   {
     version: "4.3", date: "2026-03-17",
     changes: [
-      "⚔️ Miss + Counter system restored — attacks can miss, defenders have a 30% chance to counter-strike",
-      "🎭 Chimera ULT overhauled — now copies opponent's species ULT directly, no waiting required",
-      "🎁 New /gift command — send up to 2 rolls per day, receive up to 4 per day",
-      "✨ Awakening Altar — /awakening is now a universal altar for all species awakenings",
-      "🌑 Reaper Quest now has a deadline — quest expires 24 March 2026 at 6PM",
-      "🔒 Cannot reroll species while in an active fight",
-      "👑 God-given species now always becomes your original species",
-      "🤖 Bot fights now show whose fight it is in the footer",
-      "⏰ Bot fights auto-resolve in player's favour if bot is stuck for 60 seconds",
-      "🐛 Fixed ULT cooldown — both players' ULT now ticks every round, spam no longer possible",
-      "🗄️ Migrated to MongoDB — persistent data, no more resets on restart",
+      "Miss and Counter system restored. Attacks can miss, and defenders have a 30% chance to counter-strike.",
+      "Chimera ultimate updated to copy the opponent's species ultimate directly.",
+      "Added the `/gift` command. Send up to 2 rolls per day and receive up to 4 per day.",
+      "Added a universal awakening altar through `/awakening`.",
+      "Reaper quest deadline set to 24 March 2026 at 6 PM.",
+      "Species rerolls are blocked during active fights.",
+      "God-given species is saved as the original species.",
+      "Bot fights identify the player in the footer.",
+      "Bot fights resolve in the player's favour if the bot is stuck for 60 seconds.",
+      "Fixed ultimate cooldown tracking so both players' cooldowns advance every round.",
+      "Migrated persistent game data to MongoDB.",
     ],
   },
   {
     version: "4.2", date: "2026-03-16",
     changes: [
-      "🐛 Fixed all 17 combat bugs — passives, burns, possession, Chimera stacks, God retribution all working",
-      "⚔️ Fight system overhauled — single embed with buttons attached, no more message spam",
-      "🔄 Choice ULTs (Angel, Ice Dragon, Earth Dragon) now swap buttons inline",
-      "📊 HP display now updates only after ALL effects fully resolve",
-      "🤖 Bot turn shows Bot is thinking on the embed during AI delay",
-      "🗄️ Migrated to MongoDB — persistent data, no more resets on bot restart",
-      "📋 /species now shows full ranked species list with roll chances",
-      "👑 /god species-add now supports up to 1,000,000 rolls",
+      "Fixed combat bugs involving passives, burns, possession, Chimera stacks, and God retribution.",
+      "Overhauled the fight display to keep combat buttons attached to a single message.",
+      "Choice-based ultimates now replace buttons in place.",
+      "Health displays update after all combat effects resolve.",
+      "Bot turns display a thinking state while the bot decides.",
+      "Added persistent MongoDB storage.",
+      "The `/species` command displays species ranks and roll chances.",
+      "The `/god species-add` command supports up to 1,000,000 rolls.",
     ],
   },
   {
     version: "4.1", date: "2026-02-27",
     changes: [
-      "🐛 Reaper quest progress no longer resets",
-      "⚙️ Constant healing bug fix in progress",
-      "⚙️ ULT turn assignment bug fix in progress",
+      "Fixed Reaper quest progress resets.",
+      "Healing and ultimate turn-assignment fixes were in progress.",
     ],
   },
   {
     version: "4.0", date: "2024-04-01",
     changes: [
-      "✨ Added Chimera species (2.2%) — copies opponent's ULT",
-      "⚖️ Complete species rarity overhaul",
-      "⚖️ Dragon chance: 2.3% → 2.0% | Angel: 3.5% → 3.0%",
-      "🐛 Fixed Chimera copying logic, turn order after ULT, counter damage instant kill",
+      "Added Chimera, which copies the opponent's ultimate.",
+      "Overhauled species rarity.",
+      "Adjusted Dragon and Angel roll chances.",
+      "Fixed Chimera copying, ultimate turn order, and counter damage edge cases.",
     ],
   },
 ];
@@ -104,6 +113,7 @@ const botSpeciesByDifficulty = {
   medium:     ["High Orc","Kijin","Orc Lord","Chimera"],
   hard:       ["Oni","Demon","Fire Dragon","Thunder Dragon"],
   impossible: ["Demon King","Demon Lord","Demi God","Ice Dragon","Earth Dragon","God"],
+  brutal:     ["Reaper","Mechangel","Archdemon"],
 };
 
 const botPersonalities = {
@@ -111,6 +121,7 @@ const botPersonalities = {
   medium:     { name:"Warrior Bot", emoji:"⚔️", color:0x808080, healThreshold:0.3, ultChance:0.3,  passFailRate:0.35, reactionDelay:1500, description:"Calculating... passing to you!" },
   hard:       { name:"Demon Bot",   emoji:"👹", color:0x0000ff, healThreshold:0.4, ultChance:0.6,  passFailRate:0.2,  reactionDelay:1000, description:"Your moves are predictable, human." },
   impossible: { name:"God Bot",     emoji:"💀", color:0xff0000, healThreshold:0.5, ultChance:0.9,  passFailRate:0.05, reactionDelay:500,  description:"I have already calculated the outcome. You lose." },
+  brutal:     { name:"Brutal Bot",  emoji:"",   color:0x8b0000, healThreshold:0.52,ultChance:0.9,  passFailRate:0,    reactionDelay:400,  description:"Apex species with tactical ultimate timing." },
 };
 
 // ==================== TYPE ADVANTAGES ====================
