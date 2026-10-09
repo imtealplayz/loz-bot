@@ -599,7 +599,7 @@ async function listAllKeys(debugUserId) {
 
     // Run independent reads concurrently so the diagnostic can reply quickly.
     const [
-      debugUserDocs, users, usersWithSpecies, usersWithRolls,
+      debugUserDocs, users, archivedUserDocs, usersWithSpecies, usersWithRolls,
       duplicateStats, userIndexes, allUserIds,
       leaderboard, fightLeaderboard, fightStats, botStats,
       dailyClaims, quests, duelChannels,
@@ -610,7 +610,7 @@ async function listAllKeys(debugUserId) {
       User.countDocuments({ archivedForRepair: { $ne:true } }),
       User.countDocuments({ archivedForRepair:true }),
       User.countDocuments({ archivedForRepair: { $ne:true }, "species.name": { $exists:true, $ne:null } }),
-      User.countDocuments({ rolls: { $gt:0 } }),
+      User.countDocuments({ archivedForRepair: { $ne:true }, rolls: { $gt:0 } }),
       User.aggregate([
         { $match: { archivedForRepair: { $ne:true } } },
         { $group: { _id:"$userId", count:{ $sum:1 } } },
