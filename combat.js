@@ -299,60 +299,77 @@ function inlineCode(value) { return INLINE + value + INLINE; }
 function formatFightHealth(current, max) {
   const safeMax = Math.max(1, Number(max) || 1);
   const safeCurrent = Math.max(0, Math.min(safeMax, Number(current) || 0));
-  const filled = Math.round((safeCurrent / safeMax) * 10);
-  const bar = "█".repeat(filled) + "░".repeat(10 - filled);
-  return "HP " + inlineCode(safeCurrent + "/" + safeMax) + "  " + bar;
+  const ratio = safeCurrent / safeMax;
+  const filled = Math.round(ratio * 12);
+  const bar = "▰".repeat(filled) + "▱".repeat(12 - filled);
+  const percent = Math.round(ratio * 100);
+  const state = ratio <= 0.2 ? "CRITICAL" : ratio <= 0.5 ? "WOUNDED" : ratio >= 0.8 ? "HEALTHY" : "STABLE";
+  return bar + "  **" + percent + "%**  " + inlineCode(safeCurrent + "/" + safeMax) + "  ·  " + state;
 }
 
 function cleanFightLog(logLines = []) {
   return logLines
     .flatMap(line => String(line ?? "").split("\n"))
     .map(line => line
-      .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "")
-      .replace(/\uFE0F|\u200D/g, "")
-      .replace(/\s*[—–]\s*/g, ": ")
-      .replace(/\s{2,}/g, " ")
+      .replace(/\\s*[—–]\\s*/g, ": ")
+      .replace(/\\s{2,}/g, " ")
       .trim()
-      .replace(/\b(for|deals?|heals?|healed|damage|burn|curse|HP:?)\s+(\d+(?:\.\d+)?(?:\/\d+)?%?)/gi, (match, label, amount) => label + " " + inlineCode(amount))
-      .replace(/\bRound\s+(\d+)\b/gi, (match, round) => "Round " + inlineCode(round)))
-    .filter(Boolean);
+      .replace(/\\b(for|deals?|heals?|healed|damage|burn|curse|HP:?)\\s+(\\d+(?:\\.\\d+)?(?:\\/\\d+)?%?)/gi, (match, label, amount) => label + " " + inlineCode(amount))
+      .replace(/\\bRound\\s+(\\d+)\\b/gi, (match, round) => "Round " + inlineCode(round)))
+    .filter(Boolean)
+    .map(line => {
+      if (/ULT|ULTIMATE|DIVINE|EXECUTION|REAPER|MECHANGEL|ARCHDEMON|CRITICAL|COUNTER|MASSIVE BLOW|SMITE|PRAYER/i.test(line)) return "✦ " + line;
+      if (/MISS|FAILED|CANNOT|CAN'T|COOLDOWN|BLOCKED|STUNNED|FORFEIT/i.test(line)) return "▸ " + line;
+      if (/heal|healed|prayer|regeneration/i.test(line)) return "＋ " + line;
+      if (/damage|attack|strike|burn|curse|hit|deals/i.test(line)) return "⚔ " + line;
+      return "› " + line;
+    });
 }
 
 function getBuffLine(p) {
   const parts = [];
-  if (p.ultBuff)        parts.push("Ultimate: " + inlineCode(p.ultBuff.type));
-  if (p.burn > 0)       parts.push("Burn: " + inlineCode(p.burn + " × " + p.burnRounds));
-  if (p.curse > 0)      parts.push("Curse: " + inlineCode(p.curse));
-  if (p.blockHeal)      parts.push("Healing blocked");
-  if (p.possession)     parts.push("Possessed");
-  if (p.stunnedTurns>0) parts.push("Stunned: " + inlineCode(p.stunnedTurns));
-  return parts.length ? parts.join(" · ") : "";
+  if (p.ultBuff)        parts.push("✦ Ultimate " + inlineCode(p.ultBuff.type));
+  if (p.burn > 0)       parts.push("🔥 Burn " + inlineCode(p.burn + " × " + p.burnRounds));
+  if (p.curse > 0)      parts.push("☠ Curse " + inlineCode(p.curse));
+  if (p.blockHeal)      parts.push("⛔ Healing blocked");
+  if (p.possession)     parts.push("🎭 Possessed");
+  if (p.stunnedTurns>0) parts.push("⚡ Stunned " + inlineCode(p.stunnedTurns));
+  return parts.length ? parts.join("  ·  ") : "No active effects";
+}
+
+function speciesLabel(species) {
+  return ((species && species.emoji) ? species.emoji + " " : "⚔ ") + (species?.name || "Unknown");
 }
 
 function buildFightEmbed(fight, logLines = [], phase = "playing") {
   const p1 = fight.player1, p2 = fight.player2;
-  const turnPlayer = fight.currentTurn === fight.player1Id ? p1 : p2;
+  const p1Turn = fight.currentTurn === fight.player1Id;
+  const p2Turn = fight.currentTurn === fight.player2Id;
+  const turnPlayer = p1Turn ? p1 : p2;
   const color = phase === "ended" ? 0x2ecc71 : (turnPlayer.species.color || 0xff4500);
-  const p1Buffs = getBuffLine(p1), p2Buffs = getBuffLine(p2);
   const logs = cleanFightLog(logLines);
+  const p1Name = p1.displayName || ("Player " + (p1Turn ? "1" : "1"));
+  const p2Name = p2.displayName || "Player 2";
   return new ContainerBuilder()
     .setAccentColor(color)
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent("## LOZ Fight · Round " + inlineCode(fight.round)))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent("## ⚔️ LOZ ARENA  ·  ROUND " + inlineCode(fight.round)))
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      "**" + p1.species.name + "**\n" + formatFightHealth(p1.currentHp, p1.maxHp) + (p1Buffs ? "\n" + p1Buffs : "")
+      (p1Turn ? "🟢 **YOUR SIDE**  ·  " : "🔹 **CHALLENGER**  ·  ") + "**" + p1Name + "**\n" +
+      "**" + speciesLabel(p1.species) + "**\n" + formatFightHealth(p1.currentHp, p1.maxHp) + "\n" + getBuffLine(p1)
     ))
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      "**" + p2.species.name + "**\n" + formatFightHealth(p2.currentHp, p2.maxHp) + (p2Buffs ? "\n" + p2Buffs : "")
+      (p2Turn ? "🟢 **YOUR SIDE**  ·  " : "🔸 **CHALLENGER**  ·  ") + "**" + p2Name + "**\n" +
+      "**" + speciesLabel(p2.species) + "**\n" + formatFightHealth(p2.currentHp, p2.maxHp) + "\n" + getBuffLine(p2)
     ))
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      "**Recent actions**\n" + (logs.length ? logs.join("\n") : "Fight started.")
+      "### 📜 Combat log\n" + (logs.length ? logs.join("\n") : "› The battle begins. Make your move.")
     ))
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      "Ultimate cooldowns: " + p1.species.name + " " + inlineCode(p1.ultCooldown) + " · " + p2.species.name + " " + inlineCode(p2.ultCooldown)
+      "### ✦ Ultimate status\n" + speciesLabel(p1.species) + " " + inlineCode(p1.ultCooldown) + " rounds  ·  " + speciesLabel(p2.species) + " " + inlineCode(p2.ultCooldown) + " rounds"
     ));
 }
 
@@ -384,30 +401,34 @@ function buildBotFightEmbed(fight, logLines = [], phase = "playing") {
   const { botPersonalities } = require("./constants.js");
   const personality = botPersonalities[fight.difficulty];
   const color = phase === "ended" ? 0x2ecc71 : personality.color;
-  const pBuf = [], bBuf = [];
-  if (fight.playerUltBuff)       pBuf.push("Ultimate: " + inlineCode(fight.playerUltBuff.type));
-  if ((fight.playerBurn || 0)>0) pBuf.push("Burn: " + inlineCode(fight.playerBurn + " × " + fight.playerBurnRounds));
-  if (fight.botUltBuff)          bBuf.push("Ultimate: " + inlineCode(fight.botUltBuff.type));
-  if ((fight.botBurn || 0)>0)    bBuf.push("Burn: " + inlineCode(fight.botBurn + " × " + fight.botBurnRounds));
+  const playerEffects = [];
+  const botEffects = [];
+  if (fight.playerUltBuff) playerEffects.push("✦ Ultimate " + inlineCode(fight.playerUltBuff.type));
+  if ((fight.playerBurn || 0) > 0) playerEffects.push("🔥 Burn " + inlineCode(fight.playerBurn + " × " + fight.playerBurnRounds));
+  if (fight.botUltBuff) botEffects.push("✦ Ultimate " + inlineCode(fight.botUltBuff.type));
+  if ((fight.botBurn || 0) > 0) botEffects.push("🔥 Burn " + inlineCode(fight.botBurn + " × " + fight.botBurnRounds));
   const logs = cleanFightLog(logLines);
+  const playerName = fight.playerName || "You";
   return new ContainerBuilder()
     .setAccentColor(color)
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent("## Bot Fight · " + personality.name + " · Round " + inlineCode(fight.round)))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent("## ⚔️ LOZ ARENA  ·  " + personality.emoji + " " + personality.name.toUpperCase() + "  ·  ROUND " + inlineCode(fight.round)))
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      "**" + fight.playerSpecies.name + "**\n" + formatFightHealth(fight.playerHp, fight.playerMaxHp) + (pBuf.length ? "\n" + pBuf.join(" · ") : "")
+      "🟢 **YOUR SIDE**  ·  **" + playerName + "**\n" +
+      "**" + speciesLabel(fight.playerSpecies) + "**\n" + formatFightHealth(fight.playerHp, fight.playerMaxHp) + "\n" + (playerEffects.length ? playerEffects.join("  ·  ") : "No active effects")
     ))
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      "**" + fight.botSpecies.name + "**\n" + formatFightHealth(fight.botHp, fight.botMaxHp) + (bBuf.length ? "\n" + bBuf.join(" · ") : "")
+      "🔻 **OPPONENT**  ·  **LOZ**\n" +
+      "**" + speciesLabel(fight.botSpecies) + "**\n" + formatFightHealth(fight.botHp, fight.botMaxHp) + "\n" + (botEffects.length ? botEffects.join("  ·  ") : "No active effects")
     ))
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      "**Recent actions**\n" + (logs.length ? logs.join("\n") : "Fight started.")
+      "### 📜 Combat log\n" + (logs.length ? logs.join("\n") : "› The battle begins. Make your move.")
     ))
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      "Cooldowns: Ultimate " + inlineCode(fight.playerUltCooldown) + " · Heal " + inlineCode(fight.playerHealCooldown)
+      "### ✦ Your cooldowns\nUltimate " + inlineCode(fight.playerUltCooldown) + "  ·  Heal " + inlineCode(fight.playerHealCooldown)
     ));
 }
 
@@ -438,12 +459,12 @@ function buildBotFightRow(fightId, fight, phase = "playing") {
 function buildFightMessagePayload(fight, logLines = [], phase = "playing", rowPhase = phase) {
   const turnId = fight.currentTurn;
   const status = phase === "bot_thinking"
-    ? "**LOZ is thinking...**"
+    ? "**🤖 LOZ is thinking...**"
     : phase === "choice"
-      ? "**<@" + turnId + ">, choose an ultimate option.**"
+      ? "**✦ <@" + turnId + ">, choose your ultimate.**"
       : phase === "ended"
         ? "**Fight over**"
-        : "**<@" + turnId + ">'s turn**";
+        : "**⚔️ <@" + turnId + ">'s turn**";
   const turnPlayer = turnId === fight.player1Id ? fight.player1 : fight.player2;
   return {
     flags: MessageFlags.IsComponentsV2,
@@ -458,12 +479,12 @@ function buildFightMessagePayload(fight, logLines = [], phase = "playing", rowPh
 
 function buildBotFightMessagePayload(fight, logLines = [], phase = "playing", rowPhase = phase) {
   const status = phase === "bot_thinking"
-    ? "**LOZ is thinking...**"
+    ? "**🤖 LOZ is thinking...**"
     : phase === "choice"
-      ? "**<@" + fight.playerId + ">, choose an ultimate option.**"
+      ? "**✦ <@" + fight.playerId + ">, choose your ultimate.**"
       : phase === "ended"
         ? "**Fight over**"
-        : "**Your turn, <@" + fight.playerId + ">**";
+        : "**⚔️ Your turn, <@" + fight.playerId + ">**";
   const components = [
     new TextDisplayBuilder().setContent(status),
     buildBotFightEmbed(fight, logLines, phase),
