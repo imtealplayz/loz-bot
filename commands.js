@@ -1470,6 +1470,7 @@ const commands = [
     .addSubcommand(s=>s.setName("status").setDescription("Check your update DM preference")),
   new SlashCommandBuilder().setName("broadcast").setDescription("DM the major update to users who opted in").setDefaultMemberPermissions(0n),
   new SlashCommandBuilder().setName("broadtest").setDescription("Send the update DM preview to yourself").setDefaultMemberPermissions(0n),
+  new SlashCommandBuilder().setName("servers").setDescription("List LOZ servers with invite links").setDefaultMemberPermissions(0n),
   new SlashCommandBuilder().setName("gift").setDescription("Gift species rolls to another player")
     .addUserOption(o=>o.setName("user").setDescription("Player to gift rolls to").setRequired(true))
     .addIntegerOption(o=>o.setName("amount").setDescription("Number of rolls to gift").setRequired(true).setMinValue(1).setMaxValue(2)),
