@@ -167,7 +167,7 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
   if (reason === "forfeit") desc += "Opponent forfeited.\n";
   if (reason === "counter") desc += "Opponent was defeated by a counter-strike.\n";
   desc += "⚔️ Leaderboard: +" + winPoints + "\n";
-  if (rollEarned) desc += "🎲 Species Rolls: +1\n";
+  if (rollEarned) desc += "<:reroll_dice:1558042108965822515> Species Rolls: +1\n";
   const resultPayload = buildFightResultPayload("<@" + winnerId + "> wins the fight", desc, 0x2ecc71, []);
   const msg = _state.fightMessages.get(fightId);
   if (msg) await msg.edit({ content: null, embeds: null, ...resultPayload }).catch(() => {});
@@ -376,7 +376,7 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
   if (reason === "counter") desc += "LOZ was defeated by your counter-strike.\n";
   if (won) {
     desc += "⚔️ Leaderboard: +" + winsEarned + "\n";
-    if (rollEarned) desc += "🎲 Species Rolls: +1\n";
+    if (rollEarned) desc += "<:reroll_dice:1558042108965822515> Species Rolls: +1\n";
   } else {
     desc += "No rewards earned.";
   }
