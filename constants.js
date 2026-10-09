@@ -114,6 +114,7 @@ const botSpeciesByDifficulty = {
   medium:     ["High Orc","Kijin","Orc Lord","Chimera"],
   hard:       ["Oni","Demon","Fire Dragon","Thunder Dragon"],
   impossible: ["Demon King","Demon Lord","Demi God","Ice Dragon","Earth Dragon","God"],
+  brutal:     ["Reaper","Mechangel","Archdemon"],
 };
 
 const botPersonalities = {
@@ -121,6 +122,7 @@ const botPersonalities = {
   medium:     { name:"Warrior Bot", emoji:"⚔️", color:0x808080, healThreshold:0.3, ultChance:0.3,  passFailRate:0.35, reactionDelay:1500, description:"Calculating... passing to you!" },
   hard:       { name:"Demon Bot",   emoji:"👹", color:0x0000ff, healThreshold:0.4, ultChance:0.6,  passFailRate:0.2,  reactionDelay:1000, description:"Your moves are predictable, human." },
   impossible: { name:"God Bot",     emoji:"💀", color:0xff0000, healThreshold:0.5, ultChance:0.9,  passFailRate:0.05, reactionDelay:500,  description:"I have already calculated the outcome. You lose." },
+  brutal:     { name:"Brutal Bot",  emoji:"",   color:0x8b0000, healThreshold:0.52,ultChance:0.9,  passFailRate:0,    reactionDelay:400,  description:"Apex species with tactical ultimate timing." },
 };
 
 // ==================== TYPE ADVANTAGES ====================
