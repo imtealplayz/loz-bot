@@ -295,7 +295,7 @@ async function handleCommand(interaction) {
     // ── No awakening available for this species ─────────────────
     return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x2d2d2d).setTitle("✨ AWAKENING ALTAR")
       .setDescription(`*You approach the altar, but it remains silent.*\n\n${userData.species?.emoji||"👤"} **${sp||"Unknown"}** does not yet have an awakening path.\n\nAwakenings are rare transformations granted to species who have proven their worth through relentless battle.\n\n*Check back as new awakenings are discovered.*`)
-      .setFooter({text:"Currently: Cyborg → Mechangel"})],flags:64});
+      .setFooter({text:"Currently: Cyborg → Mechangel | Demon → Archdemon"})],flags:64});
   }
 
   // ── FIGHT ─────────────────────────────────────────────────────
