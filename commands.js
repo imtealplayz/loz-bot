@@ -628,8 +628,10 @@ async function handleCommand(interaction) {
     if (sub==="debug-db") {
       try {
         const counts = await database.listAllKeys();
-        const lines = Object.entries(counts).map(([k,v])=>`• **${k}**: ${v} records`).join("\n");
-        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xffd700).setTitle("📊 MongoDB Collections").setDescription(lines||"No data found.")],flags:64});
+        const databaseName = counts.databaseName || "unknown";
+        const recordCounts = Object.entries(counts).filter(([key])=>key!=="databaseName");
+        const lines = recordCounts.map(([k,v])=>`• **${k}**: ${v} records`).join("\n");
+        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xffd700).setTitle("📊 MongoDB Persistence Check").setDescription(`**Connected database:** \`${databaseName}\`\n\n${lines||"No data found."}\n\nCompare **users**, **usersWithSpecies**, and **usersWithRolls** to check whether saved species and rolls exist in MongoDB.`)],flags:64});
       } catch(e) { return safeReply(interaction,{embeds:[createErrorEmbed(`DB error: ${e.message}`)],flags:64}); }
     }
   }
