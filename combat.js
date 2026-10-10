@@ -70,13 +70,6 @@ function calculateDamage(attacker, defender) {
     recordSlimeLordMiss(attacker, lines);
     return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
   }
-  // Earth Dragon Terra Strike: nullify the next incoming hit while preserving its queued 1.2× attack.
-  if (defender.ultBuff?.invincible === true) {
-    defender.ultBuff.invincible = false;
-    const lines=["🌍 **TERRA STRIKE!** Invincible against this hit!"];
-    recordSlimeLordMiss(attacker, lines);
-    return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
-  }
   // Bot counter
   if (defender.species.name === "Bot" && Math.random() < 0.1) {
     const ctr = Math.floor(Math.random()*(defender.species.atkMax-defender.species.atkMin+1))+defender.species.atkMin;
