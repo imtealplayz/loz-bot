@@ -115,6 +115,10 @@ function calculateDamage(attacker, defender) {
   }
   if (attacker.species.name==="Archdemon") { multiplier*=1.15; finalDamage+=5; specialLines.push("👿 Lord of Darkness +15% +5"); }
   if (attacker.species.name==="Orc Lord") { const d=Math.floor(defender.maxHp*0.075); finalDamage+=d; specialLines.push(`👑 Despair +${d}`); }
+  if (attacker.species.name==="Cyborg") {
+    attacker.attackCounter=(attacker.attackCounter||0)+1;
+    if (attacker.attackCounter%3===0) { multiplier*=1.3; specialLines.push("🤖 Overclock ×1.3"); }
+  }
   if (attacker.species.name==="Mechangel") {
     attacker.attackCounter=(attacker.attackCounter||0)+1;
     if (attacker.attackCounter%2===0) { multiplier*=1.4; specialLines.push("⚡ Quantum Processing ×1.4"); }
