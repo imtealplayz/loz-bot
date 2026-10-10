@@ -195,11 +195,13 @@ Users can use LOZ commands here again.`);
       const { updateFightStats } = require("./helpers.js");
       updateFightStats(message.author.id, true, opponentId, { opponentName:activeFight.player1Id===opponentId?activeFight.player1.species.name:activeFight.player2.species.name, hpLeft:999, special:"💀 disintegration" });
       updateFightStats(opponentId, false, message.author.id, { opponentName:activeFight.player1Id===message.author.id?activeFight.player1.species.name:activeFight.player2.species.name, hpLeft:0, special:"💀 disintegrated" });
-      state.fightCooldowns.set(message.author.id, Date.now()+60000);
-      state.fightCooldowns.set(opponentId, Date.now()+60000);
+      state.fightCooldowns.set(message.author.id, Date.now()+30000);
+      state.fightCooldowns.set(opponentId, Date.now()+30000);
       const fightMsg = state.fightMessages.get(fightId);
       if (fightMsg) await fightMsg.edit({ content:"💀 Fight ended by divine intervention.", components:[] }).catch(() => {});
       state.activeFights.delete(fightId);
+      state.activeRequests.delete(message.author.id);
+      state.activeRequests.delete(opponentId);
       state.fightMessages.delete(fightId);
     }
 
