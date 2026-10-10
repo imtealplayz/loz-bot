@@ -1,6 +1,6 @@
 {
   "name": "loz-bot",
-  "version": "4.2.0",
+  "version": "5.0.0",
   "description": "LOZ — Legends of the Rift Discord Battle Bot",
   "main": "index.js",
   "scripts": {
@@ -14,7 +14,11 @@
   "engines": {
     "node": ">=18.0.0"
   },
-  "keywords": ["discord", "bot", "rpg"],
+  "keywords": [
+    "discord",
+    "bot",
+    "rpg"
+  ],
   "author": "LOZ Dev",
   "license": "ISC"
 }
