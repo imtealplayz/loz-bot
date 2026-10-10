@@ -1691,7 +1691,7 @@ async function handleButton(interaction) {
         if (choice==="attack") { fight.playerUltBuff={type:"nextAttack",multiplier:1.9}; log.push("❄️ **GLACIAL SPIKE — ATTACK!** 1.9×!"); }
         else { fight.playerUltBuff={type:"iceHealBoost"}; log.push("❄️ **GLACIAL SPIKE — HEAL!** Next heal +50%!"); }
       } else if (choiceType==="earth") {
-        if (choice==="attack") { fight.playerUltBuff={type:"nextAttack",multiplier:1.2,invincible:true}; log.push("🌍 **TERRA SHIELD — STRIKE!** 1.2× + invincible!"); }
+        if (choice==="attack") { fight.playerUltBuff={type:"nextAttack",multiplier:1.2}; log.push("🌍 **TERRA STRIKE!** 1.2× next attack!"); }
         else { fight.playerUltBuff={type:"earthDamageReduction"}; log.push("🌍 **TERRA SHIELD — DEFENSE!** −60% dmg!"); }
       }
       fight.playerUltCooldown=fight.playerSpecies.ultCooldown; fight.log=log.slice(-3);
@@ -1841,7 +1841,7 @@ async function handleButton(interaction) {
         if (choice==="attack") { player.ultBuff={type:"nextAttack",multiplier:1.9}; log.push(`❄️ <@${user.id}> chooses **GLACIAL STRIKE** — 1.9×!`); }
         else { player.ultBuff={type:"iceHealBoost"}; log.push(`❄️ <@${user.id}> chooses **GLACIAL HEAL** — next heal +50%!`); }
       } else if (choiceType==="earth") {
-        if (choice==="attack") { player.ultBuff={type:"nextAttack",multiplier:1.2,invincible:true}; log.push(`🌍 <@${user.id}> chooses **TERRA STRIKE** — 1.2× + invincible!`); }
+        if (choice==="attack") { player.ultBuff={type:"nextAttack",multiplier:1.2}; log.push(`🌍 <@${user.id}> chooses **TERRA STRIKE** — 1.2× next attack!`); }
         else { player.ultBuff={type:"earthDamageReduction"}; log.push(`🌍 <@${user.id}> chooses **TERRA SHIELD** — −60% dmg!`); }
       }
       player.ultCooldown=player.species.ultCooldown; fight.currentTurn=opponent.id; fight.round++;
