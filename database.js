@@ -61,8 +61,12 @@ const userSchema = new mongoose.Schema({
 // Explicit opt-in for major-update DMs; separate collection avoids modifying player records.
 const notificationPreferenceSchema = new mongoose.Schema({
   userId:        { type:String, required:true, unique:true },
-  broadcastOptIn:{ type:Boolean, default:false },
-  updatedAt:     { type:Date, default:Date.now },
+  broadcastOptIn:  { type:Boolean, default:false },
+  promptedOnce:    { type:Boolean, default:false },
+  promptSuppressed:{ type:Boolean, default:false },
+  promptCount:     { type:Number, default:0 },
+  lastPromptedAt:  { type:Date, default:null },
+  updatedAt:       { type:Date, default:Date.now },
 }, { minimize:false });
 
 const leaderboardSchema = new mongoose.Schema({
@@ -232,9 +236,13 @@ async function saveUserSpeciesFields(userId, species, originalSpecies) {
 async function setBroadcastOptIn(userId, enabled) {
   try {
     if (!await connect()) return false;
+    const changes = { userId, broadcastOptIn:Boolean(enabled), updatedAt:new Date() };
+    // Once a user subscribes, do not show them future subscription prompts,
+    // even if they later opt out through /updates unsubscribe.
+    if (enabled) changes.promptSuppressed = true;
     await NotificationPreference.findOneAndUpdate(
       { userId },
-      { $set: { userId, broadcastOptIn:Boolean(enabled), updatedAt:new Date() } },
+      { $set:changes },
       { upsert:true, new:true, runValidators:true }
     );
     return true;
@@ -252,6 +260,83 @@ async function getBroadcastOptIn(userId) {
   } catch(e) {
     console.error("❌ Broadcast preference read error:", e.message);
     return null;
+  }
+}
+
+
+async function claimUpdateSubscriptionPrompt(userId, randomValue = Math.random()) {
+  try {
+    if (!await connect()) return false;
+    const now = new Date();
+    const preference = await NotificationPreference.findOne({ userId }).lean();
+
+    if (preference?.broadcastOptIn || preference?.promptSuppressed) return false;
+
+    if (!preference) {
+      try {
+        await NotificationPreference.create({
+          userId,
+          broadcastOptIn:false,
+          promptedOnce:true,
+          promptSuppressed:false,
+          promptCount:1,
+          lastPromptedAt:now,
+          updatedAt:now,
+        });
+        return true;
+      } catch(e) {
+        // Another command may have won the first-prompt race.
+        if (e?.code === 11000) return false;
+        throw e;
+      }
+    }
+
+    if (!preference.promptedOnce) {
+      const result = await NotificationPreference.updateOne(
+        {
+          userId,
+          broadcastOptIn:{ $ne:true },
+          promptSuppressed:{ $ne:true },
+          promptedOnce:{ $ne:true },
+        },
+        { $set:{ promptedOnce:true, lastPromptedAt:now, updatedAt:now }, $inc:{ promptCount:1 } }
+      );
+      return result.modifiedCount > 0;
+    }
+
+    // Avoid pestering a user with multiple prompts in one day.
+    const lastPrompt = preference.lastPromptedAt ? new Date(preference.lastPromptedAt).getTime() : 0;
+    if (lastPrompt && now.getTime() - lastPrompt < 24 * 60 * 60 * 1000) return false;
+    if (randomValue >= 0.12) return false;
+
+    const result = await NotificationPreference.updateOne(
+      {
+        userId,
+        broadcastOptIn:{ $ne:true },
+        promptSuppressed:{ $ne:true },
+        promptedOnce:true,
+        lastPromptedAt:preference.lastPromptedAt ?? null,
+      },
+      { $set:{ lastPromptedAt:now, updatedAt:now }, $inc:{ promptCount:1 } }
+    );
+    return result.modifiedCount > 0;
+  } catch(e) {
+    console.error("❌ Update subscription prompt check error:", e.message);
+    return false;
+  }
+}
+
+async function dismissUpdateSubscriptionPrompt(userId) {
+  try {
+    if (!await connect()) return false;
+    const result = await NotificationPreference.updateOne(
+      { userId, broadcastOptIn:{ $ne:true }, promptSuppressed:{ $ne:true } },
+      { $set:{ promptedOnce:true, updatedAt:new Date() } }
+    );
+    return result.matchedCount > 0;
+  } catch(e) {
+    console.error("❌ Update subscription prompt dismissal error:", e.message);
+    return false;
   }
 }
 
@@ -806,4 +891,5 @@ module.exports = {
   loadAllData, loadAllQuestProgress, loadDuelChannel,
   listAllKeys, deleteUser,
   setBroadcastOptIn, getBroadcastOptIn, getBroadcastSubscribers,
+  claimUpdateSubscriptionPrompt, dismissUpdateSubscriptionPrompt,
 };
