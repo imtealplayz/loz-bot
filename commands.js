@@ -34,9 +34,8 @@ function buildStyledCardPayload(title, color, sections = [], ephemeral = false) 
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${title}`));
   for (const section of sections) {
     container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      section.heading ? `### ${section.heading}\n${section.body}` : section.body
-    ));
+    const sectionContent = section.heading ? `### ${section.heading}\n${section.body}` : section.body;
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(String(sectionContent).slice(0, 3900)));
   }
   return {
     components:[container],
@@ -50,7 +49,7 @@ function buildSpeciesRollAnnouncement(userName, species, rollsRemaining, isResul
     ? `${species.emoji} ${species.name} — Species Roll Result`
     : `<:reroll_dice:1558042108965822515> Species Roll`;
   const sections = isResult ? [
-    { heading:"Roll Result", body:`**${userName}** rolled ${species.emoji} **${species.name}**.\n\n**Roll chance:** ${species.chance || "Special unlock"}` },
+    { heading:"Roll Result", body:`**${userName}** rolled ${species.emoji} **${species.name}**.\n\n**Roll chance:** ${species.name.endsWith("Dragon") ? "2.0% (random element)" : (species.chance || "Special unlock")}` },
     { heading:"Species Stats", body:`❤️ **HP:** ${species.hp}\n⚔️ **ATK:** ${species.atkMin}–${species.atkMax}\n💚 **HEAL:** ${species.healMin}–${species.healMax}\n✨ **ULT cooldown:** ${species.ultCooldown || "—"} rounds` },
     { heading:"Remaining Rolls", body:`<:reroll_dice:1558042108965822515> **${rollsRemaining}**` },
   ] : [
