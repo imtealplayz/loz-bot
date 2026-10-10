@@ -98,7 +98,7 @@ const GUIDE_PAGES = [
   },
   {
     title:"How Combat Works",
-    body:"Challenge another player with `/fight user:<player>`, or practice against LOZ with `/fightbot difficulty:<difficulty>`. Player challenges need the other player to accept before the battle starts.\n\nOn your turn:\n\n⚔️ **Attack** deals damage and can trigger combat effects.\n💚 **Heal** restores HP when it is available; it is disabled when you're above 80% HP or its cooldown is active.\n✨ **Ultimate** uses your species' special ability when its cooldown reaches zero. Some ultimates ask you to pick an effect.\n🏳️ **Forfeit** gives up the battle.\n\nWatch your HP, cooldowns, passives, and opponent's effects. An ultimate used at the right moment can matter more than simply attacking every turn.",
+    body:"Challenge another player with `/fight player user:<player>`, or practice against LOZ with `/fight bot difficulty:<difficulty>`. Player challenges need the other player to accept before the battle starts.\n\nOn your turn:\n\n⚔️ **Attack** deals damage and can trigger combat effects.\n💚 **Heal** restores HP when it is available; it is disabled when you're above 80% HP or its cooldown is active.\n✨ **Ultimate** uses your species' special ability when its cooldown reaches zero. Some ultimates ask you to pick an effect.\n🏳️ **Forfeit** gives up the battle.\n\nWatch your HP, cooldowns, passives, and opponent's effects. An ultimate used at the right moment can matter more than simply attacking every turn.",
   },
   {
     title:"Practice, Rewards, and Rankings",
@@ -110,7 +110,7 @@ const GUIDE_PAGES = [
   },
   {
     title:"Your LOZ Toolkit",
-    body:"Here are a few useful commands to keep close:\n\n• `/daily` — collect your daily roll.\n• `/species-roll` — reroll your species.\n• `/profile` — inspect your player card.\n• `/species` — learn species stats and abilities.\n• `/fight` and `/fightbot` — battle players or bots.\n• `/awakening` and `/quest view` — track special progression.\n• `/gift` — send rolls to another player within the limits.\n• `/patchnotes` — read the latest changes.\n• `/guide` — revisit this tutorial whenever you need a refresher.\n\nYou don't need to memorize everything now. Try a command, read the result panel, and use `/help` whenever you need a reminder.",
+    body:"Here are a few useful commands to keep close:\n\n• `/daily` — collect your daily roll.\n• `/species-roll` — reroll your species.\n• `/profile` — inspect your player card.\n• `/species` — learn species stats and abilities.\n• `/fight` and `/fight bot` — battle players or bots.\n• `/awakening` and `/quest view` — track special progression.\n• `/gift` — send rolls to another player within the limits.\n• `/patchnotes` — read the latest changes.\n• `/guide` — revisit this tutorial whenever you need a refresher.\n\nYou don't need to memorize everything now. Try a command, read the result panel, and use `/help` whenever you need a reminder.",
   },
   {
     title:"Ready to Enter the Rift?",
@@ -461,16 +461,14 @@ async function handleCommand(interaction) {
 
   // ── HELP ──────────────────────────────────────────────────────
   if (commandName === "help") {
-    const embed = new EmbedBuilder().setColor(0x0891b2).setTitle("📖 LOZ Commands").setDescription("Complete list of commands")
-      .addFields(
-        {name:"<:reroll_dice:1558042108965822515> Species",  value:"`/species-roll` `/species` `/switch` `/daily`",inline:false},
-        {name:"⚔️ Combat",   value:"`/fight @user` `/fightbot`",inline:false},
-        {name:"📊 Stats",    value:"`/fightstats` `/botstats` `/history` `/lb` `/fights`",inline:false},
-        {name:"🌑 Quests",   value:"`/quest view` `/quest claim` `/awakening`",inline:false},
-        {name:"📋 Info",     value:"`/patchnotes` `/guide` `/profile` `/updates`",inline:false},
-      ).setFooter({text:"Use /guide for a full tutorial"})
-        .addFields({name:"💬 Need Help?",value:"Want any help or have any issues? Join the [Support Server](https://discord.gg/TKBYpjqnPC)!",inline:false});
-    return safeReply(interaction,{embeds:[embed]});
+    return safeReply(interaction, buildStyledCardPayload("LOZ Command Guide", 0x0891b2, [
+      { heading:"Getting Started", body:"/guide — Learn the game and claim your one-time tutorial roll.\n/profile — View your species, resources, and progress." },
+      { heading:"Species & Rewards", body:"/species-roll — Roll for a species.\n/species — Browse species, stats, passives, and ultimates.\n/daily — Claim your daily roll.\n/switch and /items use — Manage species and eligible items." },
+      { heading:"Combat", body:"/fight player user:<player> — Challenge another player.\n/fight bot difficulty:<difficulty> — Battle an LOZ bot.\n/togglerequests — Control whether you receive player challenges." },
+      { heading:"Records & Rankings", body:"/fightstats, /history, and /botstats — Review fight records.\n/fights and /lb — View leaderboards." },
+      { heading:"Quests & Progression", body:"/quest view, /quest claim, and /awakening — Track quests and awakenings." },
+      { heading:"Updates & Support", body:"/patchnotes — Read recent changes.\n/updates — Manage update DMs.\nNeed help or found a problem? Join the [LOZ Support Server](https://discord.gg/TKBYpjqnPC)." },
+    ]));
   }
 
   // ── GUIDE ─────────────────────────────────────────────────────
@@ -861,10 +859,10 @@ async function handleCommand(interaction) {
   }
 
   // ── FIGHT ─────────────────────────────────────────────────────
-  if (commandName === "fight") {
+  if (commandName === "fight" && options.getSubcommand() === "player") {
     const target=options.getUser("user");
     if (target.id===user.id) return safeReply(interaction,{embeds:[createErrorEmbed("You cannot fight yourself!")],flags:64});
-    if (target.bot) return safeReply(interaction,{embeds:[createErrorEmbed("Use `/fightbot` to fight bots!")],flags:64});
+    if (target.bot) return safeReply(interaction,{embeds:[createErrorEmbed("Use `/fight bot` to fight bots!")],flags:64});
     if (!canFight(user.id)) { const cd=_state.fightCooldowns.get(user.id); return safeReply(interaction,{embeds:[createErrorEmbed(cd&&cd>Date.now()?`Wait **${((cd-Date.now())/1000).toFixed(1)}s**!`:"Already in a game!")],flags:64}); }
     if (!canFight(target.id)) return safeReply(interaction,{embeds:[createErrorEmbed("That user is already in a fight!")],flags:64});
     const cd=_state.userSpecies.get(user.id), od=_state.userSpecies.get(target.id);
@@ -889,7 +887,7 @@ async function handleCommand(interaction) {
   }
 
   // ── FIGHTBOT ──────────────────────────────────────────────────
-  if (commandName === "fightbot") {
+  if (commandName === "fight" && options.getSubcommand() === "bot") {
     const difficulty=options.getString("difficulty");
     if (isPlayerInFight(user.id)||_state.activeBotFights.has(user.id)) return safeReply(interaction,{embeds:[createErrorEmbed("Already in a fight!")],flags:64});
     const playerData=_state.userSpecies.get(user.id);
@@ -1001,7 +999,7 @@ async function handleCommand(interaction) {
   if (commandName === "botstats") {
     const target=options.getUser("user")||user;
     const stats=_state.botStats.get(target.id);
-    if (!stats) return safeReply(interaction,buildStyledCardPayload(`🤖 ${target.displayName}'s Bot Battle Stats`,0x808080,[{body:"No bot fights recorded yet. Challenge LOZ with `/fightbot` to start."}]));
+    if (!stats) return safeReply(interaction,buildStyledCardPayload(`🤖 ${target.displayName}'s Bot Battle Stats`,0x808080,[{body:"No bot fights recorded yet. Challenge LOZ with `/fight bot` to start."}]));
     const difficulties=[
       {key:"easy",name:"Easy",icon:"🧸"},
       {key:"medium",name:"Medium",icon:"⚔️"},
@@ -1915,8 +1913,11 @@ const commands = [
   new SlashCommandBuilder().setName("species-roll").setDescription("Roll for a new species"),
   new SlashCommandBuilder().setName("switch").setDescription("Switch between your species (3h cooldown)"),
   new SlashCommandBuilder().setName("awakening").setDescription("Check your species awakening progress"),
-  new SlashCommandBuilder().setName("fight").setDescription("Challenge a player to a fight").addUserOption(o=>o.setName("user").setDescription("Player to fight").setRequired(true)),
-  new SlashCommandBuilder().setName("fightbot").setDescription("Fight a bot").addStringOption(o=>o.setName("difficulty").setDescription("Bot difficulty").setRequired(true).addChoices({name:"🧸 Easy",value:"easy"},{name:"⚔️ Medium",value:"medium"},{name:"👹 Hard",value:"hard"},{name:"💀 Impossible",value:"impossible"},{name:"Brutal",value:"brutal"})),
+  new SlashCommandBuilder().setName("fight").setDescription("Challenge a player or fight an LOZ bot")
+    .addSubcommand(s=>s.setName("player").setDescription("Challenge another player")
+      .addUserOption(o=>o.setName("user").setDescription("Player to challenge").setRequired(true)))
+    .addSubcommand(s=>s.setName("bot").setDescription("Fight an LOZ bot")
+      .addStringOption(o=>o.setName("difficulty").setDescription("Bot difficulty").setRequired(true).addChoices({name:"🧸 Easy",value:"easy"},{name:"⚔️ Medium",value:"medium"},{name:"👹 Hard",value:"hard"},{name:"💀 Impossible",value:"impossible"},{name:"Brutal",value:"brutal"}))),
   new SlashCommandBuilder().setName("fightstats").setDescription("View fight stats").addUserOption(o=>o.setName("user").setDescription("User to check")),
   new SlashCommandBuilder().setName("history").setDescription("View fight history").addUserOption(o=>o.setName("user").setDescription("User to check")),
   new SlashCommandBuilder().setName("botstats").setDescription("View bot fight stats").addUserOption(o=>o.setName("user").setDescription("User to check")),
