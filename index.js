@@ -1,5 +1,6 @@
 const {
   Client, GatewayIntentBits, PermissionsBitField, REST, Routes,
+  ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags,
 } = require("discord.js");
 
 const database = require("./database.js"); // MongoDB
@@ -121,8 +122,37 @@ client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
 
     // Bot mention response
-    if (message.content.startsWith(`<@${client.user.id}>`) || message.content.startsWith(`<@!${client.user.id}>`))
-      return message.reply(`👋 **${client.user.username}** here!\nUse \`/guide\` to learn how to play or \`/help\` for all commands. Start with \`/species-roll\`! <:reroll_dice:1558042108965822515>`);
+    if (
+      message.content.startsWith(`<@${client.user.id}>`) ||
+      message.content.startsWith(`<@!${client.user.id}>`)
+    ) {
+      const mentionCard = new ContainerBuilder().setAccentColor(0x0891b2);
+      mentionCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `## Legends of the Rift | LOZ
+I'm here! LOZ is a turn-based RPG where you collect species, learn their abilities, and challenge players or battle bots.`
+      ));
+      mentionCard.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+      mentionCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `### Start Your Journey
+**\`/guide\`** — Learn how LOZ works and claim your one-time tutorial roll.
+**\`/species-roll\`** — Roll for a species.
+**\`/daily\`** — Claim your daily reward.`
+      ));
+      mentionCard.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+      mentionCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `### Explore & Get Help
+**\`/species\`** — Browse species, stats, passives, and ultimates.
+**\`/profile\`** — View your current species and progress.
+**\`/help\`** — Browse LOZ's commands.
+
+**New here?** Start with \`/guide\`.`
+      ));
+      return message.reply({
+        components: [mentionCard],
+        flags: MessageFlags.IsComponentsV2,
+        allowedMentions: { parse: [] },
+      });
+    }
 
     if (!message.content.startsWith(prefix)) return;
     const args = message.content.slice(prefix.length).trim().split(/ +/);
