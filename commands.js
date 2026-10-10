@@ -31,7 +31,12 @@ function setClient(c) { _client = c; }
 function buildUpdateSubscriptionPromptPayload(userId) {
   const container = new ContainerBuilder().setAccentColor(0x0891b2);
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    `## 🔔 Stay in the Loop with LOZ\nSubscribe to major LOZ updates, special events, and announcements about update rewards and bonuses when available.\n\nYou'll receive major update announcements by DM. You can unsubscribe any time with ` + "`/updates unsubscribe`" + `.\n\n**Would you like to subscribe?**`
+    `## 🔔 Stay in the Loop with LOZ
+Subscribe to major LOZ updates, special events, and announcements about update rewards and bonuses when available.
+
+You'll receive major update announcements by DM. You can unsubscribe any time with \`/updates unsubscribe\`.
+
+**Would you like to subscribe?**`
   ));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
   container.addActionRowComponents(new ActionRowBuilder().addComponents(
