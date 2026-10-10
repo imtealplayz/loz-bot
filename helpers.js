@@ -101,18 +101,16 @@ function canFight(id) {
 }
 
 function hasActiveRequest(id) {
-  const r = _state.activeRequests.get(id);
-  if (!r) return false;
-  if (Date.now() - r.timestamp > 60000) { _state.activeRequests.delete(id); return false; }
-  return true;
+  // Request locks are released only by decline, expiry, cancellation, or fight completion.
+  // Do not expire them here: accepted challenges must remain locked for the full battle.
+  return _state.activeRequests.has(id);
 }
-function canSendRequest(sender, target, isGod = false) {
-  if (isGod) return { allowed: true };
-  if (hasActiveRequest(sender)) return { allowed:false, reason:"You already have a pending request!" };
-  if (hasActiveRequest(target))  return { allowed:false, reason:"That user already has a pending request!" };
+function canSendRequest(sender, target) {
+  if (hasActiveRequest(sender)) return { allowed:false, reason:"You already have an incoming or outgoing fight request, or an active player battle." };
+  if (hasActiveRequest(target)) return { allowed:false, reason:"That user already has an incoming or outgoing fight request, or an active player battle." };
   const td = _state.userSpecies.get(target);
   if (td?.requestsEnabled === false) return { allowed:false, reason:"That user has disabled challenge requests!" };
-  return { allowed: true };
+  return { allowed:true };
 }
 
 // ==================== STATS ====================
