@@ -1,7 +1,7 @@
 const { EmbedBuilder } = require("discord.js");
 const {
   speciesList, dragonSpecies, botSpecies,
-  godSpecies, humanSpecies, reaperSpecies, archdemonSpecies,
+  godSpecies, humanSpecies, reaperSpecies, archdemonSpecies, slimeLordSpecies,
   awakeningRequirements,
 } = require("./constants.js");
 const database = require("./database.js");
@@ -49,6 +49,7 @@ function getSpeciesByName(name) {
   if (name === "Bot")       return botSpecies.bot;
   if (name === "Reaper")    return reaperSpecies;
   if (name === "Archdemon") return archdemonSpecies;
+  if (name === "Slime Lord") return slimeLordSpecies;
   const s = speciesList.find(x => x.name === name);
   if (s) return s;
   for (const t of dragonSpecies.types) {

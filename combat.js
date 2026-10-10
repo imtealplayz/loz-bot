@@ -8,7 +8,7 @@ function makeCombatant(id, species) {
     id, species,
     maxHp: species.hp, currentHp: species.hp,
     healCooldown: 0, ultCooldown: 0, ultBuff: null,
-    adaptiveStacks: 0, attackCounter: 0,
+    adaptiveStacks: 0, attackCounter: 0, slimeMissStacks: 0,
     burn: 0, burnRounds: 0, curse: 0, curseRounds: 0,
     blockHeal: false, possession: false, stunnedTurns: 0,
     lastUltUsed: null, ultChoicePending: false,
@@ -16,6 +16,31 @@ function makeCombatant(id, species) {
 }
 
 // ==================== CALCULATE DAMAGE ====================
+
+function recordSlimeLordMiss(attacker, specialLines) {
+  if (attacker?.species?.name !== "Slime Lord") return;
+  attacker.slimeMissStacks = Math.min(5, Math.max(0, Number(attacker.slimeMissStacks) || 0) + 1);
+  const nextMultiplier = 1 + 0.2 * attacker.slimeMissStacks;
+  specialLines.push("🫧 Adaptive Momentum builds to ×" + nextMultiplier.toFixed(1));
+}
+
+function absorbSlimeLordDamage(attacker, defender, incomingDamage, specialLines) {
+  if (defender?.species?.name !== "Slime Lord"
+    || defender.ultBuff?.type !== "slimeAssimilation"
+    || !(incomingDamage > 0)) return null;
+
+  const missingHp = Math.max(0, defender.maxHp - defender.currentHp);
+  const healing = Math.min(missingHp, incomingDamage);
+  const reflected = Math.max(0, incomingDamage - healing);
+  defender.currentHp = Math.min(defender.maxHp, defender.currentHp + healing);
+  if (reflected > 0) attacker.currentHp = Math.max(0, attacker.currentHp - reflected);
+  defender.ultBuff = null;
+
+  specialLines.push("🫧 Predatory Assimilation converts " + incomingDamage + " damage into " + healing + " HP"
+    + (reflected > 0 ? " and reflects " + reflected + " overflow damage!" : "!"));
+  return { healing, reflected };
+}
+
 function calculateDamage(attacker, defender) {
   const attackerMutations = { hpDelta: 0 };
   const specialLines = [];
@@ -29,24 +54,36 @@ function calculateDamage(attacker, defender) {
   // Dodge buff
   if (defender.ultBuff?.type === "dodge") {
     defender.ultBuff = null;
-    return { damage:0, baseDamage:0, specialLines:["💨 **NIMBLE ESCAPE!** Attack dodged!"], attackerMutations, missedAttack:true };
+    const lines=["💨 **NIMBLE ESCAPE!** Attack dodged!"];
+    recordSlimeLordMiss(attacker, lines);
+    return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
   }
   // Goblin passive dodge
-  if (defender.species.name === "Goblin" && Math.random() < 0.1)
-    return { damage:0, baseDamage:0, specialLines:["💨 **Speed Dodge!** Too slow!"], attackerMutations, missedAttack:true };
+  if (defender.species.name === "Goblin" && Math.random() < 0.1) {
+    const lines=["💨 **Speed Dodge!** Too slow!"];
+    recordSlimeLordMiss(attacker, lines);
+    return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
+  }
   // Thunder Dragon paralyze
-  if (defender.species.name === "Thunder Dragon" && Math.random() < 0.1)
-    return { damage:0, baseDamage:0, specialLines:["⚡ **Paralyzing Shock!** Attack fails!"], attackerMutations, missedAttack:true };
-  // Earth Dragon invincible
-  if (defender.ultBuff?.type === "invincible") {
-    defender.ultBuff = null;
-    return { damage:0, baseDamage:0, specialLines:["🌍 **TERRA SHIELD!** Invincible!"], attackerMutations, missedAttack:true };
+  if (defender.species.name === "Thunder Dragon" && Math.random() < 0.1) {
+    const lines=["⚡ **Paralyzing Shock!** Attack fails!"];
+    recordSlimeLordMiss(attacker, lines);
+    return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
+  }
+  // Earth Dragon Terra Strike: nullify the next incoming hit while preserving its queued 1.2× attack.
+  if (defender.ultBuff?.invincible === true) {
+    defender.ultBuff.invincible = false;
+    const lines=["🌍 **TERRA STRIKE!** Invincible against this hit!"];
+    recordSlimeLordMiss(attacker, lines);
+    return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
   }
   // Bot counter
   if (defender.species.name === "Bot" && Math.random() < 0.1) {
     const ctr = Math.floor(Math.random()*(defender.species.atkMax-defender.species.atkMin+1))+defender.species.atkMin;
     attackerMutations.hpDelta -= ctr;
-    return { damage:0, baseDamage:0, specialLines:[`🤖 **MACHINE LEARNING!** Bot counters for ${ctr}!`], attackerMutations, missedAttack:true };
+    const lines=[`🤖 **MACHINE LEARNING!** Bot counters for ${ctr}!`];
+    recordSlimeLordMiss(attacker, lines);
+    return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
   }
 
   // ── Miss + Counter chance ────────────────────────────────────────
@@ -58,9 +95,13 @@ function calculateDamage(attacker, defender) {
       const avgAtk = Math.floor((defender.species.atkMin + defender.species.atkMax) / 2);
       const ctr = Math.floor(avgAtk * 0.6);
       attackerMutations.hpDelta -= ctr;
-      return { damage:0, baseDamage:0, specialLines:[`💨 **MISS!** ${defender.species.emoji} **${defender.species.name}** counter-strikes for **${ctr}**!`], attackerMutations, missedAttack:true };
+      const lines=[`💨 **MISS!** ${defender.species.emoji} **${defender.species.name}** counter-strikes for **${ctr}**!`];
+      recordSlimeLordMiss(attacker, lines);
+      return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
     }
-    return { damage:0, baseDamage:0, specialLines:[`💨 **MISS!** The attack whiffed!`], attackerMutations, missedAttack:true };
+    const lines=[`💨 **MISS!** The attack whiffed!`];
+    recordSlimeLordMiss(attacker, lines);
+    return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
   }
 
   const baseDamage = Math.floor(Math.random()*(attacker.species.atkMax-attacker.species.atkMin+1))+attacker.species.atkMin;
@@ -73,6 +114,12 @@ function calculateDamage(attacker, defender) {
     finalDamage+=attacker.adaptiveStacks*2; specialLines.push(`🎭 Adaptive Evolution +${attacker.adaptiveStacks*2}`); attacker.adaptiveStacks=0;
   }
   if (attacker.species.name==="Reaper") { multiplier*=1.1; specialLines.push("🌑 Soul Reaper +10%"); }
+  if (attacker.species.name==="Slime Lord" && (attacker.slimeMissStacks||0)>0) {
+    const stacks=Math.min(5,Math.max(0,Number(attacker.slimeMissStacks)||0));
+    multiplier*=1+0.2*stacks;
+    specialLines.push("🫧 Adaptive Momentum ×" + (1+0.2*stacks).toFixed(1));
+    attacker.slimeMissStacks=0;
+  }
   if (attacker.species.name==="Archdemon") { multiplier*=1.15; finalDamage+=5; specialLines.push("👿 Lord of Darkness +15% +5"); }
   if (attacker.species.name==="Orc Lord") { const d=Math.floor(defender.maxHp*0.075); finalDamage+=d; specialLines.push(`👑 Despair +${d}`); }
   if (attacker.species.name==="Mechangel") {
@@ -88,6 +135,8 @@ function calculateDamage(attacker, defender) {
       if (defender.currentHp<defender.maxHp*0.2) {
         // Below 20% — instant kill
         const killDmg=defender.currentHp;
+        const assimilation=absorbSlimeLordDamage(attacker, defender, killDmg, specialLines);
+        if (assimilation) return { damage:0, baseDamage, specialLines, attackerMutations:{hpDelta:0}, missedAttack:false, absorbed:true };
         defender.currentHp=0;
         specialLines.push("💀 **DEATH'S JUDGMENT — INSTANT KILL!**");
         attacker.ultBuff=null;
@@ -157,6 +206,10 @@ function calculateDamage(attacker, defender) {
   }
 
   finalDamage = Math.max(0, Math.floor(finalDamage*multiplier));
+
+  // Slime Lord converts the fully modified incoming hit into healing and reflects overflow.
+  const assimilation=absorbSlimeLordDamage(attacker, defender, finalDamage, specialLines);
+  if (assimilation) return { damage:0, baseDamage, specialLines, attackerMutations, missedAttack:false, absorbed:true };
 
   // Post-damage attacker heals
   if (finalDamage>0) {
@@ -245,8 +298,16 @@ function applyUltEffect(attacker, defender) {
     case "Demi God":    attacker.ultBuff={type:"nextAttack",multiplier:2.5}; msg="✨ **DIVINE WRATH!**\n2.5× next attack!"; break;
     case "God": {
       const dmg=Math.floor(defender.currentHp*0.5), heal=Math.floor(attacker.currentHp*0.5);
-      defender.currentHp-=dmg; attacker.currentHp=Math.min(attacker.maxHp,attacker.currentHp+heal);
-      msg=`⚖️ **DIVINE JUDGMENT!**\n-${dmg} to opponent | +${heal} to you!`; break;
+      attacker.currentHp=Math.min(attacker.maxHp,attacker.currentHp+heal);
+      const assimilationLines=[];
+      const assimilation=absorbSlimeLordDamage(attacker,defender,dmg,assimilationLines);
+      if (assimilation) {
+        msg="⚖️ **DIVINE JUDGMENT!** God heals +" + heal + " HP. " + assimilationLines.join(" ");
+      } else {
+        defender.currentHp-=dmg;
+        msg=`⚖️ **DIVINE JUDGMENT!**\n-${dmg} to opponent | +${heal} to you!`;
+      }
+      break;
     }
     case "Angel":       requiresChoice=true; choiceType="angel"; msg="👼 **DIVINE BLESSING!**\nChoose your path:"; break;
     case "Ice Dragon":  requiresChoice=true; choiceType="ice_dragon"; msg="❄️ **GLACIAL SPIKE!**\nChoose your path:"; break;
@@ -269,6 +330,7 @@ function applyUltEffect(attacker, defender) {
       msg=`⚡ **SYSTEM RESTORATION!**\nHealed ${h} HP + 20% reduction 2 turns!`; break;
     }
     case "Archdemon":   attacker.ultBuff={type:"nextAttack",multiplier:2.0,curse:10,curseRounds:3}; msg="👿 **ABYSSAL GATE!**\n2× + 10 curse 3 turns!"; break;
+    case "Slime Lord":  attacker.ultBuff={type:"slimeAssimilation"}; msg="🫧 **PREDATORY ASSIMILATION!**\nConvert the next incoming hit into HP; reflect any overflow beyond max HP."; break;
     case "Chimera": {
       // Copy opponent's species ULT directly — no waiting, no fallback
       // Temporarily spoof attacker species to cast defender's ULT
@@ -411,7 +473,7 @@ function buildBotFightEmbed(fight, logLines = [], phase = "playing") {
   const playerName = fight.playerName || "You";
   return new ContainerBuilder()
     .setAccentColor(color)
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent("## ⚔️ LOZ ARENA  ·  " + (personality.emoji ? personality.emoji + " " : "☠️ ") + personality.name.toUpperCase() + "  ·  ROUND " + inlineCode(fight.round)))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent("## ⚔️ LOZ ARENA  ·  " + (fight.isSlimeBoss ? "🫧 SLIME LORD BOSS" : (personality.emoji ? personality.emoji + " " : "☠️ ") + personality.name.toUpperCase()) + "  ·  ROUND " + inlineCode(fight.round)))
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
       "🟢 **YOUR SIDE**  ·  **" + playerName + "**\n" +
@@ -419,7 +481,7 @@ function buildBotFightEmbed(fight, logLines = [], phase = "playing") {
     ))
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      "🔻 **OPPONENT**  ·  **LOZ**\n" +
+      "🔻 **OPPONENT**  ·  **" + (fight.isSlimeBoss ? "SLIME LORD BOSS" : "LOZ") + "**\n" +
       "**" + speciesLabel(fight.botSpecies) + "**\n" + formatFightHealth(fight.botHp, fight.botMaxHp) + "\n" + (botEffects.length ? botEffects.join("  ·  ") : "No active effects")
     ))
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))

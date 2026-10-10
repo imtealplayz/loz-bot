@@ -1,6 +1,16 @@
 // ==================== PATCH NOTES ====================
 const patchNotes = [
   {
+    version: "5.0", date: "2026-10-10",
+    changes: [
+      "Added the Slime Lord boss encounter: a 7.5% spawn chance after a genuine victory against any LOZ bot difficulty. Boss stats scale to the defeated difficulty and player HP and temporary combat effects reset for the new fight.",
+      "Defeating the Slime Lord boss grants a 9.2% chance to permanently unlock the Slime Lord species. It can be equipped through /switch and cannot be obtained from normal species rolls or Species Tokens.",
+      "Added Slime Lord's Adaptive Momentum passive and Predatory Assimilation ultimate.",
+      "Added the God-only /god species-unlock command to permanently grant Reaper, Archdemon, Mechangel, or Slime Lord without completing their unlock requirements.",
+      "Fixed Earth Dragon's Terra Strike path so its 1.2x next attack also nullifies the next incoming hit."
+    ],
+  },
+  {
     version: "4.8", date: "2026-10-09",
     changes: [
       "Added Species Tokens. Use `/items use` to choose and confirm a new species; Reaper, Archdemon, Mechangel, and God are excluded.",
@@ -125,6 +135,7 @@ const godSpecies       = { number:0,  name:"God",      emoji:"👑✨", roleName
 const humanSpecies     = { number:99, name:"Human",    emoji:"👤",   roleName:null,       color:0x808080, hp:50,  atkMin:5,  atkMax:10, healMin:5,  healMax:10, ultCooldown:0  };
 const reaperSpecies    = { number:18, name:"Reaper",   emoji:"🌑",   roleName:"Reaper",   color:0x2f4f4f, hp:110, atkMin:25, atkMax:38, healMin:8,  healMax:16, ultCooldown:12 };
 const archdemonSpecies = { number:19, name:"Archdemon",emoji:"👿",   roleName:"Archdemon",color:0x4a0404, hp:150, atkMin:28, atkMax:40, healMin:15, healMax:25, ultCooldown:10 };
+const slimeLordSpecies = { number:20, name:"Slime Lord",emoji:"🫧",roleName:"Slime-Lord",color:0x2dd4bf,hp:130,atkMin:18,atkMax:27,healMin:15,healMax:25,ultCooldown:9,chance:"Special boss unlock" };
 
 // ==================== BOT DIFFICULTY ====================
 const botSpeciesByDifficulty = {
@@ -278,6 +289,7 @@ function getPassiveDescription(name) {
     "Half-Blood":"**Scrappy** — +3 dmg below 25% HP",
     Mechangel:"**Quantum Processing** — every 2 attacks = 1.4×",
     Archdemon:"**Lord of Darkness** — +15% dmg and +5 flat all attacks",
+    "Slime Lord":"**Adaptive Momentum** — each miss or counter builds a next-attack multiplier: ×1.2, ×1.4, ×1.6, ×1.8, up to ×2.0; a successful hit consumes the bonus.",
   };
   return passives[name] || "Unknown passive";
 }
@@ -308,13 +320,14 @@ function getActiveDescription(name) {
     "Half-Blood":"**Awakened Blood** — 1.4× + heal 10 HP (CD: 7)",
     Mechangel:"**System Restoration** — heal 40% + 20% reduction 2 turns (CD: 6)",
     Archdemon:"**Abyssal Gate** — 2× + 10 curse 3 turns (CD: 10)",
+    "Slime Lord":"**Predatory Assimilation** — converts the next incoming damage hit into HP; any amount beyond max HP is reflected to the attacker (CD: 9).",
   };
   return actives[name] || "Unknown active";
 }
 
 module.exports = {
   patchNotes, speciesList, dragonSpecies, botSpecies,
-  godSpecies, humanSpecies, reaperSpecies, archdemonSpecies,
+  godSpecies, humanSpecies, reaperSpecies, archdemonSpecies, slimeLordSpecies,
   botSpeciesByDifficulty, botPersonalities,
   typeAdvantages, critRates, failChances, awakeningRequirements,
   disintegrationMessages, getPassiveDescription, getActiveDescription,

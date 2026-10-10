@@ -339,52 +339,43 @@ function asEphemeralSpeciesTokenPayload(payload) {
 
 // Major-update DM payload built entirely with Components V2 and native separators.
 function buildMajorUpdatePayload() {
-  const container = new ContainerBuilder().setAccentColor(0x0891b2);
-
+  const container = new ContainerBuilder().setAccentColor(0x2dd4bf);
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      `## 🌑 LOZ IS BACK
-**Legends of the Rift is back online!**
-
-The Rift has grown. We've added new awakenings, a tougher combat challenge, better rewards, and a wave of bug fixes. Here's what's new.
-
-Thanks to everyone who's played LOZ, tested updates, and helped make the game better.`
+      "## 🫧 LOZ VERSION 5.0 — SLIME LORD RISING\n**A new boss has emerged from the Rift.**\n\nVersion 5.0 introduces the Slime Lord encounter, a permanent rare-species unlock, a new God command, and a combat fix."
     )
   );
 
   const sections = [
     {
-      title:"👿 New awakenings",
+      title:"🫧 The Slime Lord boss",
       body:[
-        "- **Demon → Archdemon:** Complete 25 player wins, defeat 20 Demon bots, and spend 20 rolls. The awakening is permanent, and you can return to Archdemon after rerolling with \`/switch\`.",
-        "- **Cyborg → Mechangel:** Complete the combat, damage, and ultimate trials to unlock a new form with its own passive and ultimate. Awakening also grants 5 rolls."
+        "After a genuine victory against any LOZ bot difficulty, a Slime Lord may spawn with a **7.5% chance**.",
+        "The boss scales to the difficulty you just defeated. Your HP is fully restored, and cooldowns and temporary effects reset for the fresh fight.",
+        "Defeat the boss for a **9.2% chance** to permanently unlock Slime Lord. The boss will not chain-spawn from another boss victory."
       ].join("\n")
     },
     {
-      title:"💀 Brutal difficulty",
+      title:"🧬 New exclusive species",
       body:[
-        "- Face powerful opponents including Reaper, Mechangel, and Archdemon.",
-        "- Brutal bots make more species-aware ultimate decisions.",
-        "- A Brutal victory grants **10 leaderboard points and 1 species roll**."
+        "**Slime Lord** — 130 HP, 18–27 attack, 15–25 healing, 9-round ultimate cooldown.",
+        "**Adaptive Momentum:** each miss or counter builds the next successful attack from ×1.2 up to ×2.0; a successful hit consumes the built-up multiplier.",
+        "**Predatory Assimilation:** the next incoming damage hit becomes healing. If that hit would heal beyond max HP, the overflow is reflected onto the attacker.",
+        "Slime Lord is a permanent boss unlock, not part of normal species rolls or Species Tokens. Equip it with /switch."
       ].join("\n")
     },
     {
-      title:"⚔️ Combat upgrades and fixes",
+      title:"👑 Permanent unlocks for God",
       body:[
-        "- The miss and counter system is back.",
-        "- Chimera copies the opponent's ultimate directly.",
-        "- Fixed ultimate cooldown timing, passives, burns, possession, and other combat edge cases.",
-        "- If a bot fight gets stuck for 60 seconds, the player wins instead of being left waiting.",
-        "- Species rerolls are blocked during active fights."
+        "LOZ owners can use /god species-unlock to permanently unlock Reaper, Archdemon, Mechangel, or Slime Lord for a selected player, without making them complete the usual quest or awakening.",
+        "The command grants the unlock flag; players use /switch to equip the species."
       ].join("\n")
     },
     {
-      title:"🎁 More ways to progress",
+      title:"🌍 Combat fix",
       body:[
-        "- Use \`/gift\` to send up to 2 rolls per day, with a daily receive limit of 4.",
-        "- Clearer fight results show leaderboard points and species-roll rewards.",
-        "- Fixed Reaper quest progress and improved awakening progress tracking.",
-        "- Custom reroll dice icons and updated patch notes make rewards easier to follow."
+        "Earth Dragon's Terra Strike path now correctly nullifies the next incoming hit while keeping its 1.2× next-attack bonus.",
+        "Updated the species compendium and patch notes for the new Slime Lord abilities and boss encounter."
       ].join("\n")
     }
   ];
@@ -394,7 +385,7 @@ Thanks to everyone who's played LOZ, tested updates, and helped make the game be
       new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small)
     );
     container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`### ${section.title}\n${section.body}`)
+      new TextDisplayBuilder().setContent("### " + section.title + "\n" + section.body)
     );
   }
 
@@ -403,10 +394,7 @@ Thanks to everyone who's played LOZ, tested updates, and helped make the game be
   );
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      `### 🔔 Stay updated
-Want more major updates from LOZ? Use \`/updates subscribe\` to opt in to future update DMs. You can unsubscribe at any time with \`/updates unsubscribe\`.
-
-🌐 **Website:** [Visit LOZ](https://lozbot.vercel.app/)`
+      "### 🔔 Stay updated\nUse /updates subscribe to opt in to future major-update DMs. You can unsubscribe at any time with /updates unsubscribe.\n\n🌐 **Website:** [Visit LOZ](https://lozbot.vercel.app/)"
     )
   );
 
@@ -499,7 +487,7 @@ async function handleCommand(interaction) {
     return safeReply(interaction, buildStyledCardPayload("LOZ Command Guide", 0x0891b2, [
       { heading:"Getting Started", body:"`/guide` — Learn the game and claim your one-time tutorial roll.\n`/profile` — View your species, resources, and progress." },
       { heading:"Species & Rewards", body:"`/species-roll` — Roll for a species.\n`/species` — Browse species, stats, passives, and ultimates.\n`/daily` — Claim your daily roll.\n`/switch` and `/items use` — Manage species and eligible items." },
-      { heading:"Combat", body:"`/fight player user:<player>` — Challenge another player.\n`/fight bot difficulty:<difficulty>` — Battle an LOZ bot.\n`/togglerequests` — Control whether you receive player challenges." },
+      { heading:"Combat", body:"`/fight player user:<player>` — Challenge another player.\n`/fight bot difficulty:<difficulty>` — Battle an LOZ bot.\nA rare Slime Lord boss can appear after a bot victory.\n`/togglerequests` — Control whether you receive player challenges." },
       { heading:"Records & Rankings", body:"`/fightstats`, `/history`, and `/botstats` — Review fight records.\n`/fights` and `/lb` — View leaderboards." },
       { heading:"Quests & Progression", body:"`/quest view`, `/quest claim`, and `/awakening` — Track quests and awakenings." },
       { heading:"Updates & Support", body:"`/patchnotes` — Read recent changes.\n`/updates` — Manage update DMs.\nNeed help or found a problem? Join the [LOZ Support Server](https://discord.gg/TKBYpjqnPC)." },
@@ -741,7 +729,7 @@ async function handleCommand(interaction) {
           `**${sp.emoji} ${sp.name}**  ·  ${sp.chance}${sp.note ? " · Random element" : ""}`
         ).join("\n"),
       }));
-      sections.push({heading:"Special Unlocks",body:"🌑 **Reaper** · Quest unlock\n👿 **Archdemon** · Demon awakening\n⚡🤖 **Mechangel** · Cyborg awakening"});
+      sections.push({heading:"Special Unlocks",body:"🌑 **Reaper** · Quest unlock\n👿 **Archdemon** · Demon awakening\n⚡🤖 **Mechangel** · Cyborg awakening\n🫧 **Slime Lord** · 9.2% unlock chance after defeating its rare boss"});
       sections.push({heading:"Species Details",body:"Use `/species species:<name>` to view HP, attack, healing, ultimate cooldown, passive, ultimate, and type matchups."});
       return safeReply(interaction,buildStyledCardPayload("<:reroll_dice:1558042108965822515> Species Compendium",0x0891b2,sections));
     }
@@ -949,10 +937,10 @@ async function handleCommand(interaction) {
       fightId, playerId:user.id, playerSpecies:playerData.species,
       playerHp:(playerData.species||humanSpecies).hp, playerMaxHp:(playerData.species||humanSpecies).hp,
       playerHealCooldown:0, playerUltCooldown:0, playerUltBuff:null,
-      playerAdaptiveStacks:0, playerAttackCounter:0, playerBurn:0, playerBurnRounds:0,
+      playerAdaptiveStacks:0, playerAttackCounter:0, playerSlimeMissStacks:0, playerBurn:0, playerBurnRounds:0,
       playerCurse:0, playerBlockHeal:false, playerPossession:false, playerStunnedTurns:0, playerLastUltUsed:null,
       botSpecies:bSpecies, botHp:bSpecies.hp, botMaxHp:bSpecies.hp,
-      botHealCooldown:0, botUltCooldown:0, botUltBuff:null, botAdaptiveStacks:0, botAttackCounter:0,
+      botHealCooldown:0, botUltCooldown:0, botUltBuff:null, botAdaptiveStacks:0, botAttackCounter:0, botSlimeMissStacks:0,
       botBurn:0, botBurnRounds:0, botCurse:0, botPossession:false, botBlockHeal:false, botStunnedTurns:0, botLastUltUsed:null,
       round:1, difficulty, botPersonality:personality, timeout:null, log:[], playerName:user.displayName||user.username,
     };
@@ -974,15 +962,24 @@ async function handleCommand(interaction) {
       return interaction.editReply({embeds:[createErrorEmbed(`Switch available in **${h}h ${m}m**!`)]});
     }
     const sp=userData.species||humanSpecies;
-    const row=new ActionRowBuilder();
-    row.addComponents(new ButtonBuilder().setCustomId("switch_current").setLabel(`✅ ${sp.name} (Current)`).setStyle(ButtonStyle.Success).setDisabled(true));
-    if (userData.originalSpecies?.name&&userData.originalSpecies.name!==sp.name) row.addComponents(new ButtonBuilder().setCustomId("switch_original").setLabel(userData.originalSpecies.name).setStyle(ButtonStyle.Primary));
-    if (userData.questSpecies?.reaper?.unlocked&&sp.name!=="Reaper") row.addComponents(new ButtonBuilder().setCustomId("switch_reaper").setLabel("🌑 Reaper").setStyle(ButtonStyle.Primary));
-    if (userData.awakening?.demon?.awakened===true&&sp.name!=="Archdemon") row.addComponents(new ButtonBuilder().setCustomId("switch_archdemon").setLabel("👿 Archdemon").setStyle(ButtonStyle.Danger));
-    if (userData.awakening?.cyborg?.awakened===true&&sp.name!=="Mechangel") row.addComponents(new ButtonBuilder().setCustomId("switch_mechangel").setLabel("⚡ Mechangel").setStyle(ButtonStyle.Primary));
+    const buttons=[
+      new ButtonBuilder().setCustomId("switch_current").setLabel("✅ " + sp.name + " (Current)").setStyle(ButtonStyle.Success).setDisabled(true),
+    ];
+    if (userData.originalSpecies?.name&&userData.originalSpecies.name!==sp.name) buttons.push(new ButtonBuilder().setCustomId("switch_original").setLabel(userData.originalSpecies.name).setStyle(ButtonStyle.Primary));
+    if (userData.questSpecies?.reaper?.unlocked&&sp.name!=="Reaper") buttons.push(new ButtonBuilder().setCustomId("switch_reaper").setLabel("🌑 Reaper").setStyle(ButtonStyle.Primary));
+    if (userData.awakening?.demon?.awakened===true&&sp.name!=="Archdemon") buttons.push(new ButtonBuilder().setCustomId("switch_archdemon").setLabel("👿 Archdemon").setStyle(ButtonStyle.Danger));
+    if (userData.awakening?.cyborg?.awakened===true&&sp.name!=="Mechangel") buttons.push(new ButtonBuilder().setCustomId("switch_mechangel").setLabel("⚡ Mechangel").setStyle(ButtonStyle.Primary));
+    if (userData.questSpecies?.slimeLord?.unlocked===true&&sp.name!=="Slime Lord") buttons.push(new ButtonBuilder().setCustomId("switch_slime_lord").setLabel("🫧 Slime Lord").setStyle(ButtonStyle.Success));
+    const rows=[];
+    for(let i=0;i<buttons.length;i+=5) rows.push(new ActionRowBuilder().addComponents(buttons.slice(i,i+5)));
     const embed=new EmbedBuilder().setColor(0x9b59b6).setTitle("🔄 Class Switch")
-      .setDescription(`**Current:** ${sp.emoji} ${sp.name}\n**Original:** ${userData.originalSpecies?.emoji||"👤"} ${userData.originalSpecies?.name||"Human"}\n🌑 Reaper: ${userData.questSpecies?.reaper?.unlocked?"✅ Unlocked":"❌ Locked"}\n👿 Archdemon: ${userData.awakening?.demon?.awakened?"✅ Awakened":"❌ Locked"}\n\n⏰ Cooldown: 3 hours`);
-    return interaction.editReply({embeds:[embed],components:[row]});
+      .setDescription("**Current:** " + sp.emoji + " " + sp.name + "\n**Original:** " + (userData.originalSpecies?.emoji||"👤") + " " + (userData.originalSpecies?.name||"Human")
+        + "\n🌑 Reaper: " + (userData.questSpecies?.reaper?.unlocked?"✅ Unlocked":"❌ Locked")
+        + "\n👿 Archdemon: " + (userData.awakening?.demon?.awakened?"✅ Awakened":"❌ Locked")
+        + "\n⚡ Mechangel: " + (userData.awakening?.cyborg?.awakened?"✅ Awakened":"❌ Locked")
+        + "\n🫧 Slime Lord: " + (userData.questSpecies?.slimeLord?.unlocked?"✅ Unlocked":"❌ Locked")
+        + "\n\n⏰ Cooldown: 3 hours");
+    return interaction.editReply({embeds:[embed],components:rows});
   }
 
 
@@ -1083,7 +1080,7 @@ async function handleCommand(interaction) {
       const expired=now>=REAPER_EXPIRY&&!r.claimed;
       const embed=new EmbedBuilder().setColor(0x9b59b6).setTitle(`📋 Quests — ${target.displayName}`).setDescription("Complete quests to unlock exclusive species!");
       let rstatus, rvalue;
-      if (r.claimed) { rstatus="✅ CLAIMED"; rvalue="Reaper unlocked! Use `/switch` to equip."; }
+      if (r.claimed || _state.userSpecies.get(target.id)?.questSpecies?.reaper?.unlocked===true) { rstatus="✅ CLAIMED"; rvalue="Reaper unlocked! Use `/switch` to equip."; }
       else if (expired) { rstatus="⌛ EXPIRED"; rvalue=`The Reaper Quest has ended.\n\n*The Reaper has returned to the shadows.*\n\nDeadline was: **24 March 2026 at 6:00 PM**`; }
       else if (r.completed) { rstatus="🎁 CLAIM READY"; rvalue="Use `/quest claim quest:reaper` to claim!"; }
       else {
@@ -1098,7 +1095,7 @@ async function handleCommand(interaction) {
       if (qn==="reaper") {
         const qd=_state.questProgress.get(user.id)||{};
         const r=qd.reaper||{easyBots:0,mediumBots:0,hardBots:0,impossibleBots:0,playerFights:0,completed:false,claimed:false};
-        if (r.claimed) return safeReply(interaction,{embeds:[createErrorEmbed("Already claimed! Use `/switch` to equip.")],flags:64});
+        if (r.claimed || _state.userSpecies.get(user.id)?.questSpecies?.reaper?.unlocked===true) return safeReply(interaction,{embeds:[createErrorEmbed("Already unlocked! Use `/switch` to equip.")],flags:64});
         if (Date.now()>=1774355400000&&!r.claimed) return safeReply(interaction,{embeds:[createErrorEmbed("The Reaper Quest has expired. The window to claim has closed.")],flags:64});
         if (!r.completed) return safeReply(interaction,{embeds:[createErrorEmbed("Quest not complete yet! Check `/quest view`.")],flags:64});
         r.claimed=true; qd.reaper=r; _state.questProgress.set(user.id,qd); database.saveQuestProgress(user.id,"reaper",r);
@@ -1218,10 +1215,40 @@ async function handleCommand(interaction) {
     if (user.id!==_state.ownerId&&user.id!==_state.secondGodId) return safeReply(interaction,{embeds:[createErrorEmbed("Only God can use this!")],flags:64});
     const sub=options.getSubcommand();
 
+    if (sub==="species-unlock") {
+      const target=options.getUser("user"), speciesName=options.getString("species");
+      const current=_state.userSpecies.get(target.id)||{
+        species:humanSpecies, originalSpecies:humanSpecies, questSpecies:{}, rolls:0, speciesTokens:0,
+        requestsEnabled:true, lastSwitch:0, awakening:{}, badges:[],
+      };
+      // Work on a copy so a failed MongoDB write cannot leave a grant active in memory.
+      const ud={...current,questSpecies:{...(current.questSpecies||{})},awakening:{...(current.awakening||{})}};
+      let unlockLabel="";
+      if (speciesName==="Reaper") {
+        ud.questSpecies.reaper={...(ud.questSpecies.reaper||{}),unlocked:true,equipped:false,godGranted:true};
+        unlockLabel="Reaper";
+      } else if (speciesName==="Archdemon") {
+        ud.awakening.demon={...(ud.awakening.demon||{}),awakened:true};
+        unlockLabel="Archdemon";
+      } else if (speciesName==="Mechangel") {
+        ud.awakening.cyborg={...(ud.awakening.cyborg||{}),awakened:true};
+        unlockLabel="Mechangel";
+      } else if (speciesName==="Slime Lord") {
+        ud.questSpecies.slimeLord={...(ud.questSpecies.slimeLord||{}),unlocked:true,equipped:false,godGranted:true};
+        unlockLabel="Slime Lord";
+      } else {
+        return safeReply(interaction,{embeds:[createErrorEmbed("That exclusive species cannot be unlocked with this command.")],flags:64});
+      }
+      const saved=await database.saveUserSpecies(target.id,ud);
+      if (!saved) return safeReply(interaction,{embeds:[createErrorEmbed("MongoDB could not confirm this permanent unlock. No success is being reported; check the player's record before retrying.")],flags:64});
+      _state.userSpecies.set(target.id,ud);
+      return safeReply(interaction,{embeds:[createSuccessEmbed("Permanently unlocked " + unlockLabel + " for <@" + target.id + "> without quest or awakening requirements. Use /switch to equip it.")],flags:64});
+    }
+
     if (sub==="menu") {
       return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xffd700).setTitle("👑 God Commands")
         .addFields(
-          {name:"🧬 Species Management",value:"`/god species-change @user <species>`\n`/god species-reset @user`\n`/god species-add @user <rolls>`",inline:false},
+          {name:"🧬 Species Management",value:"`/god species-change @user <species>`\n`/god species-unlock @user <species>`\n`/god species-reset @user`\n`/god species-add @user <rolls>`",inline:false},
           {name:"🎒 Items",value:"`/god add items @user species_token <quantity>`",inline:false},
           {name:"⚙️ Management",value:"`/god rolls-reset @user`\n`/god quest-reset @user <quest>`\n`/god debug-db`\n`/god repair-user-db`",inline:false}
         ).setFooter({text:"Use /god menu to see this again"})]});
@@ -1553,7 +1580,7 @@ async function handleButton(interaction) {
   }
 
   // ── SWITCH ────────────────────────────────────────────────────
-  if (customId==="switch_original"||customId==="switch_reaper"||customId==="switch_archdemon"||customId==="switch_mechangel") {
+  if (customId==="switch_original"||customId==="switch_reaper"||customId==="switch_archdemon"||customId==="switch_mechangel"||customId==="switch_slime_lord") {
     const ud=_state.userSpecies.get(user.id);
     if (!ud) return interaction.update({content:"❌ No species data!",components:[]});
     const now=Date.now(), th=3*60*60*1000;
@@ -1565,6 +1592,7 @@ async function handleButton(interaction) {
     if (customId==="switch_original") newSp=ud.originalSpecies;
     else if (customId==="switch_reaper") { if(!ud.questSpecies?.reaper?.unlocked) return interaction.update({content:"❌ Reaper not unlocked!",components:[]}); newSp=reaperSpecies; }
     else if (customId==="switch_archdemon") { if(ud.awakening?.demon?.awakened!==true) return interaction.update({content:"❌ Archdemon is locked. Complete the Demon awakening first.",components:[]}); newSp=archdemonSpecies; }
+    else if (customId==="switch_slime_lord") { if(ud.questSpecies?.slimeLord?.unlocked!==true) return interaction.update({content:"❌ Slime Lord is locked. Defeat the rare Slime Lord boss first.",components:[]}); newSp=getSpeciesByName("Slime Lord"); }
     else {
       if (ud.awakening?.cyborg?.awakened!==true) return interaction.update({content:"❌ Mechangel is locked. Complete the Cyborg awakening first.",components:[]});
       newSp=getSpeciesByName("Mechangel");
@@ -1685,8 +1713,8 @@ async function handleButton(interaction) {
 
     if (action==="forfeit") { await endBotFight(channel,fightId,"bot","player",fight.difficulty); return; }
 
-    const playerC={id:fight.playerId,species:fight.playerSpecies,currentHp:fight.playerHp,maxHp:fight.playerMaxHp,ultBuff:fight.playerUltBuff,adaptiveStacks:fight.playerAdaptiveStacks||0,attackCounter:fight.playerAttackCounter||0,burn:fight.playerBurn||0,burnRounds:fight.playerBurnRounds||0,curse:fight.playerCurse||0,blockHeal:fight.playerBlockHeal||false,possession:fight.playerPossession||false,stunnedTurns:fight.playerStunnedTurns||0,healCooldown:fight.playerHealCooldown,ultCooldown:fight.playerUltCooldown,lastUltUsed:fight.playerLastUltUsed};
-    const botC={id:"BOT",species:fight.botSpecies,currentHp:fight.botHp,maxHp:fight.botMaxHp,ultBuff:fight.botUltBuff,adaptiveStacks:fight.botAdaptiveStacks||0,attackCounter:fight.botAttackCounter||0,burn:fight.botBurn||0,burnRounds:fight.botBurnRounds||0,curse:fight.botCurse||0,blockHeal:fight.botBlockHeal||false,possession:fight.botPossession||false,stunnedTurns:fight.botStunnedTurns||0,healCooldown:fight.botHealCooldown,ultCooldown:fight.botUltCooldown,lastUltUsed:fight.botLastUltUsed};
+    const playerC={id:fight.playerId,species:fight.playerSpecies,currentHp:fight.playerHp,maxHp:fight.playerMaxHp,ultBuff:fight.playerUltBuff,adaptiveStacks:fight.playerAdaptiveStacks||0,attackCounter:fight.playerAttackCounter||0,slimeMissStacks:fight.playerSlimeMissStacks||0,burn:fight.playerBurn||0,burnRounds:fight.playerBurnRounds||0,curse:fight.playerCurse||0,blockHeal:fight.playerBlockHeal||false,possession:fight.playerPossession||false,stunnedTurns:fight.playerStunnedTurns||0,healCooldown:fight.playerHealCooldown,ultCooldown:fight.playerUltCooldown,lastUltUsed:fight.playerLastUltUsed};
+    const botC={id:"BOT",species:fight.botSpecies,currentHp:fight.botHp,maxHp:fight.botMaxHp,ultBuff:fight.botUltBuff,adaptiveStacks:fight.botAdaptiveStacks||0,attackCounter:fight.botAttackCounter||0,slimeMissStacks:fight.botSlimeMissStacks||0,burn:fight.botBurn||0,burnRounds:fight.botBurnRounds||0,curse:fight.botCurse||0,blockHeal:fight.botBlockHeal||false,possession:fight.botPossession||false,stunnedTurns:fight.botStunnedTurns||0,healCooldown:fight.botHealCooldown,ultCooldown:fight.botUltCooldown,lastUltUsed:fight.botLastUltUsed};
 
     // Oni possession consumes the target's next action.
     if (playerC.possession) action="possessed";
@@ -1740,7 +1768,7 @@ async function handleButton(interaction) {
         log.push(`⚔️ ${result.specialLines.join(" ")}`);
       } else if (result.missedAttack) {
         // Miss — show clearly, check if counter-strike killed player
-        log.push(`${result.specialLines[0]||"💨 **MISS!**"}`);
+        log.push(result.specialLines.length ? result.specialLines.join(" ") : "💨 **MISS!**");
         if (botC.species.name==="God") { const gh=Math.floor(botC.currentHp*0.2); botC.currentHp=Math.min(botC.maxHp,botC.currentHp+gh); log.push(`👑 Bot **Divine Retribution** heals ${gh}!`); }
         // playerC.currentHp already reduced by counter in attackerMutations above
         if (playerC.currentHp<=0) {
@@ -1780,7 +1808,7 @@ async function handleButton(interaction) {
     fight.botUltCooldown=botC.ultCooldown;
     fight.botUltBuff=botC.ultBuff; fight.botBurn=botC.burn; fight.botBurnRounds=botC.burnRounds;
     fight.botCurse=botC.curse; fight.botPossession=botC.possession||false;
-    fight.botBlockHeal=botC.blockHeal; fight.botAdaptiveStacks=botC.adaptiveStacks; fight.botAttackCounter=botC.attackCounter; fight.botStunnedTurns=botC.stunnedTurns||0;
+    fight.botBlockHeal=botC.blockHeal; fight.botAdaptiveStacks=botC.adaptiveStacks; fight.botAttackCounter=botC.attackCounter; fight.botSlimeMissStacks=botC.slimeMissStacks||0; fight.playerSlimeMissStacks=playerC.slimeMissStacks||0; fight.botStunnedTurns=botC.stunnedTurns||0;
     fight.log=log.slice(-3);
 
     if (fight.botHp<=0) { await endBotFight(channel,fightId,"player","bot",fight.difficulty); return; }
@@ -1899,7 +1927,7 @@ async function handleButton(interaction) {
           log.push(`⚔️ <@${user.id}> — ${result.specialLines.join(" ")}`);
         } else if (result.missedAttack) {
           // Miss — show clearly, handle counter-strike death
-          log.push(`${result.specialLines[0]||"💨 **MISS!**"}`);
+          log.push(result.specialLines.length ? result.specialLines.join(" ") : "💨 **MISS!**");
           if (opponent.species.name==="God") { const gh=Math.floor(opponent.currentHp*0.2); opponent.currentHp=Math.min(opponent.maxHp,opponent.currentHp+gh); log.push(`👑 **Divine Retribution!** Heals ${gh}!`); }
           // player.currentHp already reduced by counter in attackerMutations above — check death
           if (player.currentHp<=0) { await endFight(channel,fightId,opponent.id,user.id,"counter"); return; }
@@ -1983,7 +2011,7 @@ const commands = [
   new SlashCommandBuilder().setName("help").setDescription("Show all commands"),
   new SlashCommandBuilder().setName("guide").setDescription("New player tutorial"),
   new SlashCommandBuilder().setName("daily").setDescription("Claim your daily species roll"),
-  new SlashCommandBuilder().setName("species").setDescription("View species list or a specific species card").addStringOption(o=>o.setName("species").setDescription("Species name for detailed card (leave blank for full list)").addChoices({name:"Demi God ⚡",value:"Demi God"},{name:"Demon Lord 🔥",value:"Demon Lord"},{name:"Demon King 👑😈",value:"Demon King"},{name:"Chimera 🎭",value:"Chimera"},{name:"Angel 👼",value:"Angel"},{name:"Demon 😈",value:"Demon"},{name:"Oni 👿",value:"Oni"},{name:"Orc Lord 👑",value:"Orc Lord"},{name:"Kijin 🎭",value:"Kijin"},{name:"Cyborg 🤖",value:"Cyborg"},{name:"High Orc ⚔️",value:"High Orc"},{name:"Ogre 👹",value:"Ogre"},{name:"Goblin 👺",value:"Goblin"},{name:"Orc 🟢",value:"Orc"},{name:"Half-Blood 🩸",value:"Half-Blood"},{name:"Fire Dragon 🔥🐉",value:"Fire Dragon"},{name:"Thunder Dragon ⚡🐉",value:"Thunder Dragon"},{name:"Ice Dragon ❄️🐉",value:"Ice Dragon"},{name:"Earth Dragon 🌍🐉",value:"Earth Dragon"},{name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"God 👑✨",value:"God"},{name:"Human 👤",value:"Human"})),
+  new SlashCommandBuilder().setName("species").setDescription("View species list or a specific species card").addStringOption(o=>o.setName("species").setDescription("Species name for detailed card (leave blank for full list)").addChoices({name:"Demi God ⚡",value:"Demi God"},{name:"Demon Lord 🔥",value:"Demon Lord"},{name:"Demon King 👑😈",value:"Demon King"},{name:"Chimera 🎭",value:"Chimera"},{name:"Angel 👼",value:"Angel"},{name:"Demon 😈",value:"Demon"},{name:"Oni 👿",value:"Oni"},{name:"Orc Lord 👑",value:"Orc Lord"},{name:"Kijin 🎭",value:"Kijin"},{name:"Cyborg 🤖",value:"Cyborg"},{name:"High Orc ⚔️",value:"High Orc"},{name:"Ogre 👹",value:"Ogre"},{name:"Goblin 👺",value:"Goblin"},{name:"Orc 🟢",value:"Orc"},{name:"Half-Blood 🩸",value:"Half-Blood"},{name:"Fire Dragon 🔥🐉",value:"Fire Dragon"},{name:"Thunder Dragon ⚡🐉",value:"Thunder Dragon"},{name:"Ice Dragon ❄️🐉",value:"Ice Dragon"},{name:"Earth Dragon 🌍🐉",value:"Earth Dragon"},{name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"God 👑✨",value:"God"},{name:"Human 👤",value:"Human"},{name:"Slime Lord 🫧",value:"Slime Lord"})),
   new SlashCommandBuilder().setName("profile").setDescription("View a full player profile").addUserOption(o=>o.setName("user").setDescription("User to check")),
   new SlashCommandBuilder().setName("items").setDescription("View and use inventory items")
     .addSubcommand(s=>s.setName("use").setDescription("Use an inventory item")
@@ -2022,6 +2050,7 @@ const commands = [
   // default_member_permissions=0 hides these from normal members; handlers still enforce the exact allow-list.
   new SlashCommandBuilder().setName("god").setDescription("God-only commands")
     .addSubcommand(s=>s.setName("menu").setDescription("Show god menu"))
+    .addSubcommand(s=>s.setName("species-unlock").setDescription("Permanently unlock an exclusive species for a user").addUserOption(o=>o.setName("user").setDescription("Target user, including yourself").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Exclusive species to unlock").setRequired(true).addChoices({name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"Slime Lord 🫧",value:"Slime Lord"})))
     .addSubcommandGroup(g=>g.setName("add").setDescription("Give items to a user")
       .addSubcommand(s=>s.setName("items").setDescription("Give inventory items to a user")
         .addUserOption(o=>o.setName("user").setDescription("User receiving the item").setRequired(true))
