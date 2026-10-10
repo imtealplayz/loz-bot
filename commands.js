@@ -528,6 +528,47 @@ async function handleCommand(interaction) {
     return interaction.editReply(await buildServersPagePayload(0, user.id));
   }
 
+  if (commandName === "view") {
+    const sub = options.getSubcommand();
+    if (sub !== "subscribers") return;
+
+    const isLozOwner = [_state.ownerId, _state.secondGodId].includes(user.id);
+    const isServerAdmin = Boolean(
+      interaction.inGuild()
+      && interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)
+    );
+    if (!isLozOwner && !isServerAdmin) {
+      return safeReply(interaction, {
+        content:"Only LOZ's owners and server administrators can use this command.",
+        flags:64,
+      });
+    }
+
+    await interaction.deferReply({ flags:64 });
+    const subscribers = await database.getBroadcastSubscribers();
+    if (subscribers === null) {
+      return interaction.editReply({
+        content:"Couldn't load the subscriber count from MongoDB. No count is being reported; please try again later.",
+        allowedMentions:{ parse:[] },
+      });
+    }
+
+    const subscriberCount = new Set(
+      subscribers.filter(id => id !== _client?.user?.id)
+    ).size;
+    const embed = new EmbedBuilder()
+      .setColor(0x0891b2)
+      .setTitle("LOZ Update Subscribers")
+      .setDescription("Current users who have opted in to receive major LOZ update announcements by DM.")
+      .addFields(
+        { name:"Active subscribers", value:"🔔 **" + subscriberCount.toLocaleString() + "**", inline:true },
+        { name:"Counting rule", value:"Only unique Discord users whose update subscription is currently enabled are counted. Users who unsubscribe are excluded.", inline:false },
+      )
+      .setFooter({ text:"Live count · Read from MongoDB" });
+
+    return interaction.editReply({ embeds:[embed], allowedMentions:{ parse:[] } });
+  }
+
   if (commandName === "updates") {
     const sub = options.getSubcommand();
 
@@ -1888,6 +1929,9 @@ const commands = [
   new SlashCommandBuilder().setName("broadcast").setDescription("DM the major update to users who opted in").setDefaultMemberPermissions(0n),
   new SlashCommandBuilder().setName("broadtest").setDescription("Send the update DM preview to yourself").setDefaultMemberPermissions(0n),
   new SlashCommandBuilder().setName("servers").setDescription("List LOZ servers with invite links").setDefaultMemberPermissions(0n),
+  new SlashCommandBuilder().setName("view").setDescription("View restricted LOZ information")
+    .addSubcommand(s=>s.setName("subscribers").setDescription("View the number of active update subscribers"))
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
   new SlashCommandBuilder().setName("gift").setDescription("Gift species rolls to another player")
     .addUserOption(o=>o.setName("user").setDescription("Player to gift rolls to").setRequired(true))
     .addIntegerOption(o=>o.setName("amount").setDescription("Number of rolls to gift").setRequired(true).setMinValue(1).setMaxValue(2)),
