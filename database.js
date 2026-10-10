@@ -52,6 +52,7 @@ const userSchema = new mongoose.Schema({
   questSpecies:    { type:Object, default:{} },
   rolls:           { type:Number, default:0 },
   speciesTokens:   { type:Number, default:0 },
+  guideRewardClaimed:{ type:Boolean, default:false },
   requestsEnabled: { type:Boolean, default:true },
   lastSwitch:      { type:Number, default:0 },
   awakening:       { type:Object, default:{} },
@@ -167,6 +168,50 @@ async function saveUserSpecies(userId, data) {
 // cannot overwrite unrelated persisted player data.
 async function saveUserRolls(userId, rolls) {
   return await upsertUser(userId, { rolls });
+}
+
+
+async function awardGuideCompletionRoll(userId) {
+  try {
+    if (userRepairPromise) await userRepairPromise;
+    if (!await connect()) return { ok:false, error:true };
+
+    const updated = await User.findOneAndUpdate(
+      {
+        userId,
+        archivedForRepair:{ $ne:true },
+        guideRewardClaimed:{ $ne:true },
+      },
+      {
+        $inc:{ rolls:1 },
+        $set:{ userId, archivedForRepair:false, guideRewardClaimed:true },
+      },
+      { new:true, upsert:true, setDefaultsOnInsert:true }
+    );
+    if (updated) return { ok:true, awarded:true, rolls:Number(updated.rolls)||0 };
+
+    const existing = await User.findOne({ userId, archivedForRepair:{ $ne:true } })
+      .select({ guideRewardClaimed:1, rolls:1 }).lean();
+    if (existing?.guideRewardClaimed) {
+      return { ok:true, awarded:false, rolls:Number(existing.rolls)||0 };
+    }
+    return { ok:false, error:true };
+  } catch(e) {
+    // Concurrent completions can collide with the unique active userId index.
+    if (e?.code === 11000) {
+      try {
+        const existing = await User.findOne({ userId, archivedForRepair:{ $ne:true } })
+          .select({ guideRewardClaimed:1, rolls:1 }).lean();
+        if (existing?.guideRewardClaimed) {
+          return { ok:true, awarded:false, rolls:Number(existing.rolls)||0 };
+        }
+      } catch(readError) {
+        console.error("❌ Guide reward verification error:", readError.message);
+      }
+    }
+    console.error("❌ Guide completion reward error:", e.message);
+    return { ok:false, error:true };
+  }
 }
 
 async function addSpeciesTokens(userId, amount) {
@@ -463,6 +508,7 @@ function mergeDuplicatePlayerRecords(records) {
     badges: mergePlayerProgress(ordered.map(record => record.badges || [])),
     // Token balances are not additive across duplicates; retain the highest known balance.
     speciesTokens: Math.max(0, ...ordered.map(record => Number(record.speciesTokens)||0)),
+    guideRewardClaimed: ordered.some(record => record.guideRewardClaimed === true),
   };
 }
 
@@ -507,6 +553,7 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
         questSpecies:    obj.questSpecies    || {},
         rolls:           obj.rolls           || 0,
         speciesTokens:   Math.max(0, ...records.map(record => Number(record.speciesTokens)||0)),
+        guideRewardClaimed:records.some(record => record.guideRewardClaimed === true),
         requestsEnabled: obj.requestsEnabled !== false,
         lastSwitch:      obj.lastSwitch      || 0,
         awakening:       obj.awakening       || {},
@@ -884,7 +931,7 @@ async function deleteUser(userId) {
 
 // ==================== EXPORTS ====================
 module.exports = {
-  saveUserSpecies, saveUserRolls, saveUserSpeciesFields, addSpeciesTokens, redeemSpeciesToken, repairUserRecords,
+  saveUserSpecies, saveUserRolls, saveUserSpeciesFields, addSpeciesTokens, redeemSpeciesToken, awardGuideCompletionRoll, repairUserRecords,
   saveLeaderboard, saveFightLeaderboard,
   saveFightStats, saveBotStats, saveDailyClaim,
   saveQuestProgress, saveDuelChannel,
