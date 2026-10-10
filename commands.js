@@ -494,10 +494,10 @@ async function buildServersPagePayload(page, ownerId) {
 async function handleCommand(interaction) {
   const { commandName, options, user, guild, channel } = interaction;
 
-  // Temporarily disable all /fight subcommands while the fight system is being updated.
-  if (commandName === "fight") {
+  // Temporarily disable player challenges while the PvP issue is investigated.
+  if (commandName === "fight" && options.getSubcommand() === "player") {
     return safeReply(interaction, {
-      embeds: [createErrorEmbed("Currently disabled due to updates to the fight system. Please try again later.")],
+      embeds: [createErrorEmbed("Player fights are currently disabled while we investigate an issue. Bot fights are still available with `/fight bot`.")],
       flags: 64,
     });
   }
