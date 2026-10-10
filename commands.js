@@ -44,7 +44,7 @@ function buildStyledCardPayload(title, color, sections = [], ephemeral = false) 
   };
 }
 
-function buildSpeciesRollAnnouncement(userName, species, rollsRemaining, isResult = false) {
+function buildSpeciesRollAnnouncement(userId, userName, species, rollsRemaining, isResult = false) {
   const title = isResult
     ? `${species.emoji} ${species.name} — Species Roll Result`
     : `<:reroll_dice:1558042108965822515> Species Roll`;
@@ -57,7 +57,12 @@ function buildSpeciesRollAnnouncement(userName, species, rollsRemaining, isResul
     { heading:"Available Rolls", body:`<:reroll_dice:1558042108965822515> **${rollsRemaining}**` },
     { heading:"How to Roll", body:"Your reroll controls are visible only to you in the private message below. Use **REROLL** to roll again or **CANCEL** to keep your current species." },
   ];
-  return buildStyledCardPayload(title, species.color || 0x0891b2, sections, false);
+  const payload = buildStyledCardPayload(title, species.color || 0x0891b2, sections, false);
+  return {
+    ...payload,
+    components:[new TextDisplayBuilder().setContent(`<@${userId}>'s Species Roll`),...payload.components],
+    allowedMentions:{ parse:[], users:[userId] },
+  };
 }
 
 function buildSpeciesRollControlsPayload(userId, rollsRemaining) {
@@ -75,6 +80,99 @@ function buildSpeciesRollControlsPayload(userId, rollsRemaining) {
     container.addTextDisplayComponents(new TextDisplayBuilder().setContent("No rolls remain. Use `/daily` for your next free roll."));
   }
   return { components:[container], flags:MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, allowedMentions:{ parse:[] } };
+}
+
+
+const GUIDE_PAGES = [
+  {
+    title:"Welcome to Legends of the Rift",
+    body:"LOZ is a turn-based RPG set in a world of powerful species, strange abilities, and awakenings. Your species determines your combat stats, passive trait, and ultimate ability.\n\nYour journey is about more than collecting a rare species: learn its strengths, build your battle record, challenge LOZ, and work toward special awakenings.\n\n**Your goal:** discover your playstyle, win battles, and grow stronger over time.",
+  },
+  {
+    title:"Understand Species",
+    body:"Every species has its own combat profile:\n\n❤️ **HP** is how much damage you can take.\n⚔️ **ATK** is your attack damage range.\n💚 **HEAL** is your potential recovery.\n✨ **ULT cooldown** is how many rounds you wait before your ultimate is ready again.\n\nSpecies also have a **passive** that may trigger automatically and an **active ultimate** with a special effect. Type matchups can matter, too.\n\nUse `/species` to browse the compendium, or `/species species:<name>` to inspect one species in detail. Rarity is exciting, but understanding your abilities is what helps you use them well.",
+  },
+  {
+    title:"Rolls, Daily Rewards, and Your Profile",
+    body:"Species rolls let you change your current species. `/daily` grants a daily roll, while `/species-roll` opens the roll controls and uses one roll each time you reroll. The result is posted publicly so everyone can see what you got; the controls stay private to you.\n\nYour `/profile` is your player card. It tracks your species, rolls, Species Tokens, fight record, streak, and abilities.\n\nA **Species Token** is a separate item that lets you choose an available species rather than relying on random odds. Use `/items use item:Species Token` and confirm the change only when you're sure.",
+  },
+  {
+    title:"How Combat Works",
+    body:"Challenge another player with `/fight user:<player>`, or practice against LOZ with `/fightbot difficulty:<difficulty>`. Player challenges need the other player to accept before the battle starts.\n\nOn your turn:\n\n⚔️ **Attack** deals damage and can trigger combat effects.\n💚 **Heal** restores HP when it is available; it is disabled when you're above 80% HP or its cooldown is active.\n✨ **Ultimate** uses your species' special ability when its cooldown reaches zero. Some ultimates ask you to pick an effect.\n🏳️ **Forfeit** gives up the battle.\n\nWatch your HP, cooldowns, passives, and opponent's effects. An ultimate used at the right moment can matter more than simply attacking every turn.",
+  },
+  {
+    title:"Practice, Rewards, and Rankings",
+    body:"Bot fights have five difficulties: **Easy, Medium, Hard, Impossible, and Brutal**. Start with a level you can handle, then try tougher opponents as you learn your species. Brutal opponents include Reaper, Mechangel, and Archdemon and use stronger decisions. A Brutal victory grants **10 leaderboard points and 1 species roll**.\n\nUse `/fightstats` to review your player battle record, `/history` to revisit recent battles, `/botstats` to compare results by bot difficulty, and `/fights` to see the fight leaderboard. These commands help you track progress, not just individual wins.",
+  },
+  {
+    title:"Awakenings and Long-Term Progress",
+    body:"Some species can awaken into stronger forms. Use `/awakening` to check your progress and requirements.\n\n⚡🤖 **Cyborg → Mechangel:** requires 25 wins, 500 damage dealt, and 15 ultimate uses. Awakening grants **5 species rolls**.\n\n😈 **Demon → Archdemon:** requires 25 player-fight wins, 20 Demon bot victories, and 20 rolls to pay the awakening cost. The awakening is permanent; after rolling another species, `/switch` can return you to Archdemon.\n\nUse `/switch` to manage eligible original or awakened forms. Quest availability can change, so check `/quest view` for the currently displayed quest status before planning around it.",
+  },
+  {
+    title:"Your LOZ Toolkit",
+    body:"Here are a few useful commands to keep close:\n\n• `/daily` — collect your daily roll.\n• `/species-roll` — reroll your species.\n• `/profile` — inspect your player card.\n• `/species` — learn species stats and abilities.\n• `/fight` and `/fightbot` — battle players or bots.\n• `/awakening` and `/quest view` — track special progression.\n• `/gift` — send rolls to another player within the limits.\n• `/patchnotes` — read the latest changes.\n• `/guide` — revisit this tutorial whenever you need a refresher.\n\nYou don't need to memorize everything now. Try a command, read the result panel, and use `/help` whenever you need a reminder.",
+  },
+  {
+    title:"Ready to Enter the Rift?",
+    body:"That's the foundation: understand your species, keep an eye on your resources, and learn when to attack, heal, or use your ultimate. LOZ tracks your progress so every battle helps tell your story.\n\nComplete this tutorial to claim your one-time welcome reward. The reward is saved to your player record, so finishing the guide again won't grant another roll.",
+  },
+];
+
+function buildGuidePayload(userId, userDisplayName, pageIndex) {
+  const page = GUIDE_PAGES[pageIndex];
+  if (!page) throw new RangeError("Invalid guide page");
+  const container = new ContainerBuilder().setAccentColor(0x0891b2);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    `## 📖 LOZ FIELD GUIDE
+### Page ${pageIndex + 1} of ${GUIDE_PAGES.length} · ${page.title}
+
+${page.body}`
+  ));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  const buttons = [];
+  if (pageIndex > 0) buttons.push(
+    new ButtonBuilder()
+      .setCustomId(`guide_page_${userId}_${pageIndex - 1}`)
+      .setLabel("← Previous")
+      .setStyle(ButtonStyle.Secondary)
+  );
+  if (pageIndex < GUIDE_PAGES.length - 1) {
+    buttons.push(new ButtonBuilder()
+      .setCustomId(`guide_page_${userId}_${pageIndex + 1}`)
+      .setLabel("Next Page →")
+      .setStyle(ButtonStyle.Primary));
+  } else {
+    buttons.push(new ButtonBuilder()
+      .setCustomId(`guide_complete_${userId}`)
+      .setLabel("Complete Tutorial")
+      .setStyle(ButtonStyle.Success));
+  }
+  container.addActionRowComponents(new ActionRowBuilder().addComponents(buttons));
+  return {
+    components:[
+      new TextDisplayBuilder().setContent(`<@${userId}>'s LOZ Guide`),
+      container,
+    ],
+    flags:MessageFlags.IsComponentsV2,
+    allowedMentions:{ parse:[], users:[userId] },
+  };
+}
+
+function buildGuideCompletionPayload(userId, awarded, rolls) {
+  const container = new ContainerBuilder().setAccentColor(awarded ? 0x00aa66 : 0x0891b2);
+  const description = awarded
+    ? `You're all done with the tutorial! Here's a free roll to help you get started!\n\n<:reroll_dice:1558042108965822515> **+1 Species Roll**\nYour new balance is **${rolls}**. The reward has been saved to your player record.`
+    : `You're all done with the tutorial! You've already claimed the one-time guide reward, so no extra roll was added.\n\nCurrent roll balance: **${rolls}**.`;
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    `## ${awarded ? "🎁 Tutorial Complete!" : "✅ Tutorial Complete!"}\n${description}`
+  ));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("You're ready to explore LOZ. Use `/help` or run `/guide` again whenever you need a refresher."));
+  return {
+    components:[new TextDisplayBuilder().setContent(`<@${userId}>'s LOZ Guide`),container],
+    flags:MessageFlags.IsComponentsV2,
+    allowedMentions:{ parse:[], users:[userId] },
+  };
 }
 
 function buildUpdateSubscriptionPromptPayload(userId) {
@@ -377,15 +475,7 @@ async function handleCommand(interaction) {
 
   // ── GUIDE ─────────────────────────────────────────────────────
   if (commandName === "guide") {
-    const steps=[
-      {title:"Welcome to LOZ!",content:"LOZ is an RPG battle bot!\n\n**Step 1:** Use `/daily` for your first free roll.\n**Step 2:** Use `/species-roll` to get your species.\n**Step 3:** Use `/fight @user` to battle!"},
-      {title:"Species System",content:"Each species has unique stats:\n• **HP** — Health points\n• **ATK** — Damage range\n• **HEAL** — Heal range\n• **ULT** — Ultimate ability cooldown\n\nRarer species are stronger!"},
-      {title:"Combat",content:"Fights are turn-based:\n• ⚔️ **ATTACK** — Deal damage\n• 💚 **HEAL** — Recover HP (3-round cooldown)\n• ✨ **ULT** — Species unique ability\n• 🏃 **FORFEIT** — Give up\n\nWin fights for leaderboard points and rolls!"},
-      {title:"Quests & Awakenings",content:"• **Reaper Quest** — Defeat bots and players to unlock Reaper\n• **Demon Awakening** — 25 player wins, 20 Demon bot defeats, and 20 rolls → Archdemon\n• **Cyborg Awakening** — 25 wins, 500 damage, 15 ULTs → Mechangel!\n\nUse `/quest view` for Reaper and `/awakening` for awakening progress."},
-    ];
-    const embed=new EmbedBuilder().setColor(0x0891b2).setTitle(`📖 New Player Guide (1/${steps.length})`).setDescription(`**${steps[0].title}**\n\n${steps[0].content}`);
-    const row=new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("guide_next_0").setLabel("NEXT →").setStyle(ButtonStyle.Primary));
-    return safeReply(interaction,{embeds:[embed],components:[row],flags:64});
+    return safeReply(interaction, buildGuidePayload(user.id, user.displayName || user.username, 0));
   }
 
   // ── DAILY ─────────────────────────────────────────────────────
@@ -648,7 +738,7 @@ async function handleCommand(interaction) {
     if ((userData.rolls||0)<1)
       return safeReply(interaction,buildStyledCardPayload("No Rolls Left",0xff0000,[{body:"Use `/daily` for a free roll or win fights for a chance to earn rolls."}],true));
     const currentSp=userData.species||humanSpecies;
-    const pubMsg=await channel.send(buildSpeciesRollAnnouncement(user.displayName||user.username,currentSp,userData.rolls,false));
+    const pubMsg=await channel.send(buildSpeciesRollAnnouncement(user.id,user.displayName||user.username,currentSp,userData.rolls,false));
     _state.activeRolls.set(user.id,{channelId:channel.id,messageId:pubMsg.id,timestamp:Date.now()});
     return safeReply(interaction,buildSpeciesRollControlsPayload(user.id,userData.rolls));
   }
@@ -1305,23 +1395,45 @@ async function handleButton(interaction) {
     return interaction.editReply(await buildServersPagePayload(targetPage, user.id));
   }
 
-  // ── GUIDE ─────────────────────────────────────────────────────
-  if (customId.startsWith("guide_next_")) {
-    const step=parseInt(customId.split("_")[2])+1;
-    const steps=[
-      {title:"Welcome to LOZ!",content:"Use `/daily` for a free roll, `/species-roll` to get your species, `/fight @user` to battle!"},
-      {title:"Species System",content:"HP, ATK, HEAL, ULT cooldown — rarer = stronger! Check `/species`."},
-      {title:"Combat",content:"⚔️ ATTACK, 💚 HEAL, ✨ ULT, 🏃 FORFEIT\n\nWin fights for points and rolls!"},
-      {title:"Quests",content:"• Reaper Quest: defeat bots and players\n• Demon Awakening: 25 player wins, 20 Demon bot defeats, 20 rolls → Archdemon\n• Cyborg Awakening: 25 wins, 500 dmg, 15 ULTs\n\n`/quest view` for Reaper; `/awakening` for awakenings."},
-    ];
-    const totalSteps=steps.length;
-    const embed=new EmbedBuilder().setColor(0x0891b2).setTitle(`📖 Guide (${step+1}/${totalSteps})`).setDescription(`**${steps[step].title}**\n\n${steps[step].content}`);
-    const row=new ActionRowBuilder();
-    if (step<totalSteps-1) row.addComponents(new ButtonBuilder().setCustomId(`guide_next_${step}`).setLabel("NEXT →").setStyle(ButtonStyle.Primary));
-    else row.addComponents(new ButtonBuilder().setCustomId("guide_finish").setLabel("✅ Finish").setStyle(ButtonStyle.Success));
-    return interaction.update({embeds:[embed],components:[row],flags:64});
+  // ── GUIDE NAVIGATION AND ONE-TIME COMPLETION REWARD ─────────────
+  if (customId.startsWith("guide_page_")) {
+    const parts=customId.slice("guide_page_".length).split("_");
+    const expectedUserId=parts[0];
+    const pageIndex=Number.parseInt(parts[1],10);
+    if (user.id!==expectedUserId) return safeReply(interaction,{content:"This guide belongs to another player. Run `/guide` to start your own.",flags:64});
+    if (!Number.isInteger(pageIndex)||pageIndex<0||pageIndex>=GUIDE_PAGES.length)
+      return safeReply(interaction,{content:"That guide page is unavailable. Run `/guide` to reopen the guide.",flags:64});
+    return interaction.update(buildGuidePayload(user.id,user.displayName||user.username,pageIndex));
   }
-  if (customId==="guide_finish") return interaction.update({content:"✅ Guide complete! Use `/help` for all commands.",embeds:[],components:[],flags:64});
+
+  if (customId.startsWith("guide_complete_")) {
+    const expectedUserId=customId.slice("guide_complete_".length);
+    if (user.id!==expectedUserId) return safeReply(interaction,{content:"This guide belongs to another player.",flags:64});
+    await interaction.deferUpdate();
+    const reward=await database.awardGuideCompletionRoll(user.id);
+    if (!reward?.ok) {
+      const failure = buildStyledCardPayload(
+        "Tutorial Completed, Reward Unconfirmed",
+        0xff0000,
+        [{body:"The tutorial is complete, but MongoDB couldn't confirm your reward. Your roll balance has not been changed in the local cache. Please contact the LOZ team before retrying."}]
+      );
+      return interaction.editReply({
+        components:[new TextDisplayBuilder().setContent(`<@${user.id}>'s LOZ Guide`),...failure.components],
+        flags:MessageFlags.IsComponentsV2,
+        allowedMentions:{parse:[]},
+      });
+    }
+
+    const userData=_state.userSpecies.get(user.id)||{
+      species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},
+      rolls:0,speciesTokens:0,requestsEnabled:true,lastSwitch:0,
+      awakening:{},badges:[],guideRewardClaimed:false,
+    };
+    userData.rolls=reward.rolls;
+    userData.guideRewardClaimed=true;
+    _state.userSpecies.set(user.id,userData);
+    return interaction.editReply(buildGuideCompletionPayload(user.id,reward.awarded,reward.rolls));
+  }
 
 
   // ── REROLL ────────────────────────────────────────────────────
@@ -1344,7 +1456,7 @@ async function handleButton(interaction) {
     await interaction.update(buildSpeciesRollControlsPayload(user.id,userData.rolls));
     if(userData.rolls<1) _state.activeRolls.delete(user.id);
     if(pubMsgId) {
-      const payload=buildSpeciesRollAnnouncement(user.displayName||user.username,newSpecies,userData.rolls,true);
+      const payload=buildSpeciesRollAnnouncement(user.id,user.displayName||user.username,newSpecies,userData.rolls,true);
       channel.messages.fetch(pubMsgId).then(pubMsg=>pubMsg.edit(payload)).catch(()=>{});
     }
     database.saveUserSpecies(user.id,userData).catch(console.error);
