@@ -44,6 +44,41 @@ function buildStyledCardPayload(title, color, sections = [], ephemeral = false) 
   };
 }
 
+function buildFightChallengePayload(challengerId, targetId, challengerSpecies, targetSpecies) {
+  const container = new ContainerBuilder().setAccentColor(0xf97316);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    "## ⚔️ Player Fight Challenge\nA player has challenged you to a battle in Legends of the Rift."
+  ));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    "**CHALLENGER**\n" + challengerSpecies.emoji + " **" + challengerSpecies.name + "** · <@" + challengerId + ">\n\n" +
+    "**CHALLENGED PLAYER**\n" + targetSpecies.emoji + " **" + targetSpecies.name + "** · <@" + targetId + ">"
+  ));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    "Accept to begin the battle. This request expires in **60 seconds**.\n\nDeclining or letting it expire frees both players to send or receive another challenge."
+  ));
+  container.addActionRowComponents(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("fight_accept_" + challengerId + "_" + targetId).setLabel("Accept Fight").setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId("fight_reject_" + challengerId + "_" + targetId).setLabel("Decline").setStyle(ButtonStyle.Danger)
+  ));
+  return { components:[container], flags:MessageFlags.IsComponentsV2, allowedMentions:{ parse:[], users:[challengerId, targetId] } };
+}
+
+function buildFightChallengeStatusPayload(title, description, color = 0x0891b2, mentionIds = []) {
+  const container = new ContainerBuilder().setAccentColor(color);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## " + title + "\n" + description));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  return { components:[container], flags:MessageFlags.IsComponentsV2, allowedMentions:{ parse:[], users:mentionIds } };
+}
+
+function clearFightRequestLocks(challengeId, ...userIds) {
+  for (const userId of userIds) {
+    const request = _state?.activeRequests?.get(userId);
+    if (request?.challengeId === challengeId) _state.activeRequests.delete(userId);
+  }
+}
+
 function buildSpeciesRollAnnouncement(userId, userName, species, rollsRemaining, isResult = false) {
   const title = isResult
     ? `${species.emoji} ${species.name} — Species Roll Result`
@@ -870,25 +905,40 @@ async function handleCommand(interaction) {
     if (!od?.species||od.species.name==="Human") return safeReply(interaction,{embeds:[createErrorEmbed(`<@${target.id}> needs a species first!`)],flags:64});
     const rc=canSendRequest(user.id,target.id,user.id===_state.ownerId);
     if (!rc.allowed) return safeReply(interaction,{embeds:[createErrorEmbed(rc.reason)],flags:64});
-    const challengeId=`${user.id}-${target.id}`;
-    if (_state.fightChallenges.has(challengeId)) return safeReply(interaction,{embeds:[createErrorEmbed("A challenge already exists!")],flags:64});
-    const row=new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`fight_accept_${user.id}_${target.id}`).setLabel("✅ Accept").setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId(`fight_reject_${user.id}_${target.id}`).setLabel("❌ Reject").setStyle(ButtonStyle.Danger));
+    const challengeId=user.id + "-" + target.id;
     const cdSp=cd.species||humanSpecies, odSp=od.species||humanSpecies;
-    const embed=new EmbedBuilder().setColor(0xff4500).setTitle("⚔️ Fight Challenge!").setDescription(`${cdSp.emoji} **${cdSp.name}** <@${user.id}>\nvs\n${odSp.emoji} **${odSp.name}** <@${target.id}>\n\n<@${target.id}>, do you accept?`);
-    await safeReply(interaction,{embeds:[embed],components:[row]});
-    const msg=await interaction.fetchReply();
-    _state.activeRequests.set(user.id,{type:"fight",targetId:target.id,timestamp:Date.now()});
-    _state.activeRequests.set(target.id,{type:"fight",targetId:user.id,timestamp:Date.now()});
-    _state.fightChallenges.set(challengeId,{challengerId:user.id,opponentId:target.id,messageId:msg.id,channelId:channel.id,timestamp:Date.now()});
-    setTimeout(()=>{ if(_state.fightChallenges.has(challengeId)){ _state.fightChallenges.delete(challengeId); _state.activeRequests.delete(user.id); _state.activeRequests.delete(target.id); msg.edit({embeds:[new EmbedBuilder().setColor(0x808080).setDescription("⏰ Challenge expired.")],components:[]}).catch(()=>{}); } },60000);
+    const timestamp=Date.now();
+    const challenge={challengerId:user.id,opponentId:target.id,messageId:null,channelId:channel.id,timestamp};
+    // Reserve both players synchronously so simultaneous requests cannot race past the check.
+    _state.activeRequests.set(user.id,{type:"fight",targetId:target.id,timestamp,challengeId});
+    _state.activeRequests.set(target.id,{type:"fight",targetId:user.id,timestamp,challengeId});
+    _state.fightChallenges.set(challengeId,challenge);
+    try {
+      await safeReply(interaction,buildFightChallengePayload(user.id,target.id,cdSp,odSp));
+      const msg=await interaction.fetchReply();
+      challenge.messageId=msg.id;
+      setTimeout(()=>{
+        if (_state.fightChallenges.get(challengeId)!==challenge) return;
+        _state.fightChallenges.delete(challengeId);
+        clearFightRequestLocks(challengeId,user.id,target.id);
+        msg.edit(buildFightChallengeStatusPayload(
+          "Challenge Expired",
+          "This request expired after 60 seconds. No battle was started.",
+          0x808080
+        )).catch(()=>{});
+      },60000);
+    } catch(error) {
+      if (_state.fightChallenges.get(challengeId)===challenge) _state.fightChallenges.delete(challengeId);
+      clearFightRequestLocks(challengeId,user.id,target.id);
+      throw error;
+    }
     return;
   }
 
   // ── FIGHTBOT ──────────────────────────────────────────────────
   if (commandName === "fight" && options.getSubcommand() === "bot") {
     const difficulty=options.getString("difficulty");
+    if (_state.activeRequests.has(user.id)) return safeReply(interaction,{embeds:[createErrorEmbed("You have a pending player challenge. Accept, decline, or wait for it to expire before starting another fight.")],flags:64});
     if (isPlayerInFight(user.id)||_state.activeBotFights.has(user.id)) return safeReply(interaction,{embeds:[createErrorEmbed("Already in a fight!")],flags:64});
     const playerData=_state.userSpecies.get(user.id);
     if (!playerData?.species||playerData.species.name==="Human") return safeReply(interaction,{embeds:[createErrorEmbed("You need a species! Use `/species-roll` first.")],flags:64});
@@ -1548,22 +1598,51 @@ async function handleButton(interaction) {
   // ── FIGHT ACCEPT/REJECT ───────────────────────────────────────
   if (customId.startsWith("fight_accept_")||customId.startsWith("fight_reject_")) {
     const parts=customId.split("_"), action=parts[1], challengerId=parts[2], opponentId=parts[3];
-    if (user.id!==opponentId) return safeReply(interaction,{embeds:[createErrorEmbed("This isn't your challenge!")],flags:64});
-    const challengeId=`${challengerId}-${opponentId}`;
-    if (!_state.fightChallenges.has(challengeId)) return safeReply(interaction,{embeds:[createErrorEmbed("Challenge expired.")],flags:64});
-    _state.fightChallenges.delete(challengeId); _state.activeRequests.delete(challengerId); _state.activeRequests.delete(opponentId);
+    if (user.id!==opponentId) return safeReply(interaction,{embeds:[createErrorEmbed("This challenge does not belong to you.")],flags:64});
+    const challengeId=challengerId + "-" + opponentId;
+    const challenge=_state.fightChallenges.get(challengeId);
+    if (!challenge) return safeReply(interaction,{embeds:[createErrorEmbed("Challenge expired.")],flags:64});
     if (action==="reject") {
-      await message.edit({embeds:[new EmbedBuilder().setColor(0xff0000).setDescription(`❌ <@${opponentId}> rejected the fight.`)],components:[]});
+      _state.fightChallenges.delete(challengeId);
+      clearFightRequestLocks(challengeId,challengerId,opponentId);
+      await message.edit(buildFightChallengeStatusPayload(
+        "Fight Challenge Declined",
+        "<@" + opponentId + "> declined the challenge. Both players can send or receive another challenge now.",
+        0xdc2626,
+        [opponentId]
+      ));
       return safeReply(interaction,{embeds:[createErrorEmbed("Fight rejected.")],flags:64});
     }
     const cd2=_state.userSpecies.get(challengerId), od=_state.userSpecies.get(opponentId);
     if (!cd2?.species||cd2.species.name==="Human"||!od?.species||od.species.name==="Human") {
-      await message.edit({embeds:[new EmbedBuilder().setColor(0xff0000).setDescription("❌ One player lost their species! Cancelled.")],components:[]});
+      _state.fightChallenges.delete(challengeId);
+      clearFightRequestLocks(challengeId,challengerId,opponentId);
+      await message.edit(buildFightChallengeStatusPayload(
+        "Fight Cancelled",
+        "One player no longer has an eligible species. The challenge has been cancelled.",
+        0xdc2626
+      ));
       return safeReply(interaction,{embeds:[createErrorEmbed("Fight cancelled — species missing!")],flags:64});
     }
-    await message.edit({embeds:[new EmbedBuilder().setColor(0x00ff00).setDescription(`✅ <@${opponentId}> accepted! Battle starting...`)],components:[]});
-    safeReply(interaction,{content:"Fight accepted!",flags:64});
-    startFight(channel,challengerId,opponentId);
+    _state.fightChallenges.delete(challengeId);
+    await message.edit(buildFightChallengeStatusPayload(
+      "Challenge Accepted",
+      "<@" + opponentId + "> accepted. The battle is starting now. Both players stay locked to this match until it ends.",
+      0x16a34a,
+      [opponentId]
+    ));
+    await safeReply(interaction,{content:"Fight accepted!",flags:64});
+    try {
+      await startFight(channel,challengerId,opponentId);
+    } catch(error) {
+      clearFightRequestLocks(challengeId,challengerId,opponentId);
+      await message.edit(buildFightChallengeStatusPayload(
+        "Fight Cancelled",
+        "LOZ could not start this battle. Both players have been released from the challenge lock.",
+        0xdc2626
+      )).catch(()=>{});
+      throw error;
+    }
     return;
   }
 
