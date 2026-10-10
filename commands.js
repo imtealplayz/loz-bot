@@ -28,6 +28,56 @@ function setState(s) { _state = s; }
 function setClient(c) { _client = c; }
 
 
+
+function buildStyledCardPayload(title, color, sections = [], ephemeral = false) {
+  const container = new ContainerBuilder().setAccentColor(color || 0x0891b2);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${title}`));
+  for (const section of sections) {
+    container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      section.heading ? `### ${section.heading}\n${section.body}` : section.body
+    ));
+  }
+  return {
+    components:[container],
+    flags:MessageFlags.IsComponentsV2 | (ephemeral ? MessageFlags.Ephemeral : 0),
+    allowedMentions:{ parse:[] },
+  };
+}
+
+function buildSpeciesRollAnnouncement(userName, species, rollsRemaining, isResult = false) {
+  const title = isResult
+    ? `${species.emoji} ${species.name} — Species Roll Result`
+    : `<:reroll_dice:1558042108965822515> Species Roll`;
+  const sections = isResult ? [
+    { heading:"Roll Result", body:`**${userName}** rolled ${species.emoji} **${species.name}**.\n\n**Roll chance:** ${species.chance || "Special unlock"}` },
+    { heading:"Species Stats", body:`❤️ **HP:** ${species.hp}\n⚔️ **ATK:** ${species.atkMin}–${species.atkMax}\n💚 **HEAL:** ${species.healMin}–${species.healMax}\n✨ **ULT cooldown:** ${species.ultCooldown || "—"} rounds` },
+    { heading:"Remaining Rolls", body:`<:reroll_dice:1558042108965822515> **${rollsRemaining}**` },
+  ] : [
+    { heading:"Current Species", body:`${species.emoji} **${species.name}**` },
+    { heading:"Available Rolls", body:`<:reroll_dice:1558042108965822515> **${rollsRemaining}**` },
+    { heading:"How to Roll", body:"Your reroll controls are visible only to you in the private message below. Use **REROLL** to roll again or **CANCEL** to keep your current species." },
+  ];
+  return buildStyledCardPayload(title, species.color || 0x0891b2, sections, false);
+}
+
+function buildSpeciesRollControlsPayload(userId, rollsRemaining) {
+  const container = new ContainerBuilder().setAccentColor(0x0891b2);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    `## Species Roll Controls\nYou have **${rollsRemaining}** species roll${rollsRemaining === 1 ? "" : "s"} remaining. These controls are private to you.`
+  ));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  if (rollsRemaining > 0) {
+    container.addActionRowComponents(new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`reroll_${userId}`).setLabel("REROLL").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`cancel_${userId}`).setLabel("CANCEL").setStyle(ButtonStyle.Secondary)
+    ));
+  } else {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("No rolls remain. Use `/daily` for your next free roll."));
+  }
+  return { components:[container], flags:MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, allowedMentions:{ parse:[] } };
+}
+
 function buildUpdateSubscriptionPromptPayload(userId) {
   const container = new ContainerBuilder().setAccentColor(0x0891b2);
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
@@ -498,13 +548,11 @@ async function handleCommand(interaction) {
     });
   }
 
+
   // ── SPECIES ───────────────────────────────────────────────────
   if (commandName === "species") {
     const spName = options.getString("species");
-
-    // No argument — show full ranked species list
     if (!spName) {
-      const { speciesList, dragonSpecies } = require("./constants.js");
       const ranked = [
         {name:"Demi God",emoji:"⚡",chance:"0.5%",tier:"Epic"},
         {name:"Demon Lord",emoji:"🔥",chance:"1.0%",tier:"Epic"},
@@ -523,109 +571,87 @@ async function handleCommand(interaction) {
         {name:"Orc",emoji:"🟢",chance:"22.0%",tier:"Common"},
         {name:"Half-Blood",emoji:"🩸",chance:"26.0%",tier:"Common"},
       ];
-      const tierColors = {Epic:"🟣",Rare:"🔵",Uncommon:"🟡",Common:"⚪"};
-      let desc = "";
-      ranked.forEach((s,i) => {
-        const note = s.note ? ` *(${s.note})*` : "";
-        desc += `\`#${String(i+1).padStart(2,"0")}\` ${s.emoji} **${s.name}** — ${s.chance}${note}
-`;
-      });
-      desc += `
-🌑 **Reaper** — Quest unlock only
-👿 **Archdemon** — Quest unlock only
-⚡🤖 **Mechangel** — Cyborg awakening only`;
-      const embed = new EmbedBuilder()
-        .setColor(0x0891b2)
-        .setTitle("<:reroll_dice:1558042108965822515> All Species — Ranked by Rarity")
-        .setDescription(desc)
-        .setFooter({text:"Use /species species:<name> for detailed stats on any species"});
-      return safeReply(interaction,{embeds:[embed]});
+      const tierOrder = ["Epic","Rare","Uncommon","Common"];
+      const sections = tierOrder.map(tier => ({
+        heading:`${({Epic:"🟣",Rare:"🔵",Uncommon:"🟡",Common:"⚪"})[tier]} ${tier} Species`,
+        body:ranked.filter(sp=>sp.tier===tier).map(sp =>
+          `**${sp.emoji} ${sp.name}**  ·  ${sp.chance}${sp.note ? " · Random element" : ""}`
+        ).join("\n"),
+      }));
+      sections.push({heading:"Special Unlocks",body:"🌑 **Reaper** · Quest unlock\n👿 **Archdemon** · Demon awakening\n⚡🤖 **Mechangel** · Cyborg awakening"});
+      sections.push({heading:"Species Details",body:"Use `/species species:<name>` to view HP, attack, healing, ultimate cooldown, passive, ultimate, and type matchups."});
+      return safeReply(interaction,buildStyledCardPayload("<:reroll_dice:1558042108965822515> Species Compendium",0x0891b2,sections));
     }
 
-    // Argument provided — show detailed species card
     const sp = getSpeciesByName(spName);
-    if (!sp) return safeReply(interaction,{embeds:[createErrorEmbed("Unknown species! Check `/species` for the full list.")],flags:64});
+    if (!sp) return safeReply(interaction,buildStyledCardPayload("Species Not Found",0xff0000,[{body:"That species couldn't be found. Use `/species` to view the compendium."}],true));
     const adv = typeAdvantages[sp.name];
-    return safeReply(interaction,{embeds:[new EmbedBuilder()
-      .setColor(sp.color||0x808080)
-      .setTitle(`${sp.emoji} ${sp.name}`)
-      .addFields(
-        {name:"💪 Stats",value:`HP: **${sp.hp}**\nATK: **${sp.atkMin}–${sp.atkMax}**\nHEAL: **${sp.healMin}–${sp.healMax}**\nULT CD: **${sp.ultCooldown||"—"}**`,inline:true},
-        {name:"<:reroll_dice:1558042108965822515> Roll Chance",value:sp.chance||"Special unlock",inline:true},
-        {name:"🟢 Passive",value:getPassiveDescription(sp.name),inline:false},
-        {name:"✨ Active ULT",value:getActiveDescription(sp.name),inline:false},
-        {name:"⚖️ Type Matchup",value:adv?(adv.strongAgainst?`✅ Strong vs **${adv.strongAgainst}**\n`:"")+(adv.weakAgainst?`❌ Weak vs **${adv.weakAgainst}**`:"No weaknesses"):"No type advantages",inline:false},
-      )]});
+    const matchup = adv
+      ? [adv.strongAgainst ? `✅ **Strong against:** ${adv.strongAgainst}` : null,adv.weakAgainst ? `❌ **Weak against:** ${adv.weakAgainst}` : null].filter(Boolean).join("\n") || "No special type advantages."
+      : "No special type advantages.";
+    return safeReply(interaction,buildStyledCardPayload(`${sp.emoji} ${sp.name}`,sp.color||0x808080,[
+      {heading:"Combat Stats",body:`❤️ **HP:** ${sp.hp}\n⚔️ **ATK:** ${sp.atkMin}–${sp.atkMax}\n💚 **HEAL:** ${sp.healMin}–${sp.healMax}\n✨ **ULT cooldown:** ${sp.ultCooldown||"—"} rounds`},
+      {heading:"Rarity",body:sp.chance||"Special unlock"},
+      {heading:"Passive",body:getPassiveDescription(sp.name)},
+      {heading:"Active Ultimate",body:getActiveDescription(sp.name)},
+      {heading:"Type Matchup",body:matchup},
+    ]));
   }
 
   // ── PROFILE ───────────────────────────────────────────────────
   if (commandName === "profile") {
     const target=options.getUser("user")||user;
-    const targetMember=await guild.members.fetch(target.id).catch(()=>null);
+    const targetMember=guild ? await guild.members.fetch(target.id).catch(()=>null) : null;
     if (target.bot) {
       if (target.id===_client.user.id) {
-        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(botSpecies.kitsune.color).setTitle(`👤 ${target.displayName}'s Profile`).setThumbnail(target.displayAvatarURL())
-          .addFields(
-            {name:"🧬 Species",value:"🦊 **Kitsune**",inline:true},{name:"❤️ HP",value:"1,000,000",inline:true},{name:"⚔️ Attack",value:"500-1,000",inline:true},
-            {name:"💚 Heal",value:"200,000-500,000",inline:true},{name:"<:reroll_dice:1558042108965822515> Rolls",value:"∞",inline:true},
-            {name:"🏅 Badges",value:"└ 💪 Omnipotent\n└ 🐛 Bug Creator",inline:false},
-            {name:"✨ Passive",value:botSpecies.kitsune.passive,inline:false},{name:"⚡ Active",value:botSpecies.kitsune.active,inline:false},
-            {name:"📊 Total Users",value:`${_state.userSpecies.size}`,inline:true},
-            {name:"⏱️ Uptime",value:`<t:${Math.floor(Date.now()/1000-process.uptime())}:R>`,inline:true},
-          ).setFooter({text:"Made by God"})]});
+        return safeReply(interaction,buildStyledCardPayload(`🦊 ${target.displayName}'s Profile`,botSpecies.kitsune.color,[
+          {heading:"Species",body:"🦊 **Kitsune**"},
+          {heading:"Combat Stats",body:"❤️ **HP:** 1,000,000\n⚔️ **ATK:** 500–1,000\n💚 **HEAL:** 200,000–500,000"},
+          {heading:"Progression",body:`<:reroll_dice:1558042108965822515> **Rolls:** ∞\n📊 **Total players:** ${_state.userSpecies.size}\n⏱️ **Uptime:** <t:${Math.floor(Date.now()/1000-process.uptime())}:R>`},
+          {heading:"Badges",body:"💪 Omnipotent\n🐛 Bug Creator"},
+          {heading:"Passive",body:botSpecies.kitsune.passive},
+          {heading:"Active",body:botSpecies.kitsune.active},
+        ]));
       }
-      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(botSpecies.bot.color).setTitle(`👤 ${target.displayName}'s Profile`).setThumbnail(target.displayAvatarURL())
-        .addFields({name:"🧬 Species",value:"🤖 **Bot**",inline:true},{name:"❤️ HP",value:`${botSpecies.bot.hp}`,inline:true},{name:"⚔️ Attack",value:`${botSpecies.bot.atkMin}-${botSpecies.bot.atkMax}`,inline:true},{name:"✨ Passive",value:botSpecies.bot.passive,inline:false},{name:"⚡ Active",value:botSpecies.bot.active,inline:false})]});
+      return safeReply(interaction,buildStyledCardPayload(`🤖 ${target.displayName}'s Profile`,botSpecies.bot.color,[
+        {heading:"Species",body:"🤖 **Bot**"},
+        {heading:"Combat Stats",body:`❤️ **HP:** ${botSpecies.bot.hp}\n⚔️ **ATK:** ${botSpecies.bot.atkMin}–${botSpecies.bot.atkMax}\n💚 **HEAL:** ${botSpecies.bot.healMin}–${botSpecies.bot.healMax}`},
+        {heading:"Passive",body:botSpecies.bot.passive},
+        {heading:"Active",body:botSpecies.bot.active},
+      ]));
     }
-    const td=_state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,badges:[]};
+    const td=_state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,speciesTokens:0,requestsEnabled:true,badges:[]};
     const fd=_state.fightStats.get(target.id)||{wins:0,losses:0,streak:0};
     const sp=td.species||humanSpecies;
-
-    const wr=fd.wins+fd.losses>0?((fd.wins/(fd.wins+fd.losses))*100).toFixed(1):"0.0";
-    const embed=new EmbedBuilder().setColor(sp.color||0x9b59b6).setTitle(`👤 ${target.displayName}'s Profile`).setThumbnail(target.displayAvatarURL())
-      .addFields(
-        {name:"🧬 Species",value:`${sp.emoji} **${sp.name}**`,inline:true},
-        {name:"<:reroll_dice:1558042108965822515> Rolls",value:`${td.rolls||0}`,inline:true},
-        {name:`${SPECIES_TOKEN_EMOJI} Species Tokens`,value:`${Number(td.speciesTokens)||0}`,inline:true},
-        {name:"⚔️ Fight Record",value:`${fd.wins}W - ${fd.losses}L (${wr}%)`,inline:true},
-        {name:"🔥 Streak",value:`${fd.streak||0} wins`,inline:true},
-        {name:"🔘 Requests",value:td.requestsEnabled?"✅ Enabled":"❌ Disabled",inline:true},
-      );
+    const totalFights=(fd.wins||0)+(fd.losses||0);
+    const wr=totalFights>0?((fd.wins/totalFights)*100).toFixed(1):"0.0";
     const badges=[];
-    if (td.badges?.includes("OG 50")) badges.push("└ 🎉 OG 50");
-    if (target.id==="926063716057894953") { badges.push("└ 👑 Founder"); badges.push("└ ✨ The Creator"); }
-    if (target.id==="1376978115171192922") { badges.push("└ 🤝 Co-Founder"); badges.push("└ 🧪 OG Tester"); badges.push("└ ⭐ Shion's Favourite"); }
-    if (badges.length) embed.addFields({name:"🏅 Badges",value:badges.join("\n"),inline:false});
-    embed.addFields(
-      {name:"🟢 Passive",value:getPassiveDescription(sp.name),inline:false},
-      {name:"✨ Active ULT",value:getActiveDescription(sp.name),inline:false},
-      {name:"📅 Joined",value:`<t:${Math.floor((targetMember?.joinedTimestamp||Date.now())/1000)}:R>`,inline:true},
-    ).setFooter({text:"Use /species-roll to reroll | /daily for free rolls"});
-    return safeReply(interaction,{embeds:[embed]});
+    if (td.badges?.includes("OG 50")) badges.push("🎉 OG 50");
+    if (target.id==="926063716057894953") badges.push("👑 Founder","✨ The Creator");
+    if (target.id==="1376978115171192922") badges.push("🤝 Co-Founder","🧪 OG Tester","⭐ Shion's Favourite");
+    const sections=[
+      {heading:"Current Species",body:`${sp.emoji} **${sp.name}**`},
+      {heading:"Inventory & Settings",body:`<:reroll_dice:1558042108965822515> **Species rolls:** ${td.rolls||0}\n${SPECIES_TOKEN_EMOJI} **Species tokens:** ${Number(td.speciesTokens)||0}\n🔘 **Challenge requests:** ${td.requestsEnabled?"Enabled":"Disabled"}`},
+      {heading:"Fight Record",body:`🏆 **Wins:** ${fd.wins||0}  ·  💔 **Losses:** ${fd.losses||0}\n📊 **Win rate:** ${wr}%\n🔥 **Win streak:** ${fd.streak||0}`},
+      {heading:"Passive",body:getPassiveDescription(sp.name)},
+      {heading:"Active Ultimate",body:getActiveDescription(sp.name)},
+      {heading:"Member Since",body:`<t:${Math.floor((targetMember?.joinedTimestamp||Date.now())/1000)}:R>`},
+    ];
+    if(badges.length) sections.splice(3,0,{heading:"Badges",body:badges.join("\n")});
+    return safeReply(interaction,buildStyledCardPayload(`👤 ${target.displayName}'s Profile`,sp.color||0x9b59b6,sections));
   }
 
   // ── SPECIES-ROLL ──────────────────────────────────────────────
   if (commandName === "species-roll") {
-    // Block rolling during active fights
-    if (isPlayerInFight(user.id)||isPlayerInBotFight(user.id)) return safeReply(interaction,{embeds:[createErrorEmbed("You can't reroll during an active fight!")],flags:64});
-    // New users start with 1 roll
-    let userData=_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:1,requestsEnabled:true,lastSwitch:0,badges:[]};
-    if ((userData.rolls||0)<1) return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xff0000).setTitle("❌ No Rolls Left").setDescription("Use `/daily` for a free roll, or win fights for a 30% chance!")],flags:64});
-
-    // Send public embed and store message ID for editing later
-    const currentSp = userData.species || humanSpecies;
-    const embed = new EmbedBuilder()
-      .setColor(currentSp.color || 0x808080)
-      .setTitle("<:reroll_dice:1558042108965822515> Species Roll")
-      .setDescription(`**Current species:** ${currentSp.emoji} **${currentSp.name}**\n\n<:reroll_dice:1558042108965822515> Rolls available: **${userData.rolls}**\n\nPress **REROLL** to roll for a new species, or **CANCEL** to keep your current one.`);
-    const pubMsg = await channel.send({embeds:[embed]});
-    // Store message ref so button handler can edit it
-    _state.activeRolls.set(user.id, { channelId: channel.id, messageId: pubMsg.id, timestamp: Date.now() });
-    // Ephemeral buttons only
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`reroll_${user.id}`).setLabel("🔄 REROLL").setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId(`cancel_${user.id}`).setLabel("❌ CANCEL").setStyle(ButtonStyle.Danger));
-    return safeReply(interaction,{content:"Use the buttons below to reroll or cancel:",components:[row],flags:64});
+    if (isPlayerInFight(user.id)||isPlayerInBotFight(user.id))
+      return safeReply(interaction,buildStyledCardPayload("Roll Unavailable",0xff0000,[{body:"You can't reroll during an active fight."}],true));
+    let userData=_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:1,speciesTokens:0,requestsEnabled:true,lastSwitch:0,badges:[]};
+    if ((userData.rolls||0)<1)
+      return safeReply(interaction,buildStyledCardPayload("No Rolls Left",0xff0000,[{body:"Use `/daily` for a free roll or win fights for a chance to earn rolls."}],true));
+    const currentSp=userData.species||humanSpecies;
+    const pubMsg=await channel.send(buildSpeciesRollAnnouncement(user.displayName||user.username,currentSp,userData.rolls,false));
+    _state.activeRolls.set(user.id,{channelId:channel.id,messageId:pubMsg.id,timestamp:Date.now()});
+    return safeReply(interaction,buildSpeciesRollControlsPayload(user.id,userData.rolls));
   }
 
   // ── AWAKENING ─────────────────────────────────────────────────
@@ -781,67 +807,89 @@ async function handleCommand(interaction) {
     return interaction.editReply({embeds:[embed],components:[row]});
   }
 
+
   // ── FIGHTSTATS ────────────────────────────────────────────────
   if (commandName === "fightstats") {
     const target=options.getUser("user")||user;
     const stats=_state.fightStats.get(target.id);
     const sp=_state.userSpecies.get(target.id)?.species||humanSpecies;
-    if (!stats||(stats.wins===0&&stats.losses===0)) return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x808080).setDescription(`📊 **${target.displayName}** hasn't fought yet!`)]});
-    const wr=((stats.wins/(stats.wins+stats.losses))*100).toFixed(1);
-    return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(sp.color||0xff4500).setTitle(`⚔️ ${target.displayName}'s Fight Stats`).setThumbnail(target.displayAvatarURL())
-      .addFields({name:"🏆 Wins",value:`${stats.wins}`,inline:true},{name:"💔 Losses",value:`${stats.losses}`,inline:true},{name:"📊 Win Rate",value:`${wr}%`,inline:true},{name:"🔥 Streak",value:`${stats.streak||0} wins`,inline:true},{name:"🧬 Species",value:`${sp.emoji} ${sp.name}`,inline:true})]});
+    if (!stats||(stats.wins===0&&stats.losses===0)) return safeReply(interaction,buildStyledCardPayload(`⚔️ ${target.displayName}'s Fight Stats`,0x808080,[{body:"No completed fights recorded yet."}]));
+    const total=(stats.wins||0)+(stats.losses||0);
+    const wr=total>0?((stats.wins/total)*100).toFixed(1):"0.0";
+    return safeReply(interaction,buildStyledCardPayload(`⚔️ ${target.displayName}'s Fight Stats`,sp.color||0xff4500,[
+      {heading:"Record",body:`🏆 **Wins:** ${stats.wins||0}\n💔 **Losses:** ${stats.losses||0}\n⚔️ **Total fights:** ${total}`},
+      {heading:"Performance",body:`📊 **Win rate:** ${wr}%\n🔥 **Current win streak:** ${stats.streak||0}`},
+      {heading:"Current Species",body:`${sp.emoji} **${sp.name}**`},
+    ]));
   }
 
   // ── HISTORY ───────────────────────────────────────────────────
   if (commandName === "history") {
     const target=options.getUser("user")||user;
     const stats=_state.fightStats.get(target.id);
-    if (!stats?.history?.length) return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x808080).setDescription(`📜 **${target.displayName}** has no fight history!`)]});
-    const tf=stats.wins+stats.losses, wr=tf>0?((stats.wins/tf)*100).toFixed(1):"0.0";
-    const embed=new EmbedBuilder().setColor(0x9b59b6).setTitle(`📜 ${target.displayName}'s History`).setDescription(`Fights: **${tf}** | W: **${stats.wins}** | L: **${stats.losses}** | WR: **${wr}%**`).setThumbnail(target.displayAvatarURL());
+    if (!stats?.history?.length) return safeReply(interaction,buildStyledCardPayload(`📜 ${target.displayName}'s Fight History`,0x808080,[{body:"No fight history recorded yet."}]));
+    const total=(stats.wins||0)+(stats.losses||0);
+    const wr=total>0?((stats.wins/total)*100).toFixed(1):"0.0";
     let txt="";
-    for (let i=0;i<Math.min(stats.history.length,10);i++) {
-      const f=stats.history[i], da=Math.floor((Date.now()-f.date)/86400000);
-      const ta=da===0?"today":da===1?"yesterday":`${da}d ago`;
-      txt+=`${f.won?"✅":"❌"} vs ${f.opponentSpecies?.emoji||"👤"} **${f.opponentName}** ${ta} — HP left: ${f.hpLeft}${f.special?` ${f.special}`:""}\n`;
+    for (let n=0;n<Math.min(stats.history.length,10);n++) {
+      const fight=stats.history[n], days=Math.floor((Date.now()-fight.date)/86400000);
+      const ago=days===0?"Today":days===1?"Yesterday":`${days} days ago`;
+      txt+=`${fight.won?"✅":"❌"} **vs ${fight.opponentName}** · ${ago}\n`;
+      txt+=`Opponent: ${fight.opponentSpecies?.emoji||"👤"} ${fight.opponentSpecies?.name||"Unknown"} · HP remaining: **${fight.hpLeft}**${fight.special?` · ${fight.special}`:""}\n\n`;
     }
-    embed.addFields({name:`Last ${Math.min(stats.history.length,10)} Fights`,value:txt});
-    return safeReply(interaction,{embeds:[embed]});
+    return safeReply(interaction,buildStyledCardPayload(`📜 ${target.displayName}'s Fight History`,0x9b59b6,[
+      {heading:"Career Summary",body:`**Fights:** ${total}  ·  **Wins:** ${stats.wins||0}  ·  **Losses:** ${stats.losses||0}  ·  **Win rate:** ${wr}%`},
+      {heading:`Recent Battles · ${Math.min(stats.history.length,10)}`,body:txt.trim()},
+    ]));
   }
 
   // ── FIGHTS ────────────────────────────────────────────────────
   if (commandName === "fights") {
-    await interaction.deferReply();
-    if (_state.fightLeaderboard.size===0) return interaction.editReply({embeds:[new EmbedBuilder().setColor(0xff4500).setDescription("⚔️ No fight stats yet!")]});
+    await interaction.deferReply({ flags:MessageFlags.IsComponentsV2 });
+    if (_state.fightLeaderboard.size===0) return interaction.editReply(buildStyledCardPayload("⚔️ Fight Leaderboard",0xff4500,[{body:"No fight leaderboard entries yet. Start battling to claim the top spot."}]));
     const sorted=Array.from(_state.fightLeaderboard.entries()).sort((a,b)=>b[1].wins-a[1].wins).slice(0,10);
-    let desc="";
-    for (let i=0;i<sorted.length;i++) {
-      const [uid,s]=sorted[i];
-      // Try guild member first, fall back to global user fetch for cross-server players
-      let nm="Unknown";
+    const rows=[];
+    for(let n=0;n<sorted.length;n++) {
+      const [uid,score]=sorted[n];
+      let name="Unknown";
       try {
-        const m=await guild.members.fetch(uid).catch(()=>null);
-        if (m) nm=m.displayName;
-        else { const u=await _client.users.fetch(uid).catch(()=>null); if(u) nm=u.username; }
+        const member=guild ? await guild.members.fetch(uid).catch(()=>null) : null;
+        if(member) name=member.displayName;
+        else { const fetched=await _client.users.fetch(uid).catch(()=>null); if(fetched) name=fetched.username; }
       } catch(_){}
-      const sp=_state.userSpecies.get(uid)?.species, medal=i===0?"🥇":i===1?"🥈":i===2?"🥉":"🎖️";
-      desc+=`${medal} ${sp?.emoji||"⚔️"} **${nm}** — ${s.wins} wins\n`;
+      const species=_state.userSpecies.get(uid)?.species;
+      const marker=n===0?"🥇":n===1?"🥈":n===2?"🥉":`**${n+1}.**`;
+      rows.push(`${marker} ${species?.emoji||"⚔️"} **${name}**\n   ${score.wins} leaderboard wins`);
     }
-    return interaction.editReply({embeds:[new EmbedBuilder().setColor(0xff4500).setTitle("⚔️ Fight Leaderboard").setDescription(desc)]});
+    return interaction.editReply(buildStyledCardPayload("⚔️ Fight Leaderboard · Top 10",0xff4500,[
+      {heading:"Rankings",body:rows.join("\n\n")},
+      {body:"Ranked by leaderboard wins. Keep fighting to climb the board."},
+    ]));
   }
 
   // ── BOTSTATS ──────────────────────────────────────────────────
   if (commandName === "botstats") {
     const target=options.getUser("user")||user;
     const stats=_state.botStats.get(target.id);
-    if (!stats) return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x808080).setDescription(`📊 **${target.displayName}** hasn't fought any bots!`)]});
-    return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x9b59b6).setTitle(`🤖 ${target.displayName}'s Bot Stats`)
-      .addFields(
-        {name:"🧸 Easy",    value:`W:${stats.easy?.wins||0} L:${stats.easy?.losses||0}`,    inline:true},
-        {name:"⚔️ Medium",  value:`W:${stats.medium?.wins||0} L:${stats.medium?.losses||0}`,inline:true},
-        {name:"👹 Hard",    value:`W:${stats.hard?.wins||0} L:${stats.hard?.losses||0}`,    inline:true},
-        {name:"💀 Impossible",value:`W:${stats.impossible?.wins||0} L:${stats.impossible?.losses||0}`,inline:true},
-        {name:"Brutal",value:`W:${stats.brutal?.wins||0} L:${stats.brutal?.losses||0}`,inline:true})]});
+    if (!stats) return safeReply(interaction,buildStyledCardPayload(`🤖 ${target.displayName}'s Bot Battle Stats`,0x808080,[{body:"No bot fights recorded yet. Challenge LOZ with `/fightbot` to start."}]));
+    const difficulties=[
+      {key:"easy",name:"Easy",icon:"🧸"},
+      {key:"medium",name:"Medium",icon:"⚔️"},
+      {key:"hard",name:"Hard",icon:"👹"},
+      {key:"impossible",name:"Impossible",icon:"💀"},
+      {key:"brutal",name:"Brutal",icon:"☠️"},
+    ];
+    let totalWins=0,totalLosses=0;
+    const rows=difficulties.map(level=>{
+      const wins=stats[level.key]?.wins||0, losses=stats[level.key]?.losses||0;
+      totalWins+=wins; totalLosses+=losses;
+      const count=wins+losses, rate=count?((wins/count)*100).toFixed(1):"0.0";
+      return `${level.icon} **${level.name}**\n🏆 Wins: ${wins} · 💔 Losses: ${losses} · WR: ${rate}%`;
+    });
+    return safeReply(interaction,buildStyledCardPayload(`🤖 ${target.displayName}'s Bot Battle Stats`,0x9b59b6,[
+      {heading:"Overall Record",body:`🏆 **Wins:** ${totalWins}  ·  💔 **Losses:** ${totalLosses}\n📊 **Win rate:** ${totalWins+totalLosses?((totalWins/(totalWins+totalLosses))*100).toFixed(1):"0.0"}%`},
+      {heading:"By Difficulty",body:rows.join("\n\n")},
+    ]));
   }
 
   // ── QUEST ─────────────────────────────────────────────────────
@@ -1276,55 +1324,32 @@ async function handleButton(interaction) {
   }
   if (customId==="guide_finish") return interaction.update({content:"✅ Guide complete! Use `/help` for all commands.",embeds:[],components:[],flags:64});
 
+
   // ── REROLL ────────────────────────────────────────────────────
   if (customId.startsWith("reroll_")||customId.startsWith("cancel_")) {
     const uid=customId.split("_")[1];
     if (user.id!==uid) return safeReply(interaction,{embeds:[createErrorEmbed("This isn't your roll!")],flags:64});
     if (customId.startsWith("cancel_")) {
       _state.activeRolls.delete(user.id);
-      return interaction.update({embeds:[new EmbedBuilder().setColor(0x808080).setDescription("❌ Reroll cancelled — keeping your current species.")],components:[]});
+      return interaction.update(buildStyledCardPayload("Species Roll Cancelled",0x808080,[{body:"You kept your current species. No additional roll was used."}],true));
     }
     const userData=_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:1,requestsEnabled:true,lastSwitch:0};
-    if ((userData.rolls||0)<1) return interaction.update({embeds:[new EmbedBuilder().setColor(0xff0000).setDescription("❌ No rolls left! Use `/daily` for a free roll.")],components:[]});
-
-    // Roll the species BEFORE any async work so result is instant
+    if ((userData.rolls||0)<1) return interaction.update(buildStyledCardPayload("No Rolls Left",0xff0000,[{body:"Use `/daily` for a free roll."}],true));
     const rollResult=getRandomSpecies();
     const newSpecies=rollResult.isDragon?getDragonSubtype():rollResult;
-    userData.species=newSpecies; userData.originalSpecies=newSpecies; userData.rolls=(userData.rolls||0)-1;
-    _state.userSpecies.set(user.id,userData);
-
-    // Build the result embed
-    const resultEmbed=new EmbedBuilder()
-      .setColor(newSpecies.color||0x808080)
-      .setTitle(`${newSpecies.emoji} ${newSpecies.name}`)
-      .setDescription(`<@${user.id}> rolled ${newSpecies.emoji} **${newSpecies.name}**!\n\nChance: **${newSpecies.chance||"?"}** | HP: **${newSpecies.hp}** | ATK: **${newSpecies.atkMin}–${newSpecies.atkMax}** | HEAL: **${newSpecies.healMin}–${newSpecies.healMax}**\n\n<:reroll_dice:1558042108965822515> Rolls remaining: **${userData.rolls}**`);
-
-    // Grab messageId BEFORE potentially deleting activeRolls
-    const rollData = _state.activeRolls.get(user.id);
-    const pubMsgId = rollData?.messageId;
-
-    // Respond to button immediately (no timeout)
-    if (userData.rolls>0) {
-      await interaction.update({
-        content:"Use the buttons below to reroll or cancel:",
-        components:[new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`reroll_${user.id}`).setLabel("🔄 REROLL").setStyle(ButtonStyle.Success),
-          new ButtonBuilder().setCustomId(`cancel_${user.id}`).setLabel("❌ CANCEL").setStyle(ButtonStyle.Danger))]
-      });
-    } else {
-      _state.activeRolls.delete(user.id);
-      await interaction.update({content:"✅ No rolls remaining — use `/daily` for a free roll.",components:[]});
+    userData.species=newSpecies;
+    userData.originalSpecies=newSpecies;
+    userData.rolls=(userData.rolls||0)-1;
+    const rollData=_state.activeRolls.get(user.id);
+    const pubMsgId=rollData?.messageId;
+    await interaction.update(buildSpeciesRollControlsPayload(user.id,userData.rolls));
+    if(userData.rolls<1) _state.activeRolls.delete(user.id);
+    if(pubMsgId) {
+      const payload=buildSpeciesRollAnnouncement(user.displayName||user.username,newSpecies,userData.rolls,true);
+      channel.messages.fetch(pubMsgId).then(pubMsg=>pubMsg.edit(payload)).catch(()=>{});
     }
-
-    // Edit the public embed to show the rolled result
-    if (pubMsgId) {
-      channel.messages.fetch(pubMsgId).then(pubMsg=>{
-        if (pubMsg) pubMsg.edit({embeds:[resultEmbed]}).catch(()=>{});
-      }).catch(()=>{});
-    }
-
-    // Slow stuff after responding
     database.saveUserSpecies(user.id,userData).catch(console.error);
+    return;
   }
 
   // ── SWITCH ────────────────────────────────────────────────────
