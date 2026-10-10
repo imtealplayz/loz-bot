@@ -494,6 +494,14 @@ async function buildServersPagePayload(page, ownerId) {
 async function handleCommand(interaction) {
   const { commandName, options, user, guild, channel } = interaction;
 
+  // Temporarily disable all /fight subcommands while the fight system is being updated.
+  if (commandName === "fight") {
+    return safeReply(interaction, {
+      embeds: [createErrorEmbed("Currently disabled due to updates to the fight system. Please try again later.")],
+      flags: 64,
+    });
+  }
+
   // ── HELP ──────────────────────────────────────────────────────
   if (commandName === "help") {
     return safeReply(interaction, buildStyledCardPayload("LOZ Command Guide", 0x0891b2, [
