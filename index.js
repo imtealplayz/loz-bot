@@ -6,7 +6,7 @@ const database = require("./database.js"); // MongoDB
 const state    = require("./state.js");
 const { setState: setHelperState } = require("./helpers.js");
 const { setState: setFightState }   = require("./fights.js");
-const { setState: setCommandState, setClient, handleCommand, handleButton, handleSelectMenu, commands } = require("./commands.js");
+const { setState: setCommandState, setClient, handleCommand, handleButton, handleSelectMenu, maybePromptForUpdates, commands } = require("./commands.js");
 const { disintegrationMessages } = require("./constants.js");
 
 // ==================== CONSTANTS ====================
@@ -193,8 +193,11 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply({ content: "🔒 LOZ commands are disabled in this channel.", ephemeral: true }).catch(()=>{});
       }
     }
-    if (interaction.isCommand()) await handleCommand(interaction);
-    else if (interaction.isButton()) await handleButton(interaction);
+    if (interaction.isCommand()) {
+      await handleCommand(interaction);
+      // The command's main response is sent first; subscription prompt is a separate ephemeral follow-up.
+      await maybePromptForUpdates(interaction);
+    } else if (interaction.isButton()) await handleButton(interaction);
     else if (interaction.isStringSelectMenu()) await handleSelectMenu(interaction);
   } catch (e) {
     if (e.code === 10062 || e.message?.includes("Unknown interaction")) return;
