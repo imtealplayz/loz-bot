@@ -281,7 +281,7 @@ function getPassiveDescription(name) {
     Angel:"**Holy Touch** — heal 10% of damage dealt",
     Chimera:"**Adaptive Evolution** — +2 dmg after taking damage (stacks 3×)",
     Reaper:"**Soul Reaper** — heal 30% dealt + 10% scaling dmg",
-    "Fire Dragon":"**Burning Aura** — 4 burn every round",
+    "Fire Dragon":"**Burning Aura** — successful hits apply 4 burn for the next burn tick",
     "Thunder Dragon":"**Paralyzing Shock** — 10% to nullify attack",
     "Ice Dragon":"**Frost Armor** — heal 10% of damage received",
     "Earth Dragon":"**Stone Skin** — 15% damage reduction",
