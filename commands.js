@@ -497,12 +497,12 @@ async function handleCommand(interaction) {
   // ── HELP ──────────────────────────────────────────────────────
   if (commandName === "help") {
     return safeReply(interaction, buildStyledCardPayload("LOZ Command Guide", 0x0891b2, [
-      { heading:"Getting Started", body:"/guide — Learn the game and claim your one-time tutorial roll.\n/profile — View your species, resources, and progress." },
-      { heading:"Species & Rewards", body:"/species-roll — Roll for a species.\n/species — Browse species, stats, passives, and ultimates.\n/daily — Claim your daily roll.\n/switch and /items use — Manage species and eligible items." },
-      { heading:"Combat", body:"/fight player user:<player> — Challenge another player.\n/fight bot difficulty:<difficulty> — Battle an LOZ bot.\n/togglerequests — Control whether you receive player challenges." },
-      { heading:"Records & Rankings", body:"/fightstats, /history, and /botstats — Review fight records.\n/fights and /lb — View leaderboards." },
-      { heading:"Quests & Progression", body:"/quest view, /quest claim, and /awakening — Track quests and awakenings." },
-      { heading:"Updates & Support", body:"/patchnotes — Read recent changes.\n/updates — Manage update DMs.\nNeed help or found a problem? Join the [LOZ Support Server](https://discord.gg/TKBYpjqnPC)." },
+      { heading:"Getting Started", body:"`/guide` — Learn the game and claim your one-time tutorial roll.\n`/profile` — View your species, resources, and progress." },
+      { heading:"Species & Rewards", body:"`/species-roll` — Roll for a species.\n`/species` — Browse species, stats, passives, and ultimates.\n`/daily` — Claim your daily roll.\n`/switch` and `/items use` — Manage species and eligible items." },
+      { heading:"Combat", body:"`/fight player user:<player>` — Challenge another player.\n`/fight bot difficulty:<difficulty>` — Battle an LOZ bot.\n`/togglerequests` — Control whether you receive player challenges." },
+      { heading:"Records & Rankings", body:"`/fightstats`, `/history`, and `/botstats` — Review fight records.\n`/fights` and `/lb` — View leaderboards." },
+      { heading:"Quests & Progression", body:"`/quest view`, `/quest claim`, and `/awakening` — Track quests and awakenings." },
+      { heading:"Updates & Support", body:"`/patchnotes` — Read recent changes.\n`/updates` — Manage update DMs.\nNeed help or found a problem? Join the [LOZ Support Server](https://discord.gg/TKBYpjqnPC)." },
     ]));
   }
 
@@ -1625,14 +1625,14 @@ async function handleButton(interaction) {
       return safeReply(interaction,{embeds:[createErrorEmbed("Fight cancelled — species missing!")],flags:64});
     }
     _state.fightChallenges.delete(challengeId);
-    await message.edit(buildFightChallengeStatusPayload(
-      "Challenge Accepted",
-      "<@" + opponentId + "> accepted. The battle is starting now. Both players stay locked to this match until it ends.",
-      0x16a34a,
-      [opponentId]
-    ));
-    await safeReply(interaction,{content:"Fight accepted!",flags:64});
     try {
+      await message.edit(buildFightChallengeStatusPayload(
+        "Challenge Accepted",
+        "<@" + opponentId + "> accepted. The battle is starting now. Both players stay locked to this match until it ends.",
+        0x16a34a,
+        [opponentId]
+      )).catch(()=>{});
+      await safeReply(interaction,{content:"Fight accepted!",flags:64});
       await startFight(channel,challengerId,opponentId);
     } catch(error) {
       clearFightRequestLocks(challengeId,challengerId,opponentId);
