@@ -331,7 +331,7 @@ async function dismissUpdateSubscriptionPrompt(userId) {
     if (!await connect()) return false;
     const result = await NotificationPreference.updateOne(
       { userId, broadcastOptIn:{ $ne:true }, promptSuppressed:{ $ne:true } },
-      { $set:{ promptedOnce:true, updatedAt:new Date() } }
+      { $set:{ promptedOnce:true, lastPromptedAt:new Date(), updatedAt:new Date() } }
     );
     return result.matchedCount > 0;
   } catch(e) {
