@@ -7,7 +7,7 @@ const patchNotes = [
       "Defeating the Slime Lord boss grants a 9.2% chance to permanently unlock the Slime Lord species. It can be equipped through /switch and cannot be obtained from normal species rolls or Species Tokens.",
       "Added Slime Lord's Adaptive Momentum passive and Predatory Assimilation ultimate.",
       "Added the God-only /god species-unlock command to permanently grant Reaper, Archdemon, Mechangel, or Slime Lord without completing their unlock requirements.",
-      "Fixed Earth Dragon's Terra Strike path so its 1.2x next attack also nullifies the next incoming hit."
+      "Fixed Earth Dragon's Terra Strike path so it boosts the next attack by 1.2× without granting invincibility."
     ],
   },
   {
@@ -270,11 +270,11 @@ function getPassiveDescription(name) {
     Ogre:"**Regeneration** — heal 5 HP at start of your turns",
     "High Orc":"**Critical Strike** — 10% crit chance → 2× damage",
     Kijin:"**Shadow Dance** — 15% to attack twice",
-    "Orc Lord":"**Despair** — 15% of opponent's max HP added to every attack",
+    "Orc Lord":"**Despair** — adds bonus damage equal to 7.5% of the opponent's max HP on every successful hit",
     Oni:"**Demonic Resilience** — take 10% less damage",
     Demon:"**Life Steal** — heal 20% of damage dealt",
     "Demon King":"**Fear Aura** — opponent deals 10% less damage",
-    "Demon Lord":"**Burning Aura** — 5 burn every turn even on miss",
+    "Demon Lord":"**Burning Aura** — successful hits apply 5 burn for the next burn tick",
     "Demi God":"**Divine Shield** — 15% damage reduction always",
     God:"**Divine Retribution** — heal 20% HP when opponent misses",
     Human:"None — just a human",
@@ -315,7 +315,7 @@ function getActiveDescription(name) {
     "Fire Dragon":"**Inferno Blast** — 1.7× + 10 burn 2 rounds (CD: 11)",
     "Thunder Dragon":"**Thunder Surge** — 1.4× + paralyze (CD: 12)",
     "Ice Dragon":"**Glacial Spike** — choose: 1.9× OR +50% heal (CD: 10)",
-    "Earth Dragon":"**Terra Shield** — choose: 1.2× + invincible OR −60% dmg + 20% heal boost (CD: 11)",
+    "Earth Dragon":"**Terra Shield** — choose Terra Strike (1.2× next attack) OR Terra Shield (−60% damage from the next hit) (CD: 11)",
     Cyborg:"**Self-Repair** — heal 30% max HP + 15% dmg reduction 2 turns (CD: 7)",
     "Half-Blood":"**Awakened Blood** — 1.4× + heal 10 HP (CD: 7)",
     Mechangel:"**System Restoration** — heal 40% + 20% reduction 2 turns (CD: 6)",
