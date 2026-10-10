@@ -159,8 +159,8 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
   updateReaperQuest(winnerId,"player");
   if (reason!=="disintegration" && reason!=="judge" && winner.species.name==="Demon")
     await updateDemonAwakeningProgress(winnerId,"playerWin");
-  _state.fightCooldowns.set(winnerId,Date.now()+60000);
-  _state.fightCooldowns.set(loserId,Date.now()+60000);
+  _state.fightCooldowns.set(winnerId,Date.now()+30000);
+  _state.fightCooldowns.set(loserId,Date.now()+30000);
   let desc = "**" + winner.species.name + "**: " + formatFightHealth(Math.max(0, winner.currentHp), winner.maxHp) + "\n";
   desc += "**" + loser.species.name + "**: " + formatFightHealth(0, loser.maxHp) + "\n\n";
   if (reason === "timeout") desc += "Opponent timed out.\n";
@@ -172,6 +172,8 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
   const msg = _state.fightMessages.get(fightId);
   if (msg) await msg.edit({ content: null, embeds: null, ...resultPayload }).catch(() => {});
   _state.activeFights.delete(fightId);
+  _state.activeRequests.delete(fight.player1Id);
+  _state.activeRequests.delete(fight.player2Id);
   _state.fightMessages.delete(fightId);
 }
 
