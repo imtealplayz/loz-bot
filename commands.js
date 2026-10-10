@@ -27,6 +27,50 @@ let _client = null;
 function setState(s) { _state = s; }
 function setClient(c) { _client = c; }
 
+
+function buildUpdateSubscriptionPromptPayload(userId) {
+  const container = new ContainerBuilder().setAccentColor(0x0891b2);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    `## 🔔 Stay in the Loop with LOZ\nSubscribe to major LOZ updates, special events, and announcements about update rewards and bonuses when available.\n\nYou'll receive major update announcements by DM. You can unsubscribe any time with ` + "`/updates unsubscribe`" + `.\n\n**Would you like to subscribe?**`
+  ));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  container.addActionRowComponents(new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`loz_updates_prompt_subscribe_${userId}`)
+      .setLabel("Subscribe")
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(`loz_updates_prompt_later_${userId}`)
+      .setLabel("Not now")
+      .setStyle(ButtonStyle.Secondary)
+  ));
+  return {
+    components:[container],
+    flags:MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+    allowedMentions:{ parse:[] },
+  };
+}
+
+function buildUpdateSubscriptionResultPayload(title, description, color = 0x0891b2) {
+  const container = new ContainerBuilder().setAccentColor(color);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${title}\n${description}`));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  return { components:[container], flags:MessageFlags.IsComponentsV2, allowedMentions:{ parse:[] } };
+}
+
+async function maybePromptForUpdates(interaction) {
+  if (!interaction?.user?.id || (!interaction.replied && !interaction.deferred)) return false;
+  const shouldPrompt = await database.claimUpdateSubscriptionPrompt(interaction.user.id);
+  if (!shouldPrompt) return false;
+  try {
+    await interaction.followUp(buildUpdateSubscriptionPromptPayload(interaction.user.id));
+    return true;
+  } catch(e) {
+    console.error("❌ Update subscription prompt delivery failed:", e?.message || String(e));
+    return false;
+  }
+}
+
 const SPECIES_TOKEN_EMOJI = "<:species_token:1558181624296771634>";
 const SPECIES_TOKEN_SPECIES_NAMES = [
   "Demi God", "Demon Lord", "Demon King", "Demon", "Oni", "Orc Lord",
@@ -1101,6 +1145,39 @@ async function handleButton(interaction) {
   const { customId, user, guild, channel, message } = interaction;
 
 
+
+  // ── UPDATE SUBSCRIPTION PROMPT ─────────────────────────────────
+  if (customId.startsWith("loz_updates_prompt_subscribe_")) {
+    const expectedUserId = customId.slice("loz_updates_prompt_subscribe_".length);
+    if (user.id !== expectedUserId) return safeReply(interaction, { content:"This subscription prompt belongs to another user.", flags:64 });
+    const saved = await database.setBroadcastOptIn(user.id, true);
+    if (!saved) return interaction.update(buildUpdateSubscriptionResultPayload(
+      "Subscription Not Saved",
+      "MongoDB couldn't save your preference. Please try again with `/updates subscribe`.",
+      0xff0000
+    ));
+    return interaction.update(buildUpdateSubscriptionResultPayload(
+      "You're Subscribed!",
+      "You'll receive major LOZ update announcements by DM, including news about events and update rewards when available. You can unsubscribe any time with `/updates unsubscribe`.",
+      0x00aa66
+    ));
+  }
+
+  if (customId.startsWith("loz_updates_prompt_later_")) {
+    const expectedUserId = customId.slice("loz_updates_prompt_later_".length);
+    if (user.id !== expectedUserId) return safeReply(interaction, { content:"This subscription prompt belongs to another user.", flags:64 });
+    const saved = await database.dismissUpdateSubscriptionPrompt(user.id);
+    if (!saved) return interaction.update(buildUpdateSubscriptionResultPayload(
+      "Couldn't Save Your Choice",
+      "Your choice couldn't be saved. Use `/updates subscribe` whenever you'd like to opt in.",
+      0xff0000
+    ));
+    return interaction.update(buildUpdateSubscriptionResultPayload(
+      "No Problem",
+      "You aren't subscribed. We may ask again occasionally, and you can subscribe any time with `/updates subscribe`."
+    ));
+  }
+
   // ── SPECIES TOKEN FLOW ─────────────────────────────────────────
   if (customId.startsWith("species_token_cancel_")) {
     const expectedUserId = customId.slice("species_token_cancel_".length);
@@ -1694,4 +1771,4 @@ const commands = [
     .addSubcommand(s=>s.setName("repair-user-db").setDescription("Archive and repair duplicate player records")),
 ].map(c=>c.toJSON());
 
-module.exports = { setState, setClient, handleCommand, handleButton, handleSelectMenu, commands };
+module.exports = { setState, setClient, handleCommand, handleButton, handleSelectMenu, maybePromptForUpdates, commands };
