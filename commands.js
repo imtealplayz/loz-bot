@@ -145,7 +145,7 @@ const GUIDE_PAGES = [
   },
   {
     title:"Your LOZ Toolkit",
-    body:"Here are a few useful commands to keep close:\n\n• `/daily` — collect your daily roll.\n• `/species-roll` — reroll your species.\n• `/profile` — inspect your player card.\n• `/species` — learn species stats and abilities.\n• `/fight` and `/fight bot` — battle players or bots.\n• `/awakening` and `/quest view` — track special progression.\n• `/gift` — send rolls to another player within the limits.\n• `/patchnotes` — read the latest changes.\n• `/guide` — revisit this tutorial whenever you need a refresher.\n\nYou don't need to memorize everything now. Try a command, read the result panel, and use `/help` whenever you need a reminder.",
+    body:"Here are a few useful commands to keep close:\n\n• `/daily` — collect your daily roll.\n• `/species-roll` — reroll your species.\n• `/profile` — inspect your player card.\n• `/species` — learn species stats and abilities.\n• `/fight player` and `/fight bot` — battle players or bots.\n• `/awakening` and `/quest view` — track special progression.\n• `/gift` — send rolls to another player within the limits.\n• `/patchnotes` — read the latest changes.\n• `/guide` — revisit this tutorial whenever you need a refresher.\n\nYou don't need to memorize everything now. Try a command, read the result panel, and use `/help` whenever you need a reminder.",
   },
   {
     title:"Ready to Enter the Rift?",
@@ -903,7 +903,7 @@ async function handleCommand(interaction) {
     const cd=_state.userSpecies.get(user.id), od=_state.userSpecies.get(target.id);
     if (!cd?.species||cd.species.name==="Human") return safeReply(interaction,{embeds:[createErrorEmbed("You need a species! Use `/species-roll` first.")],flags:64});
     if (!od?.species||od.species.name==="Human") return safeReply(interaction,{embeds:[createErrorEmbed(`<@${target.id}> needs a species first!`)],flags:64});
-    const rc=canSendRequest(user.id,target.id,user.id===_state.ownerId);
+    const rc=canSendRequest(user.id,target.id);
     if (!rc.allowed) return safeReply(interaction,{embeds:[createErrorEmbed(rc.reason)],flags:64});
     const challengeId=user.id + "-" + target.id;
     const cdSp=cd.species||humanSpecies, odSp=od.species||humanSpecies;
@@ -935,7 +935,7 @@ async function handleCommand(interaction) {
     return;
   }
 
-  // ── FIGHTBOT ──────────────────────────────────────────────────
+  // ── FIGHT: BOT BATTLE ──────────────────────────────────────────
   if (commandName === "fight" && options.getSubcommand() === "bot") {
     const difficulty=options.getString("difficulty");
     if (_state.activeRequests.has(user.id)) return safeReply(interaction,{embeds:[createErrorEmbed("You have a pending player challenge. Accept, decline, or wait for it to expire before starting another fight.")],flags:64});
