@@ -494,14 +494,6 @@ async function buildServersPagePayload(page, ownerId) {
 async function handleCommand(interaction) {
   const { commandName, options, user, guild, channel } = interaction;
 
-  // Temporarily disable player challenges while the PvP issue is investigated.
-  if (commandName === "fight" && options.getSubcommand() === "player") {
-    return safeReply(interaction, {
-      embeds: [createErrorEmbed("Player fights are currently disabled while we investigate an issue. Bot fights are still available with `/fight bot`.")],
-      flags: 64,
-    });
-  }
-
   // ── HELP ──────────────────────────────────────────────────────
   if (commandName === "help") {
     return safeReply(interaction, buildStyledCardPayload("LOZ Command Guide", 0x0891b2, [
