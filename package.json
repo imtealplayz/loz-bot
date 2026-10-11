@@ -1,6 +1,6 @@
 {
   "name": "loz-bot",
-  "version": "5.2.0",
+  "version": "5.2.1",
   "description": "LOZ — Legends of the Rift Discord Battle Bot",
   "main": "index.js",
   "scripts": {
