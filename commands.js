@@ -846,7 +846,7 @@ async function handleCommand(interaction) {
 
 
     // ── Demon → Archdemon ─────────────────────────────────────────
-    if (sp==="Demon" || sp==="Archdemon" || userData.awakening.demon?.awakened===true) {
+    if (sp==="Demon" || sp==="Archdemon") {
       const prog=userData.awakening.demon || {playerWins:0,demonBotWins:0,awakened:false};
       userData.awakening.demon=prog;
       const req=awakeningRequirements.demon;
@@ -878,7 +878,7 @@ async function handleCommand(interaction) {
     }
 
     // ── Half-Blood → Eclipsed Sovereign ─────────────────────────
-    if (sp==="Half-Blood" || sp==="Eclipsed Sovereign" || userData.awakening.halfBlood) {
+    if (sp==="Half-Blood" || sp==="Eclipsed Sovereign") {
       const req=awakeningRequirements.halfBlood;
       if (!userData.awakening.halfBlood) userData.awakening.halfBlood={wins:0,damageDealt:0,ultUses:0,awakened:false};
       const prog=userData.awakening.halfBlood;
