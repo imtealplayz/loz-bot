@@ -189,11 +189,11 @@ function buildBoardPayload(userId, board, notice="", ephemeral=true) {
     +"\n**Verified votes credited:** "+(Number(vote.totalVotes)||0)
     +"\n**Reward delivery:** automatically added after Top.gg verifies your vote.";
   const container=new ContainerBuilder().setAccentColor(0x0891b2);
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 📜 QUEST BOARD\nComplete objectives to earn rewards. Active quests keep their progress and do not expire.\nYou can have up to **3 rotating quests**, plus the permanent vote quest."));
-  if (notice) {
-    container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("✅ "+notice));
-  }
+  // ContainerBuilder supports at most 10 direct components. Keep the optional
+  // notice inside the header and use one divider for the rotating quest list.
+  const header="## 📜 QUEST BOARD\nComplete objectives to earn rewards. Active quests keep their progress and do not expire.\nYou can have up to **3 rotating quests**, plus the permanent vote quest."
+    +(notice?"\n\n✅ "+notice:"");
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(header));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
   let voteButton;
   if (voteReady) {
@@ -202,9 +202,9 @@ function buildBoardPayload(userId, board, notice="", ephemeral=true) {
     voteButton=new ButtonBuilder().setCustomId("quest_vote_cooldown:"+userId).setLabel(_voteWebhookEnabled?"Vote Cooldown":"Unavailable").setStyle(ButtonStyle.Secondary).setDisabled(true);
   }
   container.addSectionComponents(new SectionBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent(voteText)).setButtonAccessory(voteButton));
-  for (const quest of board.quests||[]) {
+  if ((board.quests||[]).length) {
     container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-    container.addSectionComponents(makeQuestSection(userId,quest));
+    for (const quest of board.quests||[]) container.addSectionComponents(makeQuestSection(userId,quest));
   }
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
   const nextQuestAt=Number(board.nextQuestAt)||now;
@@ -212,7 +212,6 @@ function buildBoardPayload(userId, board, notice="", ephemeral=true) {
   container.addActionRowComponents(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("quest_reminders:"+userId).setLabel(vote.remindersEnabled===false?"Enable Vote Reminders":"Disable Vote Reminders").setStyle(vote.remindersEnabled===false?ButtonStyle.Success:ButtonStyle.Secondary)));
   return {components:[container],flags:MessageFlags.IsComponentsV2|(ephemeral?MessageFlags.Ephemeral:0),allowedMentions:{parse:[]}};
 }
-
 function buildVoteDmPayload(title, body, userId, canDisable=true) {
   const container=new ContainerBuilder().setAccentColor(0x0891b2);
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## "+title+"\n"+body));
