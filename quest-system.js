@@ -347,16 +347,18 @@ async function handleButton(interaction) {
     if (user.id!==expectedUserId) { await interaction.reply({content:"These reminder settings belong to another player.",flags:MessageFlags.Ephemeral}); return true; }
     const existing=_state.questBoards.get(user.id);
     const enable=!!(existing&&existing.vote&&existing.vote.remindersEnabled===false);
+    await interaction.deferUpdate();
     const board=await setReminders(user.id,enable);
-    return interaction.update(buildBoardPayload(user.id,board,"Vote reminders are now "+(enable?"on":"off")+".",false));
+    return interaction.editReply(buildBoardPayload(user.id,board,"Vote reminders are now "+(enable?"on":"off")+".",false));
   }
   if (customId.startsWith("quest_reminders_off:")||customId.startsWith("quest_reminders_on:")) {
     const off=customId.startsWith("quest_reminders_off:");
     const expectedUserId=customId.slice(off?"quest_reminders_off:".length:"quest_reminders_on:".length);
     if (user.id!==expectedUserId) { await interaction.reply({content:"These reminder settings belong to another player.",flags:MessageFlags.Ephemeral}); return true; }
+    await interaction.deferUpdate();
     await setReminders(user.id,!off);
     const payload=buildVoteDmPayload("Vote Reminders Updated","Vote reminders are now **"+(off?"disabled":"enabled")+"**. You can change this any time with /quests.",user.id,!off);
-    return interaction.update({components:payload.components,flags:MessageFlags.IsComponentsV2,allowedMentions:{parse:[]}});
+    return interaction.editReply({components:payload.components,flags:MessageFlags.IsComponentsV2,allowedMentions:{parse:[]}});
   }
   return false;
 }
