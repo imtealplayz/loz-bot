@@ -411,43 +411,44 @@ function asEphemeralSpeciesTokenPayload(payload) {
 
 // Major-update DM payload built entirely with Components V2 and native separators.
 function buildMajorUpdatePayload() {
-  const container = new ContainerBuilder().setAccentColor(0x2dd4bf);
+  const container = new ContainerBuilder().setAccentColor(0x6f2da8);
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      "## 🫧 LOZ VERSION 5.0 — SLIME LORD RISING\n**A new boss has emerged from the Rift.**\n\nVersion 5.0 introduces the Slime Lord encounter, a permanent rare-species unlock, a new God command, and a combat fix."
+      "## 🌘 LOZ VERSION 5.2 — THE ECLIPSE WITHIN\n**The Rift has awakened something divided no longer.**\n\nBorn between two bloodlines, Half-Blood was told it would never fully belong to either. But the Rift does not remember only victories. It remembers every battle endured, every strike survived, and every power mastered. In Version 5.2, that resolve becomes a new form: **Eclipsed Sovereign**."
     )
   );
 
   const sections = [
     {
-      title:"🫧 The Slime Lord boss",
+      title:"🌘 From Half-Blood to Eclipsed Sovereign",
       body:[
-        "After a genuine victory against any LOZ bot difficulty, a Slime Lord may spawn with a **7.5% chance**.",
-        "The boss scales to the difficulty you just defeated. Your HP is fully restored, and cooldowns and temporary effects reset for the fresh fight.",
-        "Defeat the boss for a **9.2% chance** to permanently unlock Slime Lord. The boss will not chain-spawn from another boss victory."
+        "The old bloodlines no longer clash within. They answer as one, and an eclipse crowns the Half-Blood that refused to break.",
+        "**Eclipsed Sovereign** — 115 HP, 15–22 attack, 14–22 healing, 7-round ultimate cooldown.",
+        "**Hybrid Instinct:** below 50% HP, deal 20% more damage and take 10% less damage.",
+        "**Bloodline Overdrive:** empower your next attack by **1.8×** and restore **15 HP**."
       ].join("\n")
     },
     {
-      title:"🧬 New exclusive species",
+      title:"📜 The three trials",
       body:[
-        "**Slime Lord** — 130 HP, 18–27 attack, 15–25 healing, 9-round ultimate cooldown.",
-        "**Adaptive Momentum:** each miss or counter builds the next successful attack from ×1.2 up to ×2.0; a successful hit consumes the built-up multiplier.",
-        "**Predatory Assimilation:** the next incoming damage hit becomes healing. If that hit would heal beyond max HP, the overflow is reflected onto the attacker.",
-        "Slime Lord is a permanent boss unlock, not part of normal species rolls or Species Tokens. Equip it with /switch."
+        "**I. Endure the Rift:** complete **15 battles** as Half-Blood. Victories and defeats both count; the Rift tests endurance, not just the winner's banner.",
+        "**II. Unite the Bloodlines:** deal **200 damage** while using Half-Blood.",
+        "**III. Bloodline Mastery:** use the Half-Blood ultimate **10 times**.",
+        "Only the current trial is shown. Existing saved progress carries forward, including progress recorded before this update. Complete the trials and confirm your awakening from /awakening."
       ].join("\n")
     },
     {
-      title:"👑 Permanent unlocks for God",
+      title:"🔄 A clearer species switch",
       body:[
-        "LOZ owners can use /god species-unlock to permanently unlock Reaper, Archdemon, Mechangel, or Slime Lord for a selected player, without making them complete the usual quest or awakening.",
-        "The command grants the unlock flag; players use /switch to equip the species."
+        "The /switch menu now lists each species name with its own button directly beneath it. The list is split into pages to fit Discord's component limits.",
+        "Unlocked forms are selectable; locked forms are clearly marked **Locked**."
       ].join("\n")
     },
     {
-      title:"🌍 Combat fix",
+      title:"👑 God can grant the new form",
       body:[
-        "Earth Dragon's Terra Strike path now correctly nullifies the next incoming hit while keeping its 1.2× next-attack bonus.",
-        "Updated the species compendium and patch notes for the new Slime Lord abilities and boss encounter."
+        "The God-only /god species-unlock command now includes **Eclipsed Sovereign**. /god species-change also supports **Eclipsed Sovereign** and **Slime Lord**.",
+        "God-granted exclusive forms keep their permanent unlock flag, so they remain available through /switch after changing species."
       ].join("\n")
     }
   ];
