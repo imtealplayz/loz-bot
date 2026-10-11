@@ -993,14 +993,24 @@ async function handleCommand(interaction) {
       return interaction.editReply({embeds:[createErrorEmbed(`Switch available in **${h}h ${m}m**!`)]});
     }
     const sp=userData.species||humanSpecies;
-    const buttons=[
-      new ButtonBuilder().setCustomId("switch_current").setLabel("✅ " + sp.name + " (Current)").setStyle(ButtonStyle.Success).setDisabled(true),
+    const buttons=[new ButtonBuilder().setCustomId("switch_current").setLabel("✅ "+sp.name+" (Current)").setStyle(ButtonStyle.Success).setDisabled(true)];
+    if (userData.originalSpecies?.name && userData.originalSpecies.name!==sp.name) {
+      buttons.push(new ButtonBuilder().setCustomId("switch_original").setLabel(userData.originalSpecies.name).setStyle(ButtonStyle.Primary));
+    }
+    const switchForms=[
+      {id:"switch_reaper",name:"Reaper",emoji:"🌑",unlocked:userData.questSpecies?.reaper?.unlocked===true,style:ButtonStyle.Primary},
+      {id:"switch_archdemon",name:"Archdemon",emoji:"👿",unlocked:userData.awakening?.demon?.awakened===true,style:ButtonStyle.Danger},
+      {id:"switch_mechangel",name:"Mechangel",emoji:"⚡",unlocked:userData.awakening?.cyborg?.awakened===true,style:ButtonStyle.Primary},
+      {id:"switch_slime_lord",name:"Slime Lord",emoji:"🫧",unlocked:userData.questSpecies?.slimeLord?.unlocked===true,style:ButtonStyle.Success},
+      {id:"switch_eclipsed_sovereign",name:"Eclipsed Sovereign",emoji:"🌘",unlocked:userData.awakening?.halfBlood?.awakened===true,style:ButtonStyle.Primary},
     ];
-    if (userData.originalSpecies?.name&&userData.originalSpecies.name!==sp.name) buttons.push(new ButtonBuilder().setCustomId("switch_original").setLabel(userData.originalSpecies.name).setStyle(ButtonStyle.Primary));
-    if (userData.questSpecies?.reaper?.unlocked&&sp.name!=="Reaper") buttons.push(new ButtonBuilder().setCustomId("switch_reaper").setLabel("🌑 Reaper").setStyle(ButtonStyle.Primary));
-    if (userData.awakening?.demon?.awakened===true&&sp.name!=="Archdemon") buttons.push(new ButtonBuilder().setCustomId("switch_archdemon").setLabel("👿 Archdemon").setStyle(ButtonStyle.Danger));
-    if (userData.awakening?.cyborg?.awakened===true&&sp.name!=="Mechangel") buttons.push(new ButtonBuilder().setCustomId("switch_mechangel").setLabel("⚡ Mechangel").setStyle(ButtonStyle.Primary));
-    if (userData.questSpecies?.slimeLord?.unlocked===true&&sp.name!=="Slime Lord") buttons.push(new ButtonBuilder().setCustomId("switch_slime_lord").setLabel("🫧 Slime Lord").setStyle(ButtonStyle.Success));
+    for (const form of switchForms) {
+      if (sp.name===form.name) continue;
+      const button=new ButtonBuilder().setCustomId(form.id);
+      if (form.unlocked) button.setLabel(form.emoji+" "+form.name).setStyle(form.style);
+      else button.setLabel("Locked").setStyle(ButtonStyle.Secondary).setDisabled(true);
+      buttons.push(button);
+    }
     const rows=[];
     for(let i=0;i<buttons.length;i+=5) rows.push(new ActionRowBuilder().addComponents(buttons.slice(i,i+5)));
     const embed=new EmbedBuilder().setColor(0x9b59b6).setTitle("🔄 Class Switch")
@@ -1009,6 +1019,7 @@ async function handleCommand(interaction) {
         + "\n👿 Archdemon: " + (userData.awakening?.demon?.awakened?"✅ Awakened":"❌ Locked")
         + "\n⚡ Mechangel: " + (userData.awakening?.cyborg?.awakened?"✅ Awakened":"❌ Locked")
         + "\n🫧 Slime Lord: " + (userData.questSpecies?.slimeLord?.unlocked?"✅ Unlocked":"❌ Locked")
+        + "\n🌘 Eclipsed Sovereign: " + (userData.awakening?.halfBlood?.awakened?"✅ Awakened":"❌ Locked")
         + "\n\n⏰ Cooldown: 3 hours");
     return interaction.editReply({embeds:[embed],components:rows});
   }
@@ -1171,10 +1182,10 @@ async function handleCommand(interaction) {
     if (receiverData.giftReceived.resetAt < resetTime) receiverData.giftReceived={count:0,resetAt:resetTime};
 
     // Check limits
-    const senderRemaining = 2 - (senderData.giftSent.count||0);
-    const receiverRemaining = 4 - (receiverData.giftReceived.count||0);
+    const senderRemaining = 5 - (senderData.giftSent.count||0);
+    const receiverRemaining = 5 - (receiverData.giftReceived.count||0);
 
-    if ((senderData.rolls||0)<5) return safeReply(interaction,{embeds:[createErrorEmbed(`You need at least **5 rolls** to gift. You only have **${senderData.rolls||0}**.`)],flags:64});
+    if ((senderData.rolls||0)<10) return safeReply(interaction,{embeds:[createErrorEmbed(`You need at least **10 rolls** before gifting. You currently have **${senderData.rolls||0}**. This lets you gift 5 rolls while keeping 5 for yourself.`)],flags:64});
     if (senderRemaining<=0) {
       // Calculate time until next reset (midnight IST = 18:30 UTC)
       const nextReset = resetTime + 86400000;
@@ -1190,9 +1201,10 @@ async function handleCommand(interaction) {
       const mLeft2 = Math.floor((msLeft2%3600000)/60000);
       return safeReply(interaction,{embeds:[createErrorEmbed(`<@${target.id}> has already received the maximum rolls they can receive today. Resets in **${hLeft2}h ${mLeft2}m**.`)],flags:64});
     }
-    if ((senderData.rolls||0)<amount) return safeReply(interaction,{embeds:[createErrorEmbed(`You only have **${senderData.rolls||0}** rolls. You can't gift more than you have.`)],flags:64});
-
-    const actualAmount = Math.min(amount, senderRemaining, receiverRemaining);
+    if (amount>senderRemaining) return safeReply(interaction,{embeds:[createErrorEmbed(`You can send **${senderRemaining}** more roll${senderRemaining===1?"":"s"} today. The daily limit is 5.`)],flags:64});
+    if (amount>receiverRemaining) return safeReply(interaction,{embeds:[createErrorEmbed(`<@${target.id}> can receive **${receiverRemaining}** more roll${receiverRemaining===1?"":"s"} today. The daily limit is 5.`)],flags:64});
+    if ((senderData.rolls||0)<amount) return safeReply(interaction,{embeds:[createErrorEmbed(`You only have **${senderData.rolls||0}** rolls. You cannot gift more than you have.`)],flags:64});
+    const actualAmount = amount;
 
     // Transfer rolls
     senderData.rolls=(senderData.rolls||0)-actualAmount;
@@ -1202,12 +1214,18 @@ async function handleCommand(interaction) {
 
     _state.userSpecies.set(user.id,senderData);
     _state.userSpecies.set(target.id,receiverData);
-    database.saveUserSpecies(user.id,senderData).catch(()=>{});
-    database.saveUserSpecies(target.id,receiverData).catch(()=>{});
+    await Promise.all([database.saveUserSpecies(user.id,senderData),database.saveUserSpecies(target.id,receiverData)]);
 
-    const embed = new EmbedBuilder().setColor(0x00ff99)
-      .setTitle("🎁 Rolls Gifted!")
-      .setDescription(`<@${user.id}> gifted **${actualAmount}** roll${actualAmount!==1?"s":""}  to <@${target.id}>!\n\n📊 **Your rolls remaining:** ${senderData.rolls}\n📤 **Gifts sent today:** ${senderData.giftSent.count}/2\n\n*Resets at midnight.*`);
+    const embed = new EmbedBuilder().setColor(0x6f2da8)
+      .setTitle("🎁 A Gift Across the Rift")
+      .setDescription(`<@${user.id}> has sent <@${target.id}> **${actualAmount} species roll${actualAmount===1?"":"s"}**.\n\n*Every new roll is another chance to discover a different power.*`)
+      .addFields(
+        {name:"Your Balance",value:`**${senderData.rolls} rolls** remaining`,inline:true},
+        {name:"Recipient Balance",value:`**${receiverData.rolls} rolls** total`,inline:true},
+        {name:"Daily Gift Quota",value:`Sent: **${senderData.giftSent.count}/5** rolls\nReceived: **${receiverData.giftReceived.count}/5** rolls`,inline:false}
+      )
+      .setFooter({text:"Gift limits reset at midnight IST · Minimum pre-gift balance: 10 rolls"})
+      .setTimestamp(new Date());
     return safeReply(interaction,{embeds:[embed]});
   }
 
@@ -1611,7 +1629,7 @@ async function handleButton(interaction) {
   }
 
   // ── SWITCH ────────────────────────────────────────────────────
-  if (customId==="switch_original"||customId==="switch_reaper"||customId==="switch_archdemon"||customId==="switch_mechangel"||customId==="switch_slime_lord") {
+  if (customId==="switch_original"||customId==="switch_reaper"||customId==="switch_archdemon"||customId==="switch_mechangel"||customId==="switch_slime_lord"||customId==="switch_eclipsed_sovereign") {
     const ud=_state.userSpecies.get(user.id);
     if (!ud) return interaction.update({content:"❌ No species data!",components:[]});
     const now=Date.now(), th=3*60*60*1000;
@@ -1624,6 +1642,7 @@ async function handleButton(interaction) {
     else if (customId==="switch_reaper") { if(!ud.questSpecies?.reaper?.unlocked) return interaction.update({content:"❌ Reaper not unlocked!",components:[]}); newSp=reaperSpecies; }
     else if (customId==="switch_archdemon") { if(ud.awakening?.demon?.awakened!==true) return interaction.update({content:"❌ Archdemon is locked. Complete the Demon awakening first.",components:[]}); newSp=archdemonSpecies; }
     else if (customId==="switch_slime_lord") { if(ud.questSpecies?.slimeLord?.unlocked!==true) return interaction.update({content:"❌ Slime Lord is locked. Defeat the rare Slime Lord boss first.",components:[]}); newSp=getSpeciesByName("Slime Lord"); }
+    else if (customId==="switch_eclipsed_sovereign") { if(ud.awakening?.halfBlood?.awakened!==true) return interaction.update({content:"❌ Eclipsed Sovereign is locked. Complete the Half-Blood awakening first.",components:[]}); newSp=getSpeciesByName("Eclipsed Sovereign"); }
     else {
       if (ud.awakening?.cyborg?.awakened!==true) return interaction.update({content:"❌ Mechangel is locked. Complete the Cyborg awakening first.",components:[]});
       newSp=getSpeciesByName("Mechangel");
@@ -2089,7 +2108,7 @@ const commands = [
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
   new SlashCommandBuilder().setName("gift").setDescription("Gift species rolls to another player")
     .addUserOption(o=>o.setName("user").setDescription("Player to gift rolls to").setRequired(true))
-    .addIntegerOption(o=>o.setName("amount").setDescription("Number of rolls to gift").setRequired(true).setMinValue(1).setMaxValue(2)),
+    .addIntegerOption(o=>o.setName("amount").setDescription("Number of rolls to gift (maximum 5)").setRequired(true).setMinValue(1).setMaxValue(5)),
   new SlashCommandBuilder().setName("togglerequests").setDescription("Toggle receiving challenge requests").addStringOption(o=>o.setName("status").setDescription("Enable or disable").setRequired(true).addChoices({name:"Enable",value:"enable"},{name:"Disable",value:"disable"})),
   new SlashCommandBuilder().setName("quest").setDescription("Quest system")
     .addSubcommand(s=>s.setName("view").setDescription("View your quests").addUserOption(o=>o.setName("user").setDescription("User to check")))
