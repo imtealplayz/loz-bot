@@ -395,7 +395,7 @@ async function tickUser(userId) {
       await refreshBoardViews(userId,board);
     }
     const vote=board.vote||{},lastVoteAt=Number(vote.lastVoteAt)||0;
-    if (lastVoteAt>0&&vote.remindersEnabled!==false) {
+    if (_voteWebhookEnabled && lastVoteAt>0 && vote.remindersEnabled!==false) {
       const nextVoteAt=Number(vote.nextVoteAt)||lastVoteAt+VOTE_INTERVAL_MS;
       const lastReminderAt=Number(vote.lastReminderAt)||lastVoteAt;
       const reminderAt=Math.max(nextVoteAt,lastReminderAt+VOTE_INTERVAL_MS);
