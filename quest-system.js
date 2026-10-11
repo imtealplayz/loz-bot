@@ -323,11 +323,11 @@ async function setReminders(userId,enabled) {
 
 async function handleButton(interaction) {
   const customId=interaction.customId,user=interaction.user;
-  if (customId.startsWith("quest_") && interaction.webhook) rememberBoardView(user.id,interaction.webhook);
   if (customId.startsWith("quest_claim:")) {
     const parts=customId.split(":");
     const ownerId=parts[1],questId=parts.slice(2).join(":");
     if (user.id!==ownerId) { await interaction.reply({content:"This quest board belongs to another player. Run /quests to open your own.",flags:MessageFlags.Ephemeral}); return true; }
+    if (interaction.webhook) rememberBoardView(user.id,interaction.webhook);
     await interaction.deferUpdate();
     const result=await claimQuest(user.id,questId);
     let notice;
@@ -347,6 +347,7 @@ async function handleButton(interaction) {
     if (user.id!==expectedUserId) { await interaction.reply({content:"These reminder settings belong to another player.",flags:MessageFlags.Ephemeral}); return true; }
     const existing=_state.questBoards.get(user.id);
     const enable=!!(existing&&existing.vote&&existing.vote.remindersEnabled===false);
+    if (interaction.webhook) rememberBoardView(user.id,interaction.webhook);
     await interaction.deferUpdate();
     const board=await setReminders(user.id,enable);
     return interaction.editReply(buildBoardPayload(user.id,board,"Vote reminders are now "+(enable?"on":"off")+".",false));
