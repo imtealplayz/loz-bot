@@ -11,10 +11,10 @@
     "discord.js": "^14.19.3",
     "mongoose": "^8.0.0",
     "@top-gg/sdk": "^4.0.0",
-    "express": "^4.21.2"
+    "express": "^5.3.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=18.18.2"
   },
   "keywords": [
     "discord",
