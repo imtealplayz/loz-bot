@@ -1,5 +1,12 @@
 const patchNotes = [
   {
+    version: "5.2.1", date: "2026-10-11",
+    changes: [
+      "Fixed a bot-fight state bug that could discard the player’s active ULT before the bot responded. Player ULT effects now persist correctly and clear when consumed.",
+      "Predatory Assimilation now reliably intercepts Reaper’s Death’s Judgment in bot fights, converting the incoming hit into HP and reflecting overflow. A blocked instant-kill consumes Reaper’s queued ULT instead of leaving it active.",
+    ],
+  },
+  {
     version: "5.2", date: "2026-10-11",
     changes: [
       "The Rift's divided bloodline has learned to endure. Half-Blood's first awakening trial now counts 15 completed battles whether you win or lose, and the second trial now requires 200 damage instead of 350.",
