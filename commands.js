@@ -951,9 +951,10 @@ async function handleCommand(interaction) {
     // ── Half-Blood → Eclipsed Sovereign ─────────────────────────
     if (sp==="Half-Blood" || sp==="Eclipsed Sovereign") {
       const req=awakeningRequirements.halfBlood;
-      if (!userData.awakening.halfBlood) userData.awakening.halfBlood={wins:0,damageDealt:0,ultUses:0,awakened:false};
+      if (!userData.awakening.halfBlood) userData.awakening.halfBlood={fights:0,wins:0,damageDealt:0,ultUses:0,awakened:false};
       const prog=userData.awakening.halfBlood;
-      const wins=Math.min(Number(prog.wins)||0,req.wins);
+      // v5.1 stored capped wins, so treat those as known completed fights when migrating.
+      const fights=Math.min(Math.max(Number(prog.fights)||0,Number(prog.wins)||0),req.fights);
       const damage=Math.min(Number(prog.damageDealt)||0,req.damageDealt);
       const ults=Math.min(Number(prog.ultUses)||0,req.ultUses);
       if (prog.awakened) {
@@ -961,19 +962,19 @@ async function handleCommand(interaction) {
           .setDescription(`**Unlocked Form:** 🌘 Eclipsed Sovereign\n**Status:** Permanently Awakened\n\n*The Half-Blood no longer fights against its divided nature. Both lineages answer as one, and the shadow of the eclipse crowns its new sovereign.*\n\nUse \`/switch\` to equip Eclipsed Sovereign after changing species.`)
           .setFooter({text:"Half-Blood → Eclipsed Sovereign"})],flags:64});
       }
-      if (wins>=req.wins && damage>=req.damageDealt && ults>=req.ultUses && sp==="Half-Blood") {
+      if (fights>=req.fights && damage>=req.damageDealt && ults>=req.ultUses && sp==="Half-Blood") {
         const readyEmbed=new EmbedBuilder().setColor(0x6f2da8).setTitle("🌘 AWAKENING ALTAR — READY")
           .setDescription("*The two bloodlines finally resonate. The eclipse answers.*\n\n**All three trials are complete.**\n\n**Eclipsed Sovereign**\n├ 115 HP\n├ 15–22 ATK\n├ Passive: Hybrid Instinct\n└ Ultimate: Bloodline Overdrive");
         const row=new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("awaken_eclipsed_sovereign").setLabel("🌘 AWAKEN AS ECLIPSED SOVEREIGN").setStyle(ButtonStyle.Primary));
         return safeReply(interaction,{embeds:[readyEmbed],components:[row],flags:64});
       }
-      let step=1, title="Prove Your Resolve", detail="Win battles while using Half-Blood.", value=wins, max=req.wins;
-      if (wins>=req.wins) { step=2; title="Unite the Bloodlines"; detail="Deal damage in battle while using Half-Blood."; value=damage; max=req.damageDealt; }
-      if (wins>=req.wins && damage>=req.damageDealt) { step=3; title="Bloodline Mastery"; detail="Use your ultimate while using Half-Blood."; value=ults; max=req.ultUses; }
+      let step=1, title="Endure the Rift", detail="Complete 15 battles while using Half-Blood. Wins and losses both count.", value=fights, max=req.fights;
+      if (fights>=req.fights) { step=2; title="Unite the Bloodlines"; detail="Deal 200 damage while using Half-Blood."; value=damage; max=req.damageDealt; }
+      if (fights>=req.fights && damage>=req.damageDealt) { step=3; title="Bloodline Mastery"; detail="Use your ultimate 10 times while using Half-Blood."; value=ults; max=req.ultUses; }
       const pct=Math.min(100,Math.floor(value/max*100));
       const equipNote=sp==="Half-Blood" ? "" : "\n\nEquip Half-Blood to continue this trial.";
       return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x6f2da8).setTitle(`🌘 AWAKENING ALTAR — QUEST ${step}/3`)
-        .setDescription(`*Two legacies dwell within you. Master them one trial at a time.*\n\n**${title}**\n${detail}\n\n**Progress:** ${value.toLocaleString()}/${max.toLocaleString()}\n${bar(pct)} ${pct}%${equipNote}`)
+        .setDescription(`*The Rift remembers every blow endured, not only the victories claimed.*\n\n**${title}**\n${detail}\n\n**Progress:** ${value.toLocaleString()}/${max.toLocaleString()}\n${bar(pct)} ${pct}%${equipNote}`)
         .setFooter({text:"Your progress is permanent. The next trial appears after this one is complete."})],flags:64});
     }
 
