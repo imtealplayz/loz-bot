@@ -1160,7 +1160,7 @@ async function handleCommand(interaction) {
     ], true));
   }
   if (commandName === "quests") {
-    try { return safeReply(interaction, await questSystem.openBoard(user.id)); }
+    try { return safeReply(interaction, await questSystem.openBoard(user.id, interaction)); }
     catch (error) {
       console.error("[Quest board] Could not open board:", error && (error.stack || error));
       return safeReply(interaction, buildStyledCardPayload("Quest Board Unavailable", 0xff0000, [
