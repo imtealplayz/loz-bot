@@ -214,7 +214,7 @@ const GUIDE_PAGES = [
   },
   {
     title:"Step 6: Command Cheat Sheet",
-    body:"**Species & Profile**\n\x60/daily\x60 · daily roll | \x60/species-roll\x60 · reroll species | \x60/species\x60 · species list/details | \x60/profile\x60 · player info\n\n**Battles & Records**\n\x60/fight player user:@player\x60 · challenge | \x60/fight bot difficulty:Easy\x60 · practice | \x60/fightstats\x60 · record | \x60/history\x60 · recent fights | \x60/botstats\x60 · bot results | \x60/leaderboards fights\x60 · fight leaderboard | \x60/leaderboards rolls\x60 · roll leaderboard\n\n**Progress & Settings**\n\x60/quests\x60 · quests/votes | \x60/awakening\x60 · awakening progress | \x60/switch\x60 · unlocked forms | \x60/gift user:@player amount:1\x60 · gift rolls | \x60/togglerequests status:Enable\x60 · challenge requests | \x60/updates subscribe\x60 or \x60/updates unsubscribe\x60 · update DMs | \x60/patchnotes\x60 · latest changes | \x60/help\x60 · command guide. Click **Next Page** when you're ready to finish.",
+    body:"**Species & Profile**\n\x60/daily\x60 · daily roll | \x60/species-roll\x60 · reroll species | \x60/species\x60 · species list/details | \x60/profile\x60 · player info\n\n**Battles & Records**\n\x60/fight player user:@player\x60 · challenge | \x60/fight bot difficulty:Easy\x60 · practice | \x60/fightstats\x60 · record | \x60/history\x60 · recent fights | \x60/botstats\x60 · bot results | \x60/leaderboard type:Fight Wins\x60 · fight leaderboard | \x60/leaderboard type:Species Rolls\x60 · roll leaderboard\n\n**Progress & Settings**\n\x60/quests\x60 · quests/votes | \x60/awakening\x60 · awakening progress | \x60/switch\x60 · unlocked forms | \x60/gift user:@player amount:1\x60 · gift rolls | \x60/togglerequests status:Enable\x60 · challenge requests | \x60/updates subscribe\x60 or \x60/updates unsubscribe\x60 · update DMs | \x60/patchnotes\x60 · latest changes | \x60/help\x60 · command guide. Click **Next Page** when you're ready to finish.",
   },
   {
     title:"Ready to Enter the Rift?",
@@ -561,7 +561,7 @@ async function handleCommand(interaction) {
       { heading:"Species & Awakening", body:"\x60/species\x60 — Browse species; choose \x60species:<name>\x60 for stats and abilities.\n\x60/awakening\x60 — Check Cyborg, Demon, or Half-Blood awakening progress.\n\x60/switch\x60 — Equip an unlocked form (3-hour cooldown).\n\x60/items use item:Species Token\x60 — Use a Species Token to choose an eligible species." },
       { heading:"Battles", body:"\x60/fight player user:@player\x60 — Challenge a player.\n\x60/fight bot difficulty:<difficulty>\x60 — Fight a bot; choose difficulty from the options.\n\x60/togglerequests status:Enable|Disable\x60 — Control incoming challenges.\nA bot win has a 7.5% chance to spawn the Slime Lord boss; defeating it gives a separate 9.2% chance to unlock Slime Lord." },
       { heading:"Quests & Rewards", body:"\x60/quest\x60 — Open a quick explanation of quests.\n\x60/quests\x60 — Track and claim quests; vote for LOZ for +2 Species Rolls every 12 hours after the vote is verified.\n\x60/gift user:@player amount:1\x60 — Gift 1–5 rolls to a player." },
-      { heading:"Stats & Rankings", body:"\x60/fightstats [user]\x60 — View a fight record.\n\x60/history [user]\x60 — View recent fights.\n\x60/botstats [user]\x60 — View bot battle stats.\n\x60/leaderboards fights\x60 — View the fight leaderboard.\n\x60/leaderboards rolls\x60 — Rank players by remaining Species Rolls." },
+      { heading:"Stats & Rankings", body:"\x60/fightstats [user]\x60 — View a fight record.\n\x60/history [user]\x60 — View recent fights.\n\x60/botstats [user]\x60 — View bot battle stats.\n\x60/leaderboard type:Fight Wins\x60 — Rank the top players by fight wins.\n\x60/leaderboard type:Species Rolls\x60 — Rank players by current unspent Species Rolls." },
       { heading:"Updates & Support", body:"\x60/updates subscribe\x60 — Receive major update DMs. \x60/updates unsubscribe\x60 — Stop them. \x60/updates status\x60 — Check your preference.\n\x60/patchnotes\x60 — Read recent changes.\nNeed more help? Join the [LOZ Support Server](https://discord.gg/TKBYpjqnPC)." },
     ]));
   }
@@ -1104,16 +1104,15 @@ async function handleCommand(interaction) {
     ]));
   }
 
-  // ── LEADERBOARDS ──────────────────────────────────────────────
-  if (commandName === "leaderboards") {
-    const leaderboardType = options.getSubcommand();
+  // ── LEADERBOARD ────────────────────────────────────────────────
+  if (commandName === "leaderboard") {
+    const leaderboardType = options.getString("type", true);
     await interaction.deferReply({ flags:MessageFlags.IsComponentsV2 });
 
     if (leaderboardType === "fights") {
-      if (_state.fightLeaderboard.size===0) {
-        return interaction.editReply(buildStyledCardPayload("⚔️ Fight Leaderboard",0xff4500,[{body:"No fight leaderboard entries yet. Start battling to claim the top spot."}]));
-      }
-      const sorted=Array.from(_state.fightLeaderboard.entries()).sort((a,b)=>(b[1].wins||0)-(a[1].wins||0)).slice(0,10);
+      const sorted=Array.from(_state.fightLeaderboard.entries())
+        .sort((a,b)=>(Number(b[1]?.wins)||0)-(Number(a[1]?.wins)||0))
+        .slice(0,10);
       const rows=[];
       for(let n=0;n<sorted.length;n++) {
         const [uid,score]=sorted[n];
@@ -1124,12 +1123,11 @@ async function handleCommand(interaction) {
           else { const fetched=await _client.users.fetch(uid).catch(()=>null); if(fetched) name=fetched.username; }
         } catch(_){}
         const species=_state.userSpecies.get(uid)?.species;
-        const marker=n===0?"🥇":n===1?"🥈":n===2?"🥉":`**${n+1}.**`;
-        rows.push(`${marker} ${species?.emoji||"⚔️"} **${name}**\n   ${score.wins||0} fight wins`);
+        const rank=n===0?"🥇":n===1?"🥈":n===2?"🥉":`**${String(n+1).padStart(2,"0")}.**`;
+        rows.push(`${rank} ${species?.emoji||"⚔️"} **${name}**  ·  \`${Number(score?.wins)||0} wins\``);
       }
-      return interaction.editReply(buildStyledCardPayload("⚔️ Fight Leaderboard · Top 10",0xff4500,[
-        {heading:"Rankings",body:rows.join("\n\n")},
-        {body:"Ranked by fight wins. Keep fighting to climb the board."},
+      return interaction.editReply(buildStyledCardPayload("🏆 LOZ Leaderboard",0xff4500,[
+        {heading:"⚔️ Fight Wins",body:rows.length ? `*Top ${rows.length} players · Ranked by wins*\n\n${rows.join("\n")}\n\n*Fight to climb the ranks.*` : "No fight records yet. Start battling to appear here."},
       ]));
     }
 
@@ -1139,12 +1137,6 @@ async function handleCommand(interaction) {
         .filter(entry=>entry.rolls>0)
         .sort((a,b)=>b.rolls-a.rolls)
         .slice(0,10);
-      if (sorted.length===0) {
-        return interaction.editReply(buildStyledCardPayload("🎲 Rolls Leaderboard",0x0891b2,[
-          {body:"No roll leaderboard entries yet. Use `/daily` to earn Species Rolls."}
-        ]));
-      }
-
       const rows=[];
       for(let n=0;n<sorted.length;n++) {
         const {uid,data,rolls}=sorted[n];
@@ -1154,12 +1146,11 @@ async function handleCommand(interaction) {
           if(member) name=member.displayName;
           else { const fetched=await _client.users.fetch(uid).catch(()=>null); if(fetched) name=fetched.username; }
         } catch(_){}
-        const marker=n===0?"🥇":n===1?"🥈":n===2?"🥉":`**${n+1}.**`;
-        rows.push(`${marker} ${data?.species?.emoji||"<:reroll_dice:1558042108965822515>"} **${name}**\n   <:reroll_dice:1558042108965822515> **${rolls}** rolls`);
+        const rank=n===0?"🥇":n===1?"🥈":n===2?"🥉":`**${String(n+1).padStart(2,"0")}.**`;
+        rows.push(`${rank} ${data?.species?.emoji||"🎲"} **${name}**  ·  <:reroll_dice:1558042108965822515> **${rolls}**`);
       }
-      return interaction.editReply(buildStyledCardPayload("🎲 Rolls Leaderboard · Top 10",0x0891b2,[
-        {heading:"Rankings",body:rows.join("\n\n")},
-        {body:"Ranked by current unspent Species Rolls."},
+      return interaction.editReply(buildStyledCardPayload("🏆 LOZ Leaderboard",0x0891b2,[
+        {heading:"🎲 Species Rolls",body:rows.length ? `*Top ${rows.length} players · Ranked by current rolls*\n\n${rows.join("\n")}\n\n*Earn rolls with \`/daily\` and verified votes.*` : "No unspent rolls to rank yet. Use `/daily` to earn Species Rolls."},
       ]));
     }
   }
@@ -2176,9 +2167,12 @@ const commands = [
   new SlashCommandBuilder().setName("fightstats").setDescription("View fight stats").addUserOption(o=>o.setName("user").setDescription("User to check")),
   new SlashCommandBuilder().setName("history").setDescription("View fight history").addUserOption(o=>o.setName("user").setDescription("User to check")),
   new SlashCommandBuilder().setName("botstats").setDescription("View bot fight stats").addUserOption(o=>o.setName("user").setDescription("User to check")),
-  new SlashCommandBuilder().setName("leaderboards").setDescription("View player leaderboards")
-    .addSubcommand(s=>s.setName("fights").setDescription("Rank players by fight wins"))
-    .addSubcommand(s=>s.setName("rolls").setDescription("Rank players by remaining Species Rolls")),
+  new SlashCommandBuilder().setName("leaderboard").setDescription("View a player leaderboard")
+    .addStringOption(o=>o.setName("type").setDescription("Choose a leaderboard").setRequired(true)
+      .addChoices(
+        {name:"Fight Wins",value:"fights"},
+        {name:"Species Rolls",value:"rolls"},
+      )),
   new SlashCommandBuilder().setName("patchnotes").setDescription("View latest patch notes"),
   new SlashCommandBuilder().setName("updates").setDescription("Manage major-update DM notifications")
     .addSubcommand(s=>s.setName("subscribe").setDescription("Opt in to major LOZ update DMs"))
