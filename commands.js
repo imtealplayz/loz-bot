@@ -1859,6 +1859,7 @@ async function handleButton(interaction) {
       if (playerC.ultCooldown>0) { log.push(`❌ ULT on cooldown for ${playerC.ultCooldown} more rounds!`); }
       else {
         const {message:um,requiresChoice,choiceType}=applyUltEffect(playerC,botC);
+        fight.playerUltBuff=playerC.ultBuff;
         fight.playerLastUltUsed=playerC.lastUltUsed;
         if (requiresChoice) {
           fight.playerUltBuff=playerC.ultBuff; fight.playerUltCooldown=playerC.species.ultCooldown;
@@ -1915,6 +1916,7 @@ async function handleButton(interaction) {
     fight.playerHp=Math.max(0,playerC.currentHp); fight.botHp=Math.max(0,botC.currentHp);
     fight.playerUltBuff=playerC.ultBuff; fight.playerHealCooldown=playerC.healCooldown; fight.playerUltCooldown=playerC.ultCooldown;
     fight.playerBurn=playerC.burn; fight.playerBurnRounds=playerC.burnRounds; fight.playerCurse=playerC.curse;
+    fight.playerUltBuff=playerC.ultBuff;
     fight.playerBlockHeal=playerC.blockHeal; fight.playerAdaptiveStacks=playerC.adaptiveStacks; fight.playerAttackCounter=playerC.attackCounter;
     fight.playerPossession=playerC.possession||false;
     // FIX: sync bot ULT cooldown after tick (was being lost)
