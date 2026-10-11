@@ -1160,8 +1160,11 @@ async function handleCommand(interaction) {
     ], true));
   }
   if (commandName === "quests") {
-    try { return safeReply(interaction, await questSystem.openBoard(user.id, interaction)); }
-    catch (error) {
+    try {
+      // Loading/creating the persistent board can involve MongoDB I/O.
+      await interaction.deferReply({ flags:MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral });
+      return safeReply(interaction, await questSystem.openBoard(user.id, interaction));
+    } catch (error) {
       console.error("[Quest board] Could not open board:", error && (error.stack || error));
       return safeReply(interaction, buildStyledCardPayload("Quest Board Unavailable", 0xff0000, [
         { body:"LOZ could not load your saved quest board from MongoDB. No reward was changed. Please retry in a moment." },
