@@ -1,5 +1,14 @@
-// ==================== PATCH NOTES ====================
 const patchNotes = [
+  {
+    version: "5.2", date: "2026-10-11",
+    changes: [
+      "The Rift's divided bloodline has learned to endure. Half-Blood's first awakening trial now counts 15 completed battles whether you win or lose, and the second trial now requires 200 damage instead of 350.",
+      "Existing Half-Blood awakening progress is preserved. Previously recorded wins count toward the new fight total; new battles count on both victory and defeat.",
+      "Rebuilt /switch as a vertical species list, with each species name directly above its own button. The list is paginated to respect Discord's component limits, and locked forms remain visibly marked Locked.",
+      "Added Eclipsed Sovereign to /god species-unlock and added both Eclipsed Sovereign and Slime Lord to /god species-change. God-granted exclusive forms now retain the unlock flag needed for /switch.",
+      "Updated the major-update broadcast to tell the Eclipsed Sovereign's lore and explain the revised awakening trials.",
+    ],
+  },
   {
     version: "5.1", date: "2026-10-11",
     changes: [
@@ -215,7 +224,7 @@ const failChances = {
 const awakeningRequirements = {
   cyborg: { wins:25, damageDealt:500, ultUses:15, reward:"Mechangel", rewardRolls:5 },
   demon:  { playerWins:25, demonBotWins:20, costRolls:20, reward:"Archdemon" },
-  halfBlood: { wins:10, damageDealt:350, ultUses:10, reward:"Eclipsed Sovereign" }
+  halfBlood: { fights:15, damageDealt:200, ultUses:10, reward:"Eclipsed Sovereign" }
 };
 
 // ==================== DISINTEGRATION MESSAGES ====================
