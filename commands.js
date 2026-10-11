@@ -45,6 +45,77 @@ function buildStyledCardPayload(title, color, sections = [], ephemeral = false) 
   };
 }
 
+function buildSpeciesSwitchPayload(userData, requestedPage=0) {
+  const current=userData.species || humanSpecies;
+  const specialForms=[
+    {id:"switch_reaper",name:"Reaper",emoji:"🌑",unlocked:userData.questSpecies?.reaper?.unlocked===true,style:ButtonStyle.Primary},
+    {id:"switch_archdemon",name:"Archdemon",emoji:"👿",unlocked:userData.awakening?.demon?.awakened===true,style:ButtonStyle.Danger},
+    {id:"switch_mechangel",name:"Mechangel",emoji:"⚡🤖",unlocked:userData.awakening?.cyborg?.awakened===true,style:ButtonStyle.Primary},
+    {id:"switch_slime_lord",name:"Slime Lord",emoji:"🫧",unlocked:userData.questSpecies?.slimeLord?.unlocked===true,style:ButtonStyle.Success},
+    {id:"switch_eclipsed_sovereign",name:"Eclipsed Sovereign",emoji:"🌘",unlocked:userData.awakening?.halfBlood?.awakened===true,style:ButtonStyle.Primary},
+  ];
+  const specialNames=new Set(specialForms.map(form=>form.name));
+  const forms=[];
+  const original=userData.originalSpecies;
+  if (original?.name && original.name!==current.name && !specialNames.has(original.name)) {
+    forms.push({
+      id:"switch_original",
+      name:original.name,
+      emoji:original.emoji || "👤",
+      unlocked:true,
+      style:ButtonStyle.Primary,
+    });
+  }
+  for (const form of specialForms) {
+    if (form.name===current.name) continue;
+    // Older God species-change records may have the special species as the original
+    // even if they predate the permanent unlock flag. Keep those switchable.
+    if (original?.name===form.name) form.unlocked=true;
+    forms.push(form);
+  }
+
+  const pageSize=3;
+  const pageCount=Math.max(1,Math.ceil(forms.length/pageSize));
+  const page=Math.max(0,Math.min(Number.isInteger(requestedPage)?requestedPage:0,pageCount-1));
+  const container=new ContainerBuilder().setAccentColor(0x9b59b6);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    "## 🔄 Species Switch\n**Current species:** "+(current.emoji||"👤")+" **"+current.name+"**\n**Cooldown:** 3 hours"
+  ));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+
+  const pageForms=forms.slice(page*pageSize,page*pageSize+pageSize);
+  for (const form of pageForms) {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("### "+form.emoji+" "+form.name));
+    const button=new ButtonBuilder().setCustomId(form.id);
+    if (form.unlocked) {
+      button.setLabel("Switch to "+form.name).setStyle(form.style);
+    } else {
+      button.setLabel("Locked").setStyle(ButtonStyle.Secondary).setDisabled(true);
+    }
+    container.addActionRowComponents(new ActionRowBuilder().addComponents(button));
+  }
+
+  if (pageCount>1) {
+    const nav=[];
+    nav.push(new ButtonBuilder().setCustomId("switch_page_"+Math.max(0,page-1))
+      .setLabel("← Previous").setStyle(ButtonStyle.Secondary).setDisabled(page===0));
+    nav.push(new ButtonBuilder().setCustomId("switch_page_"+Math.min(pageCount-1,page+1))
+      .setLabel("Next →").setStyle(ButtonStyle.Secondary).setDisabled(page===pageCount-1));
+    container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("Page "+(page+1)+" of "+pageCount+" · Each species has its own button directly below its name."));
+    container.addActionRowComponents(new ActionRowBuilder().addComponents(nav));
+  } else {
+    container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("Each species has its own button directly below its name. Locked forms are unavailable until unlocked."));
+  }
+
+  return {
+    components:[container],
+    flags:MessageFlags.IsComponentsV2,
+    allowedMentions:{ parse:[] },
+  };
+}
+
 function buildFightChallengePayload(challengerId, targetId, challengerSpecies, targetSpecies) {
   const container = new ContainerBuilder().setAccentColor(0xf97316);
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
@@ -340,43 +411,44 @@ function asEphemeralSpeciesTokenPayload(payload) {
 
 // Major-update DM payload built entirely with Components V2 and native separators.
 function buildMajorUpdatePayload() {
-  const container = new ContainerBuilder().setAccentColor(0x2dd4bf);
+  const container = new ContainerBuilder().setAccentColor(0x6f2da8);
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      "## 🫧 LOZ VERSION 5.0 — SLIME LORD RISING\n**A new boss has emerged from the Rift.**\n\nVersion 5.0 introduces the Slime Lord encounter, a permanent rare-species unlock, a new God command, and a combat fix."
+      "## 🌘 LOZ VERSION 5.2 — THE ECLIPSE WITHIN\n**The Rift has awakened something divided no longer.**\n\nBorn between two bloodlines, Half-Blood was told it would never fully belong to either. But the Rift does not remember only victories. It remembers every battle endured, every strike survived, and every power mastered. In Version 5.2, that resolve becomes a new form: **Eclipsed Sovereign**."
     )
   );
 
   const sections = [
     {
-      title:"🫧 The Slime Lord boss",
+      title:"🌘 From Half-Blood to Eclipsed Sovereign",
       body:[
-        "After a genuine victory against any LOZ bot difficulty, a Slime Lord may spawn with a **7.5% chance**.",
-        "The boss scales to the difficulty you just defeated. Your HP is fully restored, and cooldowns and temporary effects reset for the fresh fight.",
-        "Defeat the boss for a **9.2% chance** to permanently unlock Slime Lord. The boss will not chain-spawn from another boss victory."
+        "The old bloodlines no longer clash within. They answer as one, and an eclipse crowns the Half-Blood that refused to break.",
+        "**Eclipsed Sovereign** — 115 HP, 15–22 attack, 14–22 healing, 7-round ultimate cooldown.",
+        "**Hybrid Instinct:** below 50% HP, deal 20% more damage and take 10% less damage.",
+        "**Bloodline Overdrive:** empower your next attack by **1.8×** and restore **15 HP**."
       ].join("\n")
     },
     {
-      title:"🧬 New exclusive species",
+      title:"📜 The three trials",
       body:[
-        "**Slime Lord** — 130 HP, 18–27 attack, 15–25 healing, 9-round ultimate cooldown.",
-        "**Adaptive Momentum:** each miss or counter builds the next successful attack from ×1.2 up to ×2.0; a successful hit consumes the built-up multiplier.",
-        "**Predatory Assimilation:** the next incoming damage hit becomes healing. If that hit would heal beyond max HP, the overflow is reflected onto the attacker.",
-        "Slime Lord is a permanent boss unlock, not part of normal species rolls or Species Tokens. Equip it with /switch."
+        "**I. Endure the Rift:** complete **15 battles** as Half-Blood. Victories and defeats both count; the Rift tests endurance, not just the winner's banner.",
+        "**II. Unite the Bloodlines:** deal **200 damage** while using Half-Blood.",
+        "**III. Bloodline Mastery:** use the Half-Blood ultimate **10 times**.",
+        "Only the current trial is shown. Existing saved progress carries forward, including progress recorded before this update. Complete the trials and confirm your awakening from /awakening."
       ].join("\n")
     },
     {
-      title:"👑 Permanent unlocks for God",
+      title:"🔄 A clearer species switch",
       body:[
-        "LOZ owners can use /god species-unlock to permanently unlock Reaper, Archdemon, Mechangel, or Slime Lord for a selected player, without making them complete the usual quest or awakening.",
-        "The command grants the unlock flag; players use /switch to equip the species."
+        "The /switch menu now lists each species name with its own button directly beneath it. The list is split into pages to fit Discord's component limits.",
+        "Unlocked forms are selectable; locked forms are clearly marked **Locked**."
       ].join("\n")
     },
     {
-      title:"🌍 Combat fix",
+      title:"👑 God can grant the new form",
       body:[
-        "Earth Dragon's Terra Strike path now correctly nullifies the next incoming hit while keeping its 1.2× next-attack bonus.",
-        "Updated the species compendium and patch notes for the new Slime Lord abilities and boss encounter."
+        "The God-only /god species-unlock command now includes **Eclipsed Sovereign**. /god species-change also supports **Eclipsed Sovereign** and **Slime Lord**.",
+        "God-granted exclusive forms keep their permanent unlock flag, so they remain available through /switch after changing species."
       ].join("\n")
     }
   ];
@@ -880,9 +952,10 @@ async function handleCommand(interaction) {
     // ── Half-Blood → Eclipsed Sovereign ─────────────────────────
     if (sp==="Half-Blood" || sp==="Eclipsed Sovereign") {
       const req=awakeningRequirements.halfBlood;
-      if (!userData.awakening.halfBlood) userData.awakening.halfBlood={wins:0,damageDealt:0,ultUses:0,awakened:false};
+      if (!userData.awakening.halfBlood) userData.awakening.halfBlood={fights:0,wins:0,damageDealt:0,ultUses:0,awakened:false};
       const prog=userData.awakening.halfBlood;
-      const wins=Math.min(Number(prog.wins)||0,req.wins);
+      // v5.1 stored capped wins, so treat those as known completed fights when migrating.
+      const fights=Math.min(Math.max(Number(prog.fights)||0,Number(prog.wins)||0),req.fights);
       const damage=Math.min(Number(prog.damageDealt)||0,req.damageDealt);
       const ults=Math.min(Number(prog.ultUses)||0,req.ultUses);
       if (prog.awakened) {
@@ -890,19 +963,19 @@ async function handleCommand(interaction) {
           .setDescription(`**Unlocked Form:** 🌘 Eclipsed Sovereign\n**Status:** Permanently Awakened\n\n*The Half-Blood no longer fights against its divided nature. Both lineages answer as one, and the shadow of the eclipse crowns its new sovereign.*\n\nUse \`/switch\` to equip Eclipsed Sovereign after changing species.`)
           .setFooter({text:"Half-Blood → Eclipsed Sovereign"})],flags:64});
       }
-      if (wins>=req.wins && damage>=req.damageDealt && ults>=req.ultUses && sp==="Half-Blood") {
+      if (fights>=req.fights && damage>=req.damageDealt && ults>=req.ultUses && sp==="Half-Blood") {
         const readyEmbed=new EmbedBuilder().setColor(0x6f2da8).setTitle("🌘 AWAKENING ALTAR — READY")
           .setDescription("*The two bloodlines finally resonate. The eclipse answers.*\n\n**All three trials are complete.**\n\n**Eclipsed Sovereign**\n├ 115 HP\n├ 15–22 ATK\n├ Passive: Hybrid Instinct\n└ Ultimate: Bloodline Overdrive");
         const row=new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("awaken_eclipsed_sovereign").setLabel("🌘 AWAKEN AS ECLIPSED SOVEREIGN").setStyle(ButtonStyle.Primary));
         return safeReply(interaction,{embeds:[readyEmbed],components:[row],flags:64});
       }
-      let step=1, title="Prove Your Resolve", detail="Win battles while using Half-Blood.", value=wins, max=req.wins;
-      if (wins>=req.wins) { step=2; title="Unite the Bloodlines"; detail="Deal damage in battle while using Half-Blood."; value=damage; max=req.damageDealt; }
-      if (wins>=req.wins && damage>=req.damageDealt) { step=3; title="Bloodline Mastery"; detail="Use your ultimate while using Half-Blood."; value=ults; max=req.ultUses; }
+      let step=1, title="Endure the Rift", detail="Complete 15 battles while using Half-Blood. Wins and losses both count.", value=fights, max=req.fights;
+      if (fights>=req.fights) { step=2; title="Unite the Bloodlines"; detail="Deal 200 damage while using Half-Blood."; value=damage; max=req.damageDealt; }
+      if (fights>=req.fights && damage>=req.damageDealt) { step=3; title="Bloodline Mastery"; detail="Use your ultimate 10 times while using Half-Blood."; value=ults; max=req.ultUses; }
       const pct=Math.min(100,Math.floor(value/max*100));
       const equipNote=sp==="Half-Blood" ? "" : "\n\nEquip Half-Blood to continue this trial.";
       return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x6f2da8).setTitle(`🌘 AWAKENING ALTAR — QUEST ${step}/3`)
-        .setDescription(`*Two legacies dwell within you. Master them one trial at a time.*\n\n**${title}**\n${detail}\n\n**Progress:** ${value.toLocaleString()}/${max.toLocaleString()}\n${bar(pct)} ${pct}%${equipNote}`)
+        .setDescription(`*The Rift remembers every blow endured, not only the victories claimed.*\n\n**${title}**\n${detail}\n\n**Progress:** ${value.toLocaleString()}/${max.toLocaleString()}\n${bar(pct)} ${pct}%${equipNote}`)
         .setFooter({text:"Your progress is permanent. The next trial appears after this one is complete."})],flags:64});
     }
 
@@ -984,46 +1057,16 @@ async function handleCommand(interaction) {
 
   // ── SWITCH ────────────────────────────────────────────────────
   if (commandName === "switch") {
-    await interaction.deferReply({flags:64});
+    await interaction.deferReply({flags:MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral});
     const userData=_state.userSpecies.get(user.id);
-    if (!userData||!userData.species) return interaction.editReply({embeds:[createErrorEmbed("No species yet! Use `/species-roll` first.")]});
+    if (!userData||!userData.species) return interaction.editReply(buildStyledCardPayload("No Species Yet",0xff0000,[{body:"Use `/species-roll` to begin your adventure."}]));
     const now=Date.now(), threeH=3*60*60*1000;
     if (user.id!==_state.ownerId&&user.id!==_state.secondGodId&&userData.lastSwitch&&now-userData.lastSwitch<threeH) {
       const tl=threeH-(now-userData.lastSwitch), h=Math.floor(tl/3600000), m=Math.floor((tl%3600000)/60000);
-      return interaction.editReply({embeds:[createErrorEmbed(`Switch available in **${h}h ${m}m**!`)]});
+      return interaction.editReply(buildStyledCardPayload("Switch Cooldown",0x808080,[{body:`You can switch species again in **${h}h ${m}m**.`}]));
     }
-    const sp=userData.species||humanSpecies;
-    const buttons=[new ButtonBuilder().setCustomId("switch_current").setLabel("✅ "+sp.name+" (Current)").setStyle(ButtonStyle.Success).setDisabled(true)];
-    if (userData.originalSpecies?.name && userData.originalSpecies.name!==sp.name) {
-      buttons.push(new ButtonBuilder().setCustomId("switch_original").setLabel(userData.originalSpecies.name).setStyle(ButtonStyle.Primary));
-    }
-    const switchForms=[
-      {id:"switch_reaper",name:"Reaper",emoji:"🌑",unlocked:userData.questSpecies?.reaper?.unlocked===true,style:ButtonStyle.Primary},
-      {id:"switch_archdemon",name:"Archdemon",emoji:"👿",unlocked:userData.awakening?.demon?.awakened===true,style:ButtonStyle.Danger},
-      {id:"switch_mechangel",name:"Mechangel",emoji:"⚡",unlocked:userData.awakening?.cyborg?.awakened===true,style:ButtonStyle.Primary},
-      {id:"switch_slime_lord",name:"Slime Lord",emoji:"🫧",unlocked:userData.questSpecies?.slimeLord?.unlocked===true,style:ButtonStyle.Success},
-      {id:"switch_eclipsed_sovereign",name:"Eclipsed Sovereign",emoji:"🌘",unlocked:userData.awakening?.halfBlood?.awakened===true,style:ButtonStyle.Primary},
-    ];
-    for (const form of switchForms) {
-      if (sp.name===form.name) continue;
-      const button=new ButtonBuilder().setCustomId(form.id);
-      if (form.unlocked) button.setLabel(form.emoji+" "+form.name).setStyle(form.style);
-      else button.setLabel("Locked").setStyle(ButtonStyle.Secondary).setDisabled(true);
-      buttons.push(button);
-    }
-    const rows=[];
-    for(let i=0;i<buttons.length;i+=5) rows.push(new ActionRowBuilder().addComponents(buttons.slice(i,i+5)));
-    const embed=new EmbedBuilder().setColor(0x9b59b6).setTitle("🔄 Class Switch")
-      .setDescription("**Current:** " + sp.emoji + " " + sp.name + "\n**Original:** " + (userData.originalSpecies?.emoji||"👤") + " " + (userData.originalSpecies?.name||"Human")
-        + "\n🌑 Reaper: " + (userData.questSpecies?.reaper?.unlocked?"✅ Unlocked":"❌ Locked")
-        + "\n👿 Archdemon: " + (userData.awakening?.demon?.awakened?"✅ Awakened":"❌ Locked")
-        + "\n⚡ Mechangel: " + (userData.awakening?.cyborg?.awakened?"✅ Awakened":"❌ Locked")
-        + "\n🫧 Slime Lord: " + (userData.questSpecies?.slimeLord?.unlocked?"✅ Unlocked":"❌ Locked")
-        + "\n🌘 Eclipsed Sovereign: " + (userData.awakening?.halfBlood?.awakened?"✅ Awakened":"❌ Locked")
-        + "\n\n⏰ Cooldown: 3 hours");
-    return interaction.editReply({embeds:[embed],components:rows});
+    return interaction.editReply(buildSpeciesSwitchPayload(userData,0));
   }
-
 
   // ── FIGHTSTATS ────────────────────────────────────────────────
   if (commandName === "fightstats") {
@@ -1285,6 +1328,9 @@ async function handleCommand(interaction) {
       } else if (speciesName==="Slime Lord") {
         ud.questSpecies.slimeLord={...(ud.questSpecies.slimeLord||{}),unlocked:true,equipped:false,godGranted:true};
         unlockLabel="Slime Lord";
+      } else if (speciesName==="Eclipsed Sovereign") {
+        ud.awakening.halfBlood={...(ud.awakening.halfBlood||{}),awakened:true};
+        unlockLabel="Eclipsed Sovereign";
       } else {
         return safeReply(interaction,{embeds:[createErrorEmbed("That exclusive species cannot be unlocked with this command.")],flags:64});
       }
@@ -1330,13 +1376,24 @@ async function handleCommand(interaction) {
       if (spname==="Kitsune"&&target.id!==_client.user.id) return safeReply(interaction,{embeds:[createErrorEmbed("Kitsune is exclusive to Loz!")],flags:64});
       const newSp=getSpeciesByName(spname);
       if (!newSp) return safeReply(interaction,{embeds:[createErrorEmbed("Unknown species! Pick one from the dropdown.")],flags:64});
-      const ud=_state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0,badges:[]};
-      // Only overwrite originalSpecies if currently Human
-      // God-given species always becomes the new original
+      const ud=_state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,speciesTokens:0,awakening:{},requestsEnabled:true,lastSwitch:0,badges:[]};
+      ud.questSpecies={...(ud.questSpecies||{})};
+      ud.awakening={...(ud.awakening||{})};
+      // God-given exclusive forms must also set their permanent unlock flags so /switch can equip them later.
+      if (spname==="Reaper") ud.questSpecies.reaper={...(ud.questSpecies.reaper||{}),unlocked:true,equipped:false,godGranted:true};
+      else if (spname==="Archdemon") ud.awakening.demon={...(ud.awakening.demon||{}),awakened:true};
+      else if (spname==="Mechangel") ud.awakening.cyborg={...(ud.awakening.cyborg||{}),awakened:true};
+      else if (spname==="Slime Lord") ud.questSpecies.slimeLord={...(ud.questSpecies.slimeLord||{}),unlocked:true,equipped:false,godGranted:true};
+      else if (spname==="Eclipsed Sovereign") ud.awakening.halfBlood={...(ud.awakening.halfBlood||{}),awakened:true};
+      // God-given species becomes the new original species.
       ud.originalSpecies=newSp;
       ud.species=newSp;
+      const isExclusive=["Reaper","Archdemon","Mechangel","Slime Lord","Eclipsed Sovereign"].includes(spname);
+      const saved=isExclusive
+        ? await database.saveUserSpecies(target.id,ud)
+        : await database.saveUserSpeciesFields(target.id,ud.species,ud.originalSpecies);
+      if (!saved) return safeReply(interaction,{embeds:[createErrorEmbed("MongoDB save failed. This change is not confirmed as saved; check the database before redeploying.")],flags:64});
       _state.userSpecies.set(target.id,ud);
-      if (!await database.saveUserSpeciesFields(target.id,ud.species,ud.originalSpecies)) return safeReply(interaction,{embeds:[createErrorEmbed("MongoDB save failed. This change is not confirmed as saved; check the database before redeploying.")],flags:64});
       return safeReply(interaction,{embeds:[createSuccessEmbed(`Changed <@${target.id}>'s species to ${newSp.emoji} **${newSp.name}** and saved it to MongoDB!`)]});
     }
 
@@ -1451,7 +1508,13 @@ async function handleCommand(interaction) {
 async function handleButton(interaction) {
   const { customId, user, guild, channel, message } = interaction;
 
-
+  if (customId.startsWith("switch_page_")) {
+    const ud=_state.userSpecies.get(user.id);
+    if (!ud || !ud.species)
+      return interaction.update(buildStyledCardPayload("Species Data Unavailable",0xff0000,[{body:"No species data was found. Use /species-roll to begin."}]));
+    const page=Number(customId.slice("switch_page_".length));
+    return interaction.update(buildSpeciesSwitchPayload(ud,Number.isInteger(page)?page:0));
+  }
 
   // ── UPDATE SUBSCRIPTION PROMPT ─────────────────────────────────
   if (customId.startsWith("loz_updates_prompt_subscribe_")) {
@@ -1631,27 +1694,27 @@ async function handleButton(interaction) {
   // ── SWITCH ────────────────────────────────────────────────────
   if (customId==="switch_original"||customId==="switch_reaper"||customId==="switch_archdemon"||customId==="switch_mechangel"||customId==="switch_slime_lord"||customId==="switch_eclipsed_sovereign") {
     const ud=_state.userSpecies.get(user.id);
-    if (!ud) return interaction.update({content:"❌ No species data!",components:[]});
+    if (!ud) return interaction.update(buildStyledCardPayload("Switch Failed",0xff0000,[{body:"No species data was found."}]));
     const now=Date.now(), th=3*60*60*1000;
     if (user.id!==_state.ownerId&&user.id!==_state.secondGodId&&ud.lastSwitch&&now-ud.lastSwitch<th) {
       const tl=th-(now-ud.lastSwitch), h=Math.floor(tl/3600000), m=Math.floor((tl%3600000)/60000);
-      return interaction.update({embeds:[createErrorEmbed(`Switch in **${h}h ${m}m**!`)],components:[]});
+      return interaction.update(buildStyledCardPayload("Switch Cooldown",0x808080,[{body:`You can switch again in **${h}h ${m}m**.`}]));
     }
     let newSp;
     if (customId==="switch_original") newSp=ud.originalSpecies;
-    else if (customId==="switch_reaper") { if(!ud.questSpecies?.reaper?.unlocked) return interaction.update({content:"❌ Reaper not unlocked!",components:[]}); newSp=reaperSpecies; }
-    else if (customId==="switch_archdemon") { if(ud.awakening?.demon?.awakened!==true) return interaction.update({content:"❌ Archdemon is locked. Complete the Demon awakening first.",components:[]}); newSp=archdemonSpecies; }
-    else if (customId==="switch_slime_lord") { if(ud.questSpecies?.slimeLord?.unlocked!==true) return interaction.update({content:"❌ Slime Lord is locked. Defeat the rare Slime Lord boss first.",components:[]}); newSp=getSpeciesByName("Slime Lord"); }
-    else if (customId==="switch_eclipsed_sovereign") { if(ud.awakening?.halfBlood?.awakened!==true) return interaction.update({content:"❌ Eclipsed Sovereign is locked. Complete the Half-Blood awakening first.",components:[]}); newSp=getSpeciesByName("Eclipsed Sovereign"); }
+    else if (customId==="switch_reaper") { if(!ud.questSpecies?.reaper?.unlocked && ud.originalSpecies?.name!=="Reaper") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Reaper has not been unlocked for your account."}])); newSp=reaperSpecies; }
+    else if (customId==="switch_archdemon") { if(ud.awakening?.demon?.awakened!==true && ud.originalSpecies?.name!=="Archdemon") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Complete the Demon awakening before equipping Archdemon."}])); newSp=archdemonSpecies; }
+    else if (customId==="switch_slime_lord") { if(ud.questSpecies?.slimeLord?.unlocked!==true && ud.originalSpecies?.name!=="Slime Lord") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Defeat the rare Slime Lord boss or ask God to permanently unlock this species."}])); newSp=getSpeciesByName("Slime Lord"); }
+    else if (customId==="switch_eclipsed_sovereign") { if(ud.awakening?.halfBlood?.awakened!==true && ud.originalSpecies?.name!=="Eclipsed Sovereign") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Complete the Half-Blood awakening or ask God to permanently unlock this species."}])); newSp=getSpeciesByName("Eclipsed Sovereign"); }
     else {
-      if (ud.awakening?.cyborg?.awakened!==true) return interaction.update({content:"❌ Mechangel is locked. Complete the Cyborg awakening first.",components:[]});
+      if (ud.awakening?.cyborg?.awakened!==true && ud.originalSpecies?.name!=="Mechangel") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Complete the Cyborg awakening before equipping Mechangel."}]));
       newSp=getSpeciesByName("Mechangel");
     }
-    if (!newSp) return interaction.update({content:"❌ That species is unavailable.",components:[]});
+    if (!newSp) return interaction.update(buildStyledCardPayload("Switch Failed",0xff0000,[{body:"That species is unavailable."}]));
     ud.species=newSp; ud.lastSwitch=Date.now();
     _state.userSpecies.set(user.id,ud);
     await database.saveUserSpecies(user.id,ud);
-    return interaction.update({embeds:[createSuccessEmbed(`Switched to ${newSp.emoji} **${newSp.name}**! Next switch in 3h.`)],components:[]});
+    return interaction.update(buildStyledCardPayload("Species Switched",newSp.color||0x9b59b6,[{body:`Your species is now ${newSp.emoji} **${newSp.name}**. Your next switch is available in 3 hours.`}]));
   }
 
   // ── DUEL ACCEPT/DECLINE ───────────────────────────────────────
@@ -2116,13 +2179,13 @@ const commands = [
   // default_member_permissions=0 hides these from normal members; handlers still enforce the exact allow-list.
   new SlashCommandBuilder().setName("god").setDescription("God-only commands")
     .addSubcommand(s=>s.setName("menu").setDescription("Show god menu"))
-    .addSubcommand(s=>s.setName("species-unlock").setDescription("Permanently unlock an exclusive species for a user").addUserOption(o=>o.setName("user").setDescription("Target user, including yourself").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Exclusive species to unlock").setRequired(true).addChoices({name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"Slime Lord 🫧",value:"Slime Lord"})))
+    .addSubcommand(s=>s.setName("species-unlock").setDescription("Permanently unlock an exclusive species for a user").addUserOption(o=>o.setName("user").setDescription("Target user, including yourself").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Exclusive species to unlock").setRequired(true).addChoices({name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"Slime Lord 🫧",value:"Slime Lord"},{name:"Eclipsed Sovereign 🌘",value:"Eclipsed Sovereign"})))
     .addSubcommandGroup(g=>g.setName("add").setDescription("Give items to a user")
       .addSubcommand(s=>s.setName("items").setDescription("Give inventory items to a user")
         .addUserOption(o=>o.setName("user").setDescription("User receiving the item").setRequired(true))
         .addStringOption(o=>o.setName("item").setDescription("Item to give").setRequired(true).addChoices({name:"Species Token",value:"species_token"}))
         .addIntegerOption(o=>o.setName("quantity").setDescription("Quantity to give").setRequired(true).setMinValue(1).setMaxValue(1000000))))
-    .addSubcommand(s=>s.setName("species-change").setDescription("Change a user's species").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Species to set").setRequired(true).addChoices({name:"Demi God ⚡",value:"Demi God"},{name:"Demon Lord 🔥",value:"Demon Lord"},{name:"Demon King 👑😈",value:"Demon King"},{name:"Chimera 🎭",value:"Chimera"},{name:"Angel 👼",value:"Angel"},{name:"Demon 😈",value:"Demon"},{name:"Oni 👿",value:"Oni"},{name:"Orc Lord 👑",value:"Orc Lord"},{name:"Kijin 🎭",value:"Kijin"},{name:"Cyborg 🤖",value:"Cyborg"},{name:"High Orc ⚔️",value:"High Orc"},{name:"Ogre 👹",value:"Ogre"},{name:"Goblin 👺",value:"Goblin"},{name:"Orc 🟢",value:"Orc"},{name:"Half-Blood 🩸",value:"Half-Blood"},{name:"Fire Dragon 🔥🐉",value:"Fire Dragon"},{name:"Thunder Dragon ⚡🐉",value:"Thunder Dragon"},{name:"Ice Dragon ❄️🐉",value:"Ice Dragon"},{name:"Earth Dragon 🌍🐉",value:"Earth Dragon"},{name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"God 👑✨",value:"God"},{name:"Human 👤",value:"Human"})))
+    .addSubcommand(s=>s.setName("species-change").setDescription("Change a user's species").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Species to set").setRequired(true).addChoices({name:"Demi God ⚡",value:"Demi God"},{name:"Demon Lord 🔥",value:"Demon Lord"},{name:"Demon King 👑😈",value:"Demon King"},{name:"Chimera 🎭",value:"Chimera"},{name:"Angel 👼",value:"Angel"},{name:"Demon 😈",value:"Demon"},{name:"Oni 👿",value:"Oni"},{name:"Orc Lord 👑",value:"Orc Lord"},{name:"Kijin 🎭",value:"Kijin"},{name:"Cyborg 🤖",value:"Cyborg"},{name:"High Orc ⚔️",value:"High Orc"},{name:"Ogre 👹",value:"Ogre"},{name:"Goblin 👺",value:"Goblin"},{name:"Orc 🟢",value:"Orc"},{name:"Half-Blood 🩸",value:"Half-Blood"},{name:"Fire Dragon 🔥🐉",value:"Fire Dragon"},{name:"Thunder Dragon ⚡🐉",value:"Thunder Dragon"},{name:"Ice Dragon ❄️🐉",value:"Ice Dragon"},{name:"Earth Dragon 🌍🐉",value:"Earth Dragon"},{name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"God 👑✨",value:"God"},{name:"Slime Lord 🫧",value:"Slime Lord"},{name:"Eclipsed Sovereign 🌘",value:"Eclipsed Sovereign"})))
     .addSubcommand(s=>s.setName("species-reset").setDescription("Reset a user to Human").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)))
     .addSubcommand(s=>s.setName("species-add").setDescription("Give rolls to a user").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)).addIntegerOption(o=>o.setName("amount").setDescription("Amount of rolls").setRequired(true).setMinValue(1).setMaxValue(1000000)))
     .addSubcommand(s=>s.setName("rolls-reset").setDescription("Reset a user's rolls to 0").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)))
