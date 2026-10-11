@@ -11,6 +11,7 @@ const VOTE_ROLL_REWARD = 2;
 let _state = null;
 let _client = null;
 let _scheduler = null;
+let _voteWebhookEnabled = false;
 const userLocks = new Map();
 const activeBoardViews = new Map();
 
@@ -25,6 +26,7 @@ const QUEST_TEMPLATES = [
 
 function setState(state) { _state = state; }
 function setClient(client) { _client = client; }
+function setVoteWebhookEnabled(enabled) { _voteWebhookEnabled = Boolean(enabled); }
 
 async function withUserLock(userId, task) {
   const previous = userLocks.get(userId) || Promise.resolve();
@@ -179,8 +181,9 @@ function makeQuestSection(userId, quest) {
 }
 
 function buildBoardPayload(userId, board, notice="", ephemeral=true) {
-  const now=Date.now(), vote=board.vote||{}, nextVoteAt=Number(vote.nextVoteAt)||0, voteReady=nextVoteAt<=now;
-  const voteStatus=!vote.lastVoteAt?"Available now — vote once every 12 hours."
+  const now=Date.now(), vote=board.vote||{}, nextVoteAt=Number(vote.nextVoteAt)||0, voteReady=_voteWebhookEnabled && nextVoteAt<=now;
+  const voteStatus=!_voteWebhookEnabled?"⚠️ Vote rewards are unavailable until the Top.gg webhook is configured."
+    : !vote.lastVoteAt?"Available now — vote once every 12 hours."
     : voteReady?"✅ Your next vote is available now.":"⏰ Next vote: <t:"+Math.floor(nextVoteAt/1000)+":R>.";
   const voteText="### 🗳️ Permanent Quest — Vote for LOZ\n- Vote on Top.gg every 12 hours to earn **+2 Species Rolls**.\n**Status:** "+voteStatus
     +"\n**Verified votes credited:** "+(Number(vote.totalVotes)||0)
@@ -196,7 +199,7 @@ function buildBoardPayload(userId, board, notice="", ephemeral=true) {
   if (voteReady) {
     voteButton=new ButtonBuilder().setLabel("Vote on Top.gg").setStyle(ButtonStyle.Link).setURL(topggVoteUrl());
   } else {
-    voteButton=new ButtonBuilder().setCustomId("quest_vote_cooldown:"+userId).setLabel("Vote Cooldown").setStyle(ButtonStyle.Secondary).setDisabled(true);
+    voteButton=new ButtonBuilder().setCustomId("quest_vote_cooldown:"+userId).setLabel(_voteWebhookEnabled?"Vote Cooldown":"Unavailable").setStyle(ButtonStyle.Secondary).setDisabled(true);
   }
   container.addSectionComponents(new SectionBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent(voteText)).setButtonAccessory(voteButton));
   for (const quest of board.quests||[]) {
@@ -420,4 +423,4 @@ function startScheduler() {
   if (_scheduler.unref) _scheduler.unref();
 }
 
-module.exports={setState,setClient,openBoard,handleTopggVote,trackProgress,claimQuest,handleButton,startScheduler};
+module.exports={setState,setClient,setVoteWebhookEnabled,openBoard,handleTopggVote,trackProgress,claimQuest,handleButton,startScheduler};
