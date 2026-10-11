@@ -25,6 +25,7 @@ state.secondGodId = secondGodId;
 let databaseReady = false;
 
 // ==================== HEALTH + TOP.GG WEBHOOK ====================
+const crypto = require("node:crypto");
 const webhookApp = express();
 const topggSecret = (process.env.TOPGG_WEBHOOK_SECRET || "").trim();
 let topggWebhookEnabled = false;
@@ -35,28 +36,142 @@ webhookApp.get("/health", (_req, res) => res.status(databaseReady ? 200 : 503).j
   voteWebhookEnabled: topggWebhookEnabled,
 }));
 
+function safeTextEqual(left, right) {
+  const a = Buffer.from(String(left || ""));
+  const b = Buffer.from(String(right || ""));
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// Top.gg v1 signs "<unix timestamp>.<raw request body>" with HMAC-SHA256
+// and sends the result in X-Topgg-Signature. Keep the bytes intact until
+// signature verification completes.
+function verifyTopggRequest(req) {
+  if (!Buffer.isBuffer(req.body)) {
+    return { ok:false, status:400, error:"Expected a raw JSON request body." };
+  }
+
+  const signatureHeader = req.get("x-topgg-signature");
+  if (signatureHeader) {
+    const timestampMatch = signatureHeader.match(/(?:^|,)\s*t=(\d+)\s*(?:,|$)/i);
+    const signatureMatch = signatureHeader.match(/(?:^|,)\s*v1=([a-f0-9]+)\s*(?:,|$)/i);
+    if (!timestampMatch || !signatureMatch) {
+      return { ok:false, status:401, error:"Malformed Top.gg signature." };
+    }
+
+    const timestamp = Number(timestampMatch[1]);
+    if (!Number.isSafeInteger(timestamp) || Math.abs(Math.floor(Date.now() / 1000) - timestamp) > 300) {
+      return { ok:false, status:401, error:"Top.gg signature timestamp is outside the allowed window." };
+    }
+
+    const expected = crypto.createHmac("sha256", topggSecret)
+      .update(String(timestamp))
+      .update(".")
+      .update(req.body)
+      .digest();
+    const received = Buffer.from(signatureMatch[1], "hex");
+    if (received.length !== expected.length || !crypto.timingSafeEqual(received, expected)) {
+      return { ok:false, status:401, error:"Invalid Top.gg signature." };
+    }
+    return { ok:true, version:"v1" };
+  }
+
+  // Preserve support for older v0 endpoints using a custom Authorization
+  // secret. A generated v1 whs_ secret must never fall back to unsigned auth.
+  if (topggSecret.startsWith("whs_")) {
+    return { ok:false, status:401, error:"Missing Top.gg v1 signature." };
+  }
+  if (!safeTextEqual(req.get("authorization"), topggSecret)) {
+    return { ok:false, status:401, error:"Invalid legacy Top.gg authorization." };
+  }
+  return { ok:true, version:"v0" };
+}
+
+function getIdentifier(value) {
+  if (value && typeof value === "object") {
+    return value.id ?? value.userId ?? value.discordId ?? "";
+  }
+  return value ?? "";
+}
+
+function normalizeTopggPayload(payload) {
+  const eventType = String(payload?.type ?? payload?.event ?? payload?.eventType ?? "").toLowerCase();
+  const vote = payload?.vote && typeof payload.vote === "object"
+    ? payload.vote
+    : payload?.data && typeof payload.data === "object"
+      ? payload.data
+      : payload;
+  const voteType = String(vote?.type ?? vote?.event ?? "").toLowerCase();
+  const type = eventType || voteType;
+  const isTest = payload?.isTest === true || vote?.isTest === true
+    || type === "test" || type === "webhook.test" || type === "vote.test";
+  if (isTest) return { isTest:true };
+
+  let normalizedType;
+  if (["vote.create", "vote.created", "vote", "upvote"].includes(type)) {
+    normalizedType = "upvote";
+  } else if (!type) {
+    // Legacy payloads sometimes contain only user and bot identifiers.
+    normalizedType = "upvote";
+  } else {
+    normalizedType = type;
+  }
+
+  const user = getIdentifier(vote?.user ?? vote?.userId ?? vote?.voterId ?? vote?.voter
+    ?? payload?.user ?? payload?.userId);
+  const bot = getIdentifier(vote?.bot ?? vote?.botId ?? vote?.receiverId ?? vote?.projectId
+    ?? payload?.bot ?? payload?.botId ?? payload?.receiverId ?? payload?.projectId);
+  return {
+    user:String(user),
+    bot:String(bot),
+    type:normalizedType,
+    isWeekend:vote?.isWeekend === true || payload?.isWeekend === true,
+  };
+}
+
 async function startHttpServer() {
   if (topggSecret) {
-    try {
-      // @top-gg/sdk is ESM-only, so load it with dynamic import from this CommonJS file.
-      const { Webhook } = await import("@top-gg/sdk");
-      const topggWebhook = new Webhook(topggSecret);
-      webhookApp.post("/topgg/webhook", topggWebhook.listener(async vote => {
-        if (!databaseReady) throw new Error("LOZ is still starting up; retry this vote webhook.");
+    // express.raw preserves exact bytes required by Top.gg v1 signature checks.
+    webhookApp.post("/topgg/webhook", express.raw({ type:"application/json", limit:"100kb" }), async (req, res) => {
+      const verification = verifyTopggRequest(req);
+      if (!verification.ok) {
+        console.warn("[Top.gg] Rejected webhook request:", verification.error);
+        return res.status(verification.status).json({ error:verification.error });
+      }
+
+      let payload;
+      try {
+        payload = JSON.parse(req.body.toString("utf8"));
+      } catch (_) {
+        return res.status(400).json({ error:"Invalid JSON webhook payload." });
+      }
+
+      const vote = normalizeTopggPayload(payload);
+      if (vote.isTest) {
+        console.log("[Top.gg] Verified " + verification.version + " test webhook; no reward was granted.");
+        return res.status(204).end();
+      }
+
+      if (!databaseReady) {
+        console.warn("[Top.gg] Vote received before database startup completed; asking Top.gg to retry.");
+        return res.status(503).json({ error:"LOZ is still starting up. Retry this webhook." });
+      }
+
+      try {
         await questSystem.handleTopggVote(vote);
-      }));
-      topggWebhookEnabled = true;
-      questSystem.setVoteWebhookEnabled(true);
-      console.log("[Top.gg] Vote webhook initialized.");
-    } catch (error) {
-      questSystem.setVoteWebhookEnabled(false);
-      console.error("[Top.gg] Failed to initialize vote webhook:", error);
-      webhookApp.post("/topgg/webhook", (_req, res) => res.status(503).json({ error:"Top.gg webhook failed to initialize" }));
-    }
+        return res.status(204).end();
+      } catch (error) {
+        console.error("[Top.gg] Vote processing failed; asking Top.gg to retry:", error);
+        return res.status(500).json({ error:"LOZ could not process this vote yet." });
+      }
+    });
+
+    topggWebhookEnabled = true;
+    questSystem.setVoteWebhookEnabled(true);
+    console.log("[Top.gg] Vote webhook initialized (signed v1 with legacy v0 compatibility).");
   } else {
     questSystem.setVoteWebhookEnabled(false);
     webhookApp.post("/topgg/webhook", (_req, res) => res.status(503).json({ error:"TOPGG_WEBHOOK_SECRET is not configured" }));
-    console.warn("[Top.gg] Vote rewards are disabled until TOPGG_WEBHOOK_SECRET is configured in Railway and on Top.gg.");
+    console.warn("[Top.gg] Vote rewards are disabled until TOPGG_WEBHOOK_SECRET is configured in Railway.");
   }
 
   const httpServer = webhookApp.listen(Number(process.env.PORT) || 3000, "0.0.0.0", () => {
