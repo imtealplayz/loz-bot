@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { humanSpecies } = require("./constants.js");
 
 // ==================== CONNECT ====================
 mongoose.set("bufferCommands", false);
@@ -458,6 +459,27 @@ async function loadAllQuestBoards(questBoards) {
 
 // A Top.gg vote and its 2-roll reward are applied in one MongoDB transaction.
 // The nextVoteAt filter prevents duplicate webhook retries and concurrent replay.
+async function persistRewardBalance(userId, existingRecords, rolls, speciesTokens, session) {
+  if (existingRecords.length > 0) {
+    await User.updateMany(
+      { userId, archivedForRepair:{ $ne:true } },
+      { $set:{ userId, archivedForRepair:false, rolls, speciesTokens } },
+      { session, upsert:true }
+    );
+    return;
+  }
+
+  // First-time voters get a normal Human profile so their earned rolls still
+  // work after a Railway restart and they can use /species-roll immediately.
+  const defaultProfile = {
+    userId, archivedForRepair:false,
+    species:humanSpecies, originalSpecies:humanSpecies, questSpecies:{},
+    rolls, speciesTokens, guideRewardClaimed:false, requestsEnabled:true, lastSwitch:0,
+    awakening:{}, giftSent:{count:0,resetAt:0}, giftReceived:{count:0,resetAt:0}, badges:[],
+  };
+  await User.create([defaultProfile], { session });
+}
+
 async function awardTopggVote(userId, now, cooldownMs, rollReward = 2) {
   let session;
   try {
@@ -488,11 +510,7 @@ async function awardTopggVote(userId, now, cooldownMs, rollReward = 2) {
         .select({ rolls:1, speciesTokens:1 }).session(session).lean();
       const rolls = Math.max(0, ...existing.map(record => Number(record.rolls)||0)) + rollReward;
       const speciesTokens = Math.max(0, ...existing.map(record => Number(record.speciesTokens)||0));
-      await User.updateMany(
-        { userId, archivedForRepair:{ $ne:true } },
-        { $set:{ userId, archivedForRepair:false, rolls, speciesTokens } },
-        { session, upsert:true }
-      );
+      await persistRewardBalance(userId, existing, rolls, speciesTokens, session);
 
       outcome = {
         ok:true, accepted:true, boardData:board.data,
@@ -558,11 +576,7 @@ async function claimQuestReward(userId, questId, now) {
         .select({ rolls:1, speciesTokens:1 }).session(session).lean();
       const rolls = Math.max(0, ...existing.map(record => Number(record.rolls)||0)) + rewardRolls;
       const speciesTokens = Math.max(0, ...existing.map(record => Number(record.speciesTokens)||0)) + rewardTokens;
-      await User.updateMany(
-        { userId, archivedForRepair:{ $ne:true } },
-        { $set:{ userId, archivedForRepair:false, rolls, speciesTokens } },
-        { session, upsert:true }
-      );
+      await persistRewardBalance(userId, existing, rolls, speciesTokens, session);
 
       outcome = {
         ok:true, claimed:true, boardData:updatedBoard.data,
