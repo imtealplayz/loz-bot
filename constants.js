@@ -1,6 +1,16 @@
 // ==================== PATCH NOTES ====================
 const patchNotes = [
   {
+    version: "5.1", date: "2026-10-11",
+    changes: [
+      "After relentless training, the Half-Blood learns to harmonize both sides of its lineage and awakens as the Eclipsed Sovereign, a rare form born where two bloodlines become one.",
+      "Added the Half-Blood awakening: complete three sequential trials to unlock Eclipsed Sovereign with 115 HP and 15–22 ATK. Hybrid Instinct grants +20% damage and 10% damage reduction below 50% HP; Bloodline Overdrive empowers the next attack by 1.8× and heals 15 HP.",
+      "Reworked /awakening into a sequential quest path for Cyborg, Demon, and Half-Blood. Only the current trial is shown; existing progress is preserved and completed progress is never reset.",
+      "Reworked /switch with horizontal button rows. Unlocked forms remain selectable, while unavailable forms appear as disabled Locked buttons.",
+      "Raised /gift to a maximum of 5 rolls per gift and 5 rolls sent/received per day. Gifting requires at least 10 rolls on hand; the upgraded gift card shows balances and daily limits.",
+    ],
+  },
+  {
     version: "5.0", date: "2026-10-10",
     changes: [
       "Added the Slime Lord boss encounter: a 7.5% spawn chance after a genuine victory against any LOZ bot difficulty. Boss stats scale to the defeated difficulty and player HP and temporary combat effects reset for the new fight.",
@@ -136,6 +146,7 @@ const humanSpecies     = { number:99, name:"Human",    emoji:"👤",   roleName:
 const reaperSpecies    = { number:18, name:"Reaper",   emoji:"🌑",   roleName:"Reaper",   color:0x2f4f4f, hp:110, atkMin:25, atkMax:38, healMin:8,  healMax:16, ultCooldown:12 };
 const archdemonSpecies = { number:19, name:"Archdemon",emoji:"👿",   roleName:"Archdemon",color:0x4a0404, hp:150, atkMin:28, atkMax:40, healMin:15, healMax:25, ultCooldown:10 };
 const slimeLordSpecies = { number:20, name:"Slime Lord",emoji:"🫧",roleName:"Slime-Lord",color:0x2dd4bf,hp:130,atkMin:18,atkMax:27,healMin:15,healMax:25,ultCooldown:9,chance:"Special boss unlock" };
+const eclipsedSovereignSpecies = { number:21, name:"Eclipsed Sovereign", emoji:"🌘", roleName:"Eclipsed-Sovereign", color:0x6f2da8, hp:115, atkMin:15, atkMax:22, healMin:14, healMax:22, ultCooldown:7, chance:"Special awakening" };
 
 // ==================== BOT DIFFICULTY ====================
 const botSpeciesByDifficulty = {
@@ -188,7 +199,7 @@ const critRates = {
   Reaper:{"chance":15,"multiplier":1.5}, "Fire Dragon":{"chance":10,"multiplier":1.7},
   "Thunder Dragon":{"chance":15,"multiplier":1.5}, "Ice Dragon":{"chance":8,"multiplier":1.8},
   "Earth Dragon":{"chance":5,"multiplier":2.0}, Cyborg:{"chance":10,"multiplier":1.6},
-  "Half-Blood":{"chance":8,"multiplier":1.8}, Mechangel:{"chance":15,"multiplier":1.5},
+  "Half-Blood":{"chance":8,"multiplier":1.8}, "Eclipsed Sovereign":{"chance":12,"multiplier":1.8}, Mechangel:{"chance":15,"multiplier":1.5},
   Archdemon:{"chance":18,"multiplier":1.6},
 };
 
@@ -197,13 +208,14 @@ const failChances = {
   "Orc Lord":0.10, Oni:0.09, Demon:0.08, "Demon King":0.07, "Demon Lord":0.06,
   "Demi God":0.05, God:0.04, Angel:0.08, Chimera:0.07, Reaper:0.06,
   "Fire Dragon":0.07, "Thunder Dragon":0.06, "Ice Dragon":0.08, "Earth Dragon":0.09,
-  Cyborg:0.08, "Half-Blood":0.12, Mechangel:0.05, Archdemon:0.03,
+  Cyborg:0.08, "Half-Blood":0.12, "Eclipsed Sovereign":0.05, Mechangel:0.05, Archdemon:0.03,
 };
 
 // ==================== AWAKENING REQUIREMENTS ====================
 const awakeningRequirements = {
   cyborg: { wins:25, damageDealt:500, ultUses:15, reward:"Mechangel", rewardRolls:5 },
-  demon:  { playerWins:25, demonBotWins:20, costRolls:20, reward:"Archdemon" }
+  demon:  { playerWins:25, demonBotWins:20, costRolls:20, reward:"Archdemon" },
+  halfBlood: { wins:10, damageDealt:350, ultUses:10, reward:"Eclipsed Sovereign" }
 };
 
 // ==================== DISINTEGRATION MESSAGES ====================
@@ -287,6 +299,7 @@ function getPassiveDescription(name) {
     "Earth Dragon":"**Stone Skin** — 15% damage reduction",
     Cyborg:"**Overclock** — every 3 attacks = 1.3× surge",
     "Half-Blood":"**Scrappy** — +3 dmg below 25% HP",
+    "Eclipsed Sovereign":"**Hybrid Instinct** — below 50% HP: +20% damage and 10% damage reduction",
     Mechangel:"**Quantum Processing** — every 2 attacks = 1.4×",
     Archdemon:"**Lord of Darkness** — +15% dmg and +5 flat all attacks",
     "Slime Lord":"**Adaptive Momentum** — each miss or counter builds a next-attack multiplier: ×1.2, ×1.4, ×1.6, ×1.8, up to ×2.0; a successful hit consumes the bonus.",
@@ -318,6 +331,7 @@ function getActiveDescription(name) {
     "Earth Dragon":"**Terra Shield** — choose Terra Strike (1.2× next attack) OR Terra Shield (−60% damage from the next hit) (CD: 11)",
     Cyborg:"**Self-Repair** — heal 30% max HP + 15% dmg reduction 2 turns (CD: 7)",
     "Half-Blood":"**Awakened Blood** — 1.4× + heal 10 HP (CD: 7)",
+    "Eclipsed Sovereign":"**Bloodline Overdrive** — 1.8× next attack + heal 15 HP (CD: 7)",
     Mechangel:"**System Restoration** — heal 40% + 20% reduction 2 turns (CD: 6)",
     Archdemon:"**Abyssal Gate** — 2× + 10 curse 3 turns (CD: 10)",
     "Slime Lord":"**Predatory Assimilation** — converts the next incoming damage hit into HP; any amount beyond max HP is reflected to the attacker (CD: 9).",
@@ -327,7 +341,7 @@ function getActiveDescription(name) {
 
 module.exports = {
   patchNotes, speciesList, dragonSpecies, botSpecies,
-  godSpecies, humanSpecies, reaperSpecies, archdemonSpecies, slimeLordSpecies,
+  godSpecies, humanSpecies, reaperSpecies, archdemonSpecies, slimeLordSpecies, eclipsedSovereignSpecies,
   botSpeciesByDifficulty, botPersonalities,
   typeAdvantages, critRates, failChances, awakeningRequirements,
   disintegrationMessages, getPassiveDescription, getActiveDescription,

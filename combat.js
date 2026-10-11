@@ -1,6 +1,6 @@
 const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const { typeAdvantages, critRates } = require("./constants.js");
-const { updateCyborgProgress } = require("./helpers.js");
+const { updateCyborgProgress, updateHalfBloodProgress } = require("./helpers.js");
 
 // ==================== MAKE COMBATANT ====================
 function makeCombatant(id, species) {
@@ -103,6 +103,7 @@ function calculateDamage(attacker, defender) {
   // Attacker passives
   if (attacker.species.name==="Orc" && attacker.currentHp<attacker.maxHp*0.3) { finalDamage+=5; specialLines.push("🟢 Berserker +5"); }
   if (attacker.species.name==="Half-Blood" && attacker.currentHp<attacker.maxHp*0.25) { finalDamage+=3; specialLines.push("🩸 Scrappy +3"); }
+  if (attacker.species.name==="Eclipsed Sovereign" && attacker.currentHp<attacker.maxHp*0.5) { multiplier*=1.2; specialLines.push("🌘 Hybrid Instinct +20%"); }
   if (attacker.species.name==="Chimera" && attacker.adaptiveStacks>0) {
     finalDamage+=attacker.adaptiveStacks*2; specialLines.push(`🎭 Adaptive Evolution +${attacker.adaptiveStacks*2}`); attacker.adaptiveStacks=0;
   }
@@ -173,6 +174,7 @@ function calculateDamage(attacker, defender) {
     if (defender.species.name==="Demi God")    { multiplier*=0.85; specialLines.push("Divine Shield -15%"); }
     if (defender.species.name==="Earth Dragon"){ multiplier*=0.85; specialLines.push("Stone Skin -15%"); }
   }
+  if (defender.species.name==="Eclipsed Sovereign" && defender.currentHp<defender.maxHp*0.5) { multiplier*=0.9; specialLines.push("🌘 Hybrid Instinct -10%"); }
   if (defender.ultBuff?.type==="cyborgArmor") {
     multiplier*=0.85; specialLines.push("🤖 Cyborg Armor -15%");
     defender.ultBuff.duration--; if(defender.ultBuff.duration<=0) defender.ultBuff=null;
@@ -223,6 +225,8 @@ function calculateDamage(attacker, defender) {
   // Cyborg damage tracking
   if (attacker.species.name==="Cyborg"&&finalDamage>0&&attacker.id)
     setTimeout(()=>updateCyborgProgress(attacker.id,"damage",finalDamage),0);
+  if (attacker.species.name==="Half-Blood"&&finalDamage>0&&attacker.id)
+    setTimeout(()=>updateHalfBloodProgress(attacker.id,"damage",finalDamage),0);
 
   return { damage:finalDamage, baseDamage, specialLines, attackerMutations, missedAttack:false };
 }
@@ -320,6 +324,7 @@ function applyUltEffect(attacker, defender) {
       msg=`🤖 **SELF-REPAIR!**\nHealed ${h} HP + 15% dmg reduction 2 turns!`; break;
     }
     case "Half-Blood":  attacker.ultBuff={type:"nextAttack",multiplier:1.4,healSelf:true,healAmount:10}; msg="🩸 **AWAKENED BLOOD!**\n1.4× + heal 10 HP!"; break;
+    case "Eclipsed Sovereign": attacker.ultBuff={type:"nextAttack",multiplier:1.8,healSelf:true,healAmount:15}; msg="🌘 **BLOODLINE OVERDRIVE!**\n1.8× next attack + heal 15 HP!"; break;
     case "Mechangel": {
       const h=Math.floor(attacker.maxHp*0.4);
       attacker.currentHp=Math.min(attacker.maxHp,attacker.currentHp+h);

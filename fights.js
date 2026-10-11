@@ -2,7 +2,7 @@ const { botPersonalities, humanSpecies, slimeLordSpecies } = require("./constant
 const database = require("./database.js");
 const {
   updateFightStats, updateBotStats,
-  updateReaperQuest, updateCyborgProgress, updateDemonAwakeningProgress,
+  updateReaperQuest, updateCyborgProgress, updateDemonAwakeningProgress, updateHalfBloodProgress,
 } = require("./helpers.js");
 const {
   makeCombatant, calculateDamage, applyUltEffect,
@@ -147,6 +147,7 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
   const winner=fight.player1Id===winnerId?fight.player1:fight.player2;
   const loser =fight.player1Id===loserId ?fight.player1:fight.player2;
   if (winner.species.name==="Cyborg") await updateCyborgProgress(winnerId,"win");
+  if (winner.species.name==="Half-Blood") await updateHalfBloodProgress(winnerId,"win");
   let winPoints=1, rollEarned=false, doubleWin=false;
   if (reason!=="disintegration"&&reason!=="judge") {
     if (Math.random()<0.05) { winPoints=2; doubleWin=true; }
@@ -453,6 +454,7 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
   let winsEarned=0, rollEarned=false;
   if (winner==="player") {
     if (fight.playerSpecies.name==="Cyborg") await updateCyborgProgress(fight.playerId,"win");
+    if (fight.playerSpecies.name==="Half-Blood") await updateHalfBloodProgress(fight.playerId,"win");
     if (reason!=="timeout" && fight.playerSpecies.name==="Demon" && fight.botSpecies.name==="Demon")
       await updateDemonAwakeningProgress(fight.playerId,"demonBotWin");
     switch(difficulty) {

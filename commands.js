@@ -18,6 +18,7 @@ const {
   canSendRequest,
   updateLeaderboard, updateFightStats, updateCyborgProgress,
   isCyborgReadyForAwakening, isDemonReadyForAwakening, updateReaperQuest,
+  updateHalfBloodProgress, isHalfBloodReadyForAwakening,
 } = require("./helpers.js");
 const { buildFightMessagePayload, buildBotFightMessagePayload, makeCombatant, calculateDamage, applyUltEffect, tickCooldowns, tickBothUltCooldowns, applyOgreRegen, processCurseTick } = require("./combat.js");
 const { startFight, endFight, doBotTurn, endBotFight } = require("./fights.js");
@@ -729,7 +730,7 @@ async function handleCommand(interaction) {
           `**${sp.emoji} ${sp.name}**  ·  ${sp.chance}${sp.note ? " · Random element" : ""}`
         ).join("\n"),
       }));
-      sections.push({heading:"Special Unlocks",body:"🌑 **Reaper** · Quest unlock\n👿 **Archdemon** · Demon awakening\n⚡🤖 **Mechangel** · Cyborg awakening\n🫧 **Slime Lord** · 9.2% unlock chance after defeating its rare boss"});
+      sections.push({heading:"Special Unlocks",body:"🌑 **Reaper** · Quest unlock\n👿 **Archdemon** · Demon awakening\n⚡🤖 **Mechangel** · Cyborg awakening\n🫧 **Slime Lord** · 9.2% unlock chance after defeating its rare boss\n🌘 **Eclipsed Sovereign** · Half-Blood awakening"});
       sections.push({heading:"Species Details",body:"Use `/species species:<name>` to view HP, attack, healing, ultimate cooldown, passive, ultimate, and type matchups."});
       return safeReply(interaction,buildStyledCardPayload("<:reroll_dice:1558042108965822515> Species Compendium",0x0891b2,sections));
     }
@@ -834,9 +835,13 @@ async function handleCommand(interaction) {
         const row=new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("awaken_cyborg").setLabel("✨ STEP INTO THE ALTAR").setStyle(ButtonStyle.Success));
         return safeReply(interaction,{embeds:[embed],components:[row],flags:64});
       }
-      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x00ffff).setTitle("✨ AWAKENING ALTAR")
-        .setDescription(`*The altar awaits your worthiness. Prove yourself in battle.*\n\n**» YOUR PROGRESS «**\n\n⚔️ **Combat Trials:** ${prog.wins}/${req.wins} wins\n└ ${bar(wPct)} ${wPct}%\n\n💥 **Damage Output:** ${prog.damageDealt.toLocaleString()}/${req.damageDealt.toLocaleString()} dmg\n└ ${bar(dPct)} ${dPct}%\n\n⚡ **ULT Mastery:** ${prog.ultUses}/${req.ultUses} ULT uses\n└ ${bar(uPct)} ${uPct}%`)
-        .setFooter({text:"25 wins • 500 damage • 15 ULTs to unlock your true form"})],flags:64});
+      let step=1, title="Combat Trials", detail="Win battles while using Cyborg.", value=Number(prog.wins)||0, max=req.wins;
+      if (value>=req.wins) { step=2; title="Damage Output"; detail="Deal damage in battle while using Cyborg."; value=Number(prog.damageDealt)||0; max=req.damageDealt; }
+      if ((Number(prog.wins)||0)>=req.wins && (Number(prog.damageDealt)||0)>=req.damageDealt) { step=3; title="ULT Mastery"; detail="Use your ultimate while using Cyborg."; value=Number(prog.ultUses)||0; max=req.ultUses; }
+      const pct=Math.min(100,Math.floor(value/max*100));
+      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x00ffff).setTitle(`✨ AWAKENING ALTAR — QUEST ${step}/3`)
+        .setDescription(`*The altar reveals only the trial before you.*\n\n**${title}**\n${detail}\n\n**Progress:** ${value.toLocaleString()}/${max.toLocaleString()}\n${bar(pct)} ${pct}%`)
+        .setFooter({text:"Complete each trial in order. Your existing progress remains saved."})],flags:64});
     }
 
 
@@ -864,15 +869,41 @@ async function handleCommand(interaction) {
         return safeReply(interaction,{embeds:[embed],components:[row],flags:64});
       }
 
-      const costLine=rolls>=req.costRolls
-        ? `✅ Reroll payment: ${rolls}/${req.costRolls} available`
-        : `❌ Reroll payment: ${rolls}/${req.costRolls} available — need ${req.costRolls-rolls} more`;
-      const detail=trialsReady
-        ? `Combat trials complete. Get ${Math.max(0,req.costRolls-rolls)} more rolls, then return here to awaken.`
-        : "Complete both combat requirements while using Demon, then pay the reroll cost.";
-      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x4a0404).setTitle("👿 AWAKENING ALTAR")
-        .setDescription(`*Prove your strength as a Demon to awaken into Archdemon.*\n\n**» YOUR PROGRESS «**\n\n⚔️ **Player Fight Wins:** ${barFor(playerWins,req.playerWins)}\n\n👹 **Demon Bot Defeats:** ${barFor(demonBotWins,req.demonBotWins)}\n\n${costLine}\n\n${detail}`)
-        .setFooter({text:"25 player wins • 20 Demon bot defeats • 20 rolls"})],flags:64});
+      let step=1, title="Player Fight Trials", detail="Win player battles while using Demon.", value=playerWins, max=req.playerWins;
+      if (playerWins>=req.playerWins) { step=2; title="Demon Hunt"; detail="Defeat Demon opponents in bot battles while using Demon."; value=demonBotWins; max=req.demonBotWins; }
+      if (playerWins>=req.playerWins && demonBotWins>=req.demonBotWins) { step=3; title="Reroll Tribute"; detail="Have 20 rolls available. They are only spent when you awaken."; value=rolls; max=req.costRolls; }
+      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x4a0404).setTitle(`👿 AWAKENING ALTAR — QUEST ${step}/3`)
+        .setDescription(`*The darkness reveals only the trial before you.*\n\n**${title}**\n${detail}\n\n${barFor(value,max)}`)
+        .setFooter({text:"Complete each trial in order. Your existing progress remains saved."})],flags:64});
+    }
+
+    // ── Half-Blood → Eclipsed Sovereign ─────────────────────────
+    if (sp==="Half-Blood" || sp==="Eclipsed Sovereign") {
+      const req=awakeningRequirements.halfBlood;
+      if (!userData.awakening.halfBlood) userData.awakening.halfBlood={wins:0,damageDealt:0,ultUses:0,awakened:false};
+      const prog=userData.awakening.halfBlood;
+      const wins=Math.min(Number(prog.wins)||0,req.wins);
+      const damage=Math.min(Number(prog.damageDealt)||0,req.damageDealt);
+      const ults=Math.min(Number(prog.ultUses)||0,req.ultUses);
+      if (prog.awakened) {
+        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x6f2da8).setTitle("🌘 ECLIPSED SOVEREIGN — AWAKENING COMPLETE")
+          .setDescription(`**Unlocked Form:** 🌘 Eclipsed Sovereign\n**Status:** Permanently Awakened\n\n*The Half-Blood no longer fights against its divided nature. Both lineages answer as one, and the shadow of the eclipse crowns its new sovereign.*\n\nUse \`/switch\` to equip Eclipsed Sovereign after changing species.`)
+          .setFooter({text:"Half-Blood → Eclipsed Sovereign"})],flags:64});
+      }
+      if (wins>=req.wins && damage>=req.damageDealt && ults>=req.ultUses && sp==="Half-Blood") {
+        const readyEmbed=new EmbedBuilder().setColor(0x6f2da8).setTitle("🌘 AWAKENING ALTAR — READY")
+          .setDescription("*The two bloodlines finally resonate. The eclipse answers.*\n\n**All three trials are complete.**\n\n**Eclipsed Sovereign**\n├ 115 HP\n├ 15–22 ATK\n├ Passive: Hybrid Instinct\n└ Ultimate: Bloodline Overdrive");
+        const row=new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("awaken_eclipsed_sovereign").setLabel("🌘 AWAKEN AS ECLIPSED SOVEREIGN").setStyle(ButtonStyle.Primary));
+        return safeReply(interaction,{embeds:[readyEmbed],components:[row],flags:64});
+      }
+      let step=1, title="Prove Your Resolve", detail="Win battles while using Half-Blood.", value=wins, max=req.wins;
+      if (wins>=req.wins) { step=2; title="Unite the Bloodlines"; detail="Deal damage in battle while using Half-Blood."; value=damage; max=req.damageDealt; }
+      if (wins>=req.wins && damage>=req.damageDealt) { step=3; title="Bloodline Mastery"; detail="Use your ultimate while using Half-Blood."; value=ults; max=req.ultUses; }
+      const pct=Math.min(100,Math.floor(value/max*100));
+      const equipNote=sp==="Half-Blood" ? "" : "\n\nEquip Half-Blood to continue this trial.";
+      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x6f2da8).setTitle(`🌘 AWAKENING ALTAR — QUEST ${step}/3`)
+        .setDescription(`*Two legacies dwell within you. Master them one trial at a time.*\n\n**${title}**\n${detail}\n\n**Progress:** ${value.toLocaleString()}/${max.toLocaleString()}\n${bar(pct)} ${pct}%${equipNote}`)
+        .setFooter({text:"Your progress is permanent. The next trial appears after this one is complete."})],flags:64});
     }
 
     // ── No awakening available for this species ─────────────────
@@ -962,14 +993,24 @@ async function handleCommand(interaction) {
       return interaction.editReply({embeds:[createErrorEmbed(`Switch available in **${h}h ${m}m**!`)]});
     }
     const sp=userData.species||humanSpecies;
-    const buttons=[
-      new ButtonBuilder().setCustomId("switch_current").setLabel("✅ " + sp.name + " (Current)").setStyle(ButtonStyle.Success).setDisabled(true),
+    const buttons=[new ButtonBuilder().setCustomId("switch_current").setLabel("✅ "+sp.name+" (Current)").setStyle(ButtonStyle.Success).setDisabled(true)];
+    if (userData.originalSpecies?.name && userData.originalSpecies.name!==sp.name) {
+      buttons.push(new ButtonBuilder().setCustomId("switch_original").setLabel(userData.originalSpecies.name).setStyle(ButtonStyle.Primary));
+    }
+    const switchForms=[
+      {id:"switch_reaper",name:"Reaper",emoji:"🌑",unlocked:userData.questSpecies?.reaper?.unlocked===true,style:ButtonStyle.Primary},
+      {id:"switch_archdemon",name:"Archdemon",emoji:"👿",unlocked:userData.awakening?.demon?.awakened===true,style:ButtonStyle.Danger},
+      {id:"switch_mechangel",name:"Mechangel",emoji:"⚡",unlocked:userData.awakening?.cyborg?.awakened===true,style:ButtonStyle.Primary},
+      {id:"switch_slime_lord",name:"Slime Lord",emoji:"🫧",unlocked:userData.questSpecies?.slimeLord?.unlocked===true,style:ButtonStyle.Success},
+      {id:"switch_eclipsed_sovereign",name:"Eclipsed Sovereign",emoji:"🌘",unlocked:userData.awakening?.halfBlood?.awakened===true,style:ButtonStyle.Primary},
     ];
-    if (userData.originalSpecies?.name&&userData.originalSpecies.name!==sp.name) buttons.push(new ButtonBuilder().setCustomId("switch_original").setLabel(userData.originalSpecies.name).setStyle(ButtonStyle.Primary));
-    if (userData.questSpecies?.reaper?.unlocked&&sp.name!=="Reaper") buttons.push(new ButtonBuilder().setCustomId("switch_reaper").setLabel("🌑 Reaper").setStyle(ButtonStyle.Primary));
-    if (userData.awakening?.demon?.awakened===true&&sp.name!=="Archdemon") buttons.push(new ButtonBuilder().setCustomId("switch_archdemon").setLabel("👿 Archdemon").setStyle(ButtonStyle.Danger));
-    if (userData.awakening?.cyborg?.awakened===true&&sp.name!=="Mechangel") buttons.push(new ButtonBuilder().setCustomId("switch_mechangel").setLabel("⚡ Mechangel").setStyle(ButtonStyle.Primary));
-    if (userData.questSpecies?.slimeLord?.unlocked===true&&sp.name!=="Slime Lord") buttons.push(new ButtonBuilder().setCustomId("switch_slime_lord").setLabel("🫧 Slime Lord").setStyle(ButtonStyle.Success));
+    for (const form of switchForms) {
+      if (sp.name===form.name) continue;
+      const button=new ButtonBuilder().setCustomId(form.id);
+      if (form.unlocked) button.setLabel(form.emoji+" "+form.name).setStyle(form.style);
+      else button.setLabel("Locked").setStyle(ButtonStyle.Secondary).setDisabled(true);
+      buttons.push(button);
+    }
     const rows=[];
     for(let i=0;i<buttons.length;i+=5) rows.push(new ActionRowBuilder().addComponents(buttons.slice(i,i+5)));
     const embed=new EmbedBuilder().setColor(0x9b59b6).setTitle("🔄 Class Switch")
@@ -978,6 +1019,7 @@ async function handleCommand(interaction) {
         + "\n👿 Archdemon: " + (userData.awakening?.demon?.awakened?"✅ Awakened":"❌ Locked")
         + "\n⚡ Mechangel: " + (userData.awakening?.cyborg?.awakened?"✅ Awakened":"❌ Locked")
         + "\n🫧 Slime Lord: " + (userData.questSpecies?.slimeLord?.unlocked?"✅ Unlocked":"❌ Locked")
+        + "\n🌘 Eclipsed Sovereign: " + (userData.awakening?.halfBlood?.awakened?"✅ Awakened":"❌ Locked")
         + "\n\n⏰ Cooldown: 3 hours");
     return interaction.editReply({embeds:[embed],components:rows});
   }
@@ -1140,10 +1182,10 @@ async function handleCommand(interaction) {
     if (receiverData.giftReceived.resetAt < resetTime) receiverData.giftReceived={count:0,resetAt:resetTime};
 
     // Check limits
-    const senderRemaining = 2 - (senderData.giftSent.count||0);
-    const receiverRemaining = 4 - (receiverData.giftReceived.count||0);
+    const senderRemaining = 5 - (senderData.giftSent.count||0);
+    const receiverRemaining = 5 - (receiverData.giftReceived.count||0);
 
-    if ((senderData.rolls||0)<5) return safeReply(interaction,{embeds:[createErrorEmbed(`You need at least **5 rolls** to gift. You only have **${senderData.rolls||0}**.`)],flags:64});
+    if ((senderData.rolls||0)<10) return safeReply(interaction,{embeds:[createErrorEmbed(`You need at least **10 rolls** before gifting. You currently have **${senderData.rolls||0}**. This lets you gift 5 rolls while keeping 5 for yourself.`)],flags:64});
     if (senderRemaining<=0) {
       // Calculate time until next reset (midnight IST = 18:30 UTC)
       const nextReset = resetTime + 86400000;
@@ -1159,9 +1201,10 @@ async function handleCommand(interaction) {
       const mLeft2 = Math.floor((msLeft2%3600000)/60000);
       return safeReply(interaction,{embeds:[createErrorEmbed(`<@${target.id}> has already received the maximum rolls they can receive today. Resets in **${hLeft2}h ${mLeft2}m**.`)],flags:64});
     }
-    if ((senderData.rolls||0)<amount) return safeReply(interaction,{embeds:[createErrorEmbed(`You only have **${senderData.rolls||0}** rolls. You can't gift more than you have.`)],flags:64});
-
-    const actualAmount = Math.min(amount, senderRemaining, receiverRemaining);
+    if (amount>senderRemaining) return safeReply(interaction,{embeds:[createErrorEmbed(`You can send **${senderRemaining}** more roll${senderRemaining===1?"":"s"} today. The daily limit is 5.`)],flags:64});
+    if (amount>receiverRemaining) return safeReply(interaction,{embeds:[createErrorEmbed(`<@${target.id}> can receive **${receiverRemaining}** more roll${receiverRemaining===1?"":"s"} today. The daily limit is 5.`)],flags:64});
+    if ((senderData.rolls||0)<amount) return safeReply(interaction,{embeds:[createErrorEmbed(`You only have **${senderData.rolls||0}** rolls. You cannot gift more than you have.`)],flags:64});
+    const actualAmount = amount;
 
     // Transfer rolls
     senderData.rolls=(senderData.rolls||0)-actualAmount;
@@ -1171,12 +1214,18 @@ async function handleCommand(interaction) {
 
     _state.userSpecies.set(user.id,senderData);
     _state.userSpecies.set(target.id,receiverData);
-    database.saveUserSpecies(user.id,senderData).catch(()=>{});
-    database.saveUserSpecies(target.id,receiverData).catch(()=>{});
+    await Promise.all([database.saveUserSpecies(user.id,senderData),database.saveUserSpecies(target.id,receiverData)]);
 
-    const embed = new EmbedBuilder().setColor(0x00ff99)
-      .setTitle("🎁 Rolls Gifted!")
-      .setDescription(`<@${user.id}> gifted **${actualAmount}** roll${actualAmount!==1?"s":""}  to <@${target.id}>!\n\n📊 **Your rolls remaining:** ${senderData.rolls}\n📤 **Gifts sent today:** ${senderData.giftSent.count}/2\n\n*Resets at midnight.*`);
+    const embed = new EmbedBuilder().setColor(0x6f2da8)
+      .setTitle("🎁 A Gift Across the Rift")
+      .setDescription(`<@${user.id}> has sent <@${target.id}> **${actualAmount} species roll${actualAmount===1?"":"s"}**.\n\n*Every new roll is another chance to discover a different power.*`)
+      .addFields(
+        {name:"Your Balance",value:`**${senderData.rolls} rolls** remaining`,inline:true},
+        {name:"Recipient Balance",value:`**${receiverData.rolls} rolls** total`,inline:true},
+        {name:"Daily Gift Quota",value:`Sent: **${senderData.giftSent.count}/5** rolls\nReceived: **${receiverData.giftReceived.count}/5** rolls`,inline:false}
+      )
+      .setFooter({text:"Gift limits reset at midnight IST · Minimum pre-gift balance: 10 rolls"})
+      .setTimestamp(new Date());
     return safeReply(interaction,{embeds:[embed]});
   }
 
@@ -1580,7 +1629,7 @@ async function handleButton(interaction) {
   }
 
   // ── SWITCH ────────────────────────────────────────────────────
-  if (customId==="switch_original"||customId==="switch_reaper"||customId==="switch_archdemon"||customId==="switch_mechangel"||customId==="switch_slime_lord") {
+  if (customId==="switch_original"||customId==="switch_reaper"||customId==="switch_archdemon"||customId==="switch_mechangel"||customId==="switch_slime_lord"||customId==="switch_eclipsed_sovereign") {
     const ud=_state.userSpecies.get(user.id);
     if (!ud) return interaction.update({content:"❌ No species data!",components:[]});
     const now=Date.now(), th=3*60*60*1000;
@@ -1593,6 +1642,7 @@ async function handleButton(interaction) {
     else if (customId==="switch_reaper") { if(!ud.questSpecies?.reaper?.unlocked) return interaction.update({content:"❌ Reaper not unlocked!",components:[]}); newSp=reaperSpecies; }
     else if (customId==="switch_archdemon") { if(ud.awakening?.demon?.awakened!==true) return interaction.update({content:"❌ Archdemon is locked. Complete the Demon awakening first.",components:[]}); newSp=archdemonSpecies; }
     else if (customId==="switch_slime_lord") { if(ud.questSpecies?.slimeLord?.unlocked!==true) return interaction.update({content:"❌ Slime Lord is locked. Defeat the rare Slime Lord boss first.",components:[]}); newSp=getSpeciesByName("Slime Lord"); }
+    else if (customId==="switch_eclipsed_sovereign") { if(ud.awakening?.halfBlood?.awakened!==true) return interaction.update({content:"❌ Eclipsed Sovereign is locked. Complete the Half-Blood awakening first.",components:[]}); newSp=getSpeciesByName("Eclipsed Sovereign"); }
     else {
       if (ud.awakening?.cyborg?.awakened!==true) return interaction.update({content:"❌ Mechangel is locked. Complete the Cyborg awakening first.",components:[]});
       newSp=getSpeciesByName("Mechangel");
@@ -1973,6 +2023,22 @@ async function handleButton(interaction) {
 
   }
 
+  if (customId==="awaken_eclipsed_sovereign") {
+    const ud=_state.userSpecies.get(user.id);
+    if (!ud || ud.species?.name!=="Half-Blood") return interaction.update({content:"❌ You must currently be Half-Blood to awaken.",components:[]});
+    if (!isHalfBloodReadyForAwakening(ud)) return interaction.update({content:"❌ The three trials are not complete yet. Check /awakening.",components:[]});
+    const awakened=require("./constants.js").eclipsedSovereignSpecies;
+    if (!ud.awakening) ud.awakening={};
+    if (!ud.awakening.halfBlood) ud.awakening.halfBlood={wins:0,damageDealt:0,ultUses:0,awakened:false};
+    ud.awakening.halfBlood.awakened=true;
+    ud.species=awakened;
+    ud.originalSpecies=awakened;
+    _state.userSpecies.set(user.id,ud);
+    await database.saveUserSpecies(user.id,ud);
+    return interaction.update({embeds:[new EmbedBuilder().setColor(0x6f2da8).setTitle("🌘 ECLIPSED SOVEREIGN AWAKENING COMPLETE")
+      .setDescription("🩸 **Half-Blood → 🌘 Eclipsed Sovereign**\n\n**115 HP · 15–22 ATK · 14–22 HEAL**\n\n**Hybrid Instinct:** below 50% HP, deal 20% more damage and take 10% less damage.\n**Bloodline Overdrive:** empower your next attack by 1.8× and heal 15 HP.\n\n*At last, neither bloodline must silence the other. The eclipse crowns a power born from both.*")],components:[]});
+  }
+
   if (customId==="awaken_archdemon") {
     const ud=_state.userSpecies.get(user.id);
     if (!ud || ud.species?.name!=="Demon") return interaction.update({content:"❌ You must currently be Demon to awaken.",components:[]});
@@ -2011,7 +2077,7 @@ const commands = [
   new SlashCommandBuilder().setName("help").setDescription("Show all commands"),
   new SlashCommandBuilder().setName("guide").setDescription("New player tutorial"),
   new SlashCommandBuilder().setName("daily").setDescription("Claim your daily species roll"),
-  new SlashCommandBuilder().setName("species").setDescription("View species list or a specific species card").addStringOption(o=>o.setName("species").setDescription("Species name for detailed card (leave blank for full list)").addChoices({name:"Demi God ⚡",value:"Demi God"},{name:"Demon Lord 🔥",value:"Demon Lord"},{name:"Demon King 👑😈",value:"Demon King"},{name:"Chimera 🎭",value:"Chimera"},{name:"Angel 👼",value:"Angel"},{name:"Demon 😈",value:"Demon"},{name:"Oni 👿",value:"Oni"},{name:"Orc Lord 👑",value:"Orc Lord"},{name:"Kijin 🎭",value:"Kijin"},{name:"Cyborg 🤖",value:"Cyborg"},{name:"High Orc ⚔️",value:"High Orc"},{name:"Ogre 👹",value:"Ogre"},{name:"Goblin 👺",value:"Goblin"},{name:"Orc 🟢",value:"Orc"},{name:"Half-Blood 🩸",value:"Half-Blood"},{name:"Fire Dragon 🔥🐉",value:"Fire Dragon"},{name:"Thunder Dragon ⚡🐉",value:"Thunder Dragon"},{name:"Ice Dragon ❄️🐉",value:"Ice Dragon"},{name:"Earth Dragon 🌍🐉",value:"Earth Dragon"},{name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"God 👑✨",value:"God"},{name:"Human 👤",value:"Human"},{name:"Slime Lord 🫧",value:"Slime Lord"})),
+  new SlashCommandBuilder().setName("species").setDescription("View species list or a specific species card").addStringOption(o=>o.setName("species").setDescription("Species name for detailed card (leave blank for full list)").addChoices({name:"Demi God ⚡",value:"Demi God"},{name:"Demon Lord 🔥",value:"Demon Lord"},{name:"Demon King 👑😈",value:"Demon King"},{name:"Chimera 🎭",value:"Chimera"},{name:"Angel 👼",value:"Angel"},{name:"Demon 😈",value:"Demon"},{name:"Oni 👿",value:"Oni"},{name:"Orc Lord 👑",value:"Orc Lord"},{name:"Kijin 🎭",value:"Kijin"},{name:"Cyborg 🤖",value:"Cyborg"},{name:"High Orc ⚔️",value:"High Orc"},{name:"Ogre 👹",value:"Ogre"},{name:"Goblin 👺",value:"Goblin"},{name:"Orc 🟢",value:"Orc"},{name:"Half-Blood 🩸",value:"Half-Blood"},{name:"Fire Dragon 🔥🐉",value:"Fire Dragon"},{name:"Thunder Dragon ⚡🐉",value:"Thunder Dragon"},{name:"Ice Dragon ❄️🐉",value:"Ice Dragon"},{name:"Earth Dragon 🌍🐉",value:"Earth Dragon"},{name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"God 👑✨",value:"God"},{name:"Slime Lord 🫧",value:"Slime Lord"},{name:"Eclipsed Sovereign 🌘",value:"Eclipsed Sovereign"})),
   new SlashCommandBuilder().setName("profile").setDescription("View a full player profile").addUserOption(o=>o.setName("user").setDescription("User to check")),
   new SlashCommandBuilder().setName("items").setDescription("View and use inventory items")
     .addSubcommand(s=>s.setName("use").setDescription("Use an inventory item")
@@ -2042,7 +2108,7 @@ const commands = [
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
   new SlashCommandBuilder().setName("gift").setDescription("Gift species rolls to another player")
     .addUserOption(o=>o.setName("user").setDescription("Player to gift rolls to").setRequired(true))
-    .addIntegerOption(o=>o.setName("amount").setDescription("Number of rolls to gift").setRequired(true).setMinValue(1).setMaxValue(2)),
+    .addIntegerOption(o=>o.setName("amount").setDescription("Number of rolls to gift (maximum 5)").setRequired(true).setMinValue(1).setMaxValue(5)),
   new SlashCommandBuilder().setName("togglerequests").setDescription("Toggle receiving challenge requests").addStringOption(o=>o.setName("status").setDescription("Enable or disable").setRequired(true).addChoices({name:"Enable",value:"enable"},{name:"Disable",value:"disable"})),
   new SlashCommandBuilder().setName("quest").setDescription("Quest system")
     .addSubcommand(s=>s.setName("view").setDescription("View your quests").addUserOption(o=>o.setName("user").setDescription("User to check")))

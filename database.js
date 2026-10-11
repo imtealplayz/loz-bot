@@ -56,6 +56,8 @@ const userSchema = new mongoose.Schema({
   requestsEnabled: { type:Boolean, default:true },
   lastSwitch:      { type:Number, default:0 },
   awakening:       { type:Object, default:{} },
+  giftSent:        { type:Object, default:{ count:0, resetAt:0 } },
+  giftReceived:    { type:Object, default:{ count:0, resetAt:0 } },
   badges:          { type:Array,  default:[] },
 }, { minimize:false });
 
@@ -488,6 +490,17 @@ function mergePlayerProgress(values) {
   return present.find(value => value !== "" && value !== false) ?? present[0];
 }
 
+function mergeDailyGiftProgress(records, field) {
+  const values = records.map(record => record[field]).filter(value => value && typeof value === "object");
+  if (!values.length) return { count:0, resetAt:0 };
+  const resetAt = Math.max(0, ...values.map(value => Number(value.resetAt) || 0));
+  const sameDay = values.filter(value => (Number(value.resetAt) || 0) === resetAt);
+  return {
+    count: Math.max(0, ...sameDay.map(value => Number(value.count) || 0)),
+    resetAt,
+  };
+}
+
 function mergeDuplicatePlayerRecords(records) {
   const base = chooseBestPlayerRecord(records);
   const ordered = [base, ...records.filter(record => String(record._id) !== String(base._id))
@@ -505,6 +518,8 @@ function mergeDuplicatePlayerRecords(records) {
     requestsEnabled: typeof base.requestsEnabled === "boolean" ? base.requestsEnabled : true,
     lastSwitch: Number(base.lastSwitch) || Math.max(0, ...ordered.map(record => Number(record.lastSwitch) || 0)),
     awakening: mergePlayerProgress(ordered.map(record => record.awakening || {})),
+    giftSent: mergeDailyGiftProgress(ordered, "giftSent"),
+    giftReceived: mergeDailyGiftProgress(ordered, "giftReceived"),
     badges: mergePlayerProgress(ordered.map(record => record.badges || [])),
     // Token balances are not additive across duplicates; retain the highest known balance.
     speciesTokens: Math.max(0, ...ordered.map(record => Number(record.speciesTokens)||0)),
@@ -557,6 +572,8 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
         requestsEnabled: obj.requestsEnabled !== false,
         lastSwitch:      obj.lastSwitch      || 0,
         awakening:       obj.awakening       || {},
+        giftSent:        obj.giftSent        || { count:0, resetAt:0 },
+        giftReceived:    obj.giftReceived    || { count:0, resetAt:0 },
         badges:          obj.badges          || [],
       };
       userSpecies.set(uid, d);
