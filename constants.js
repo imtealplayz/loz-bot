@@ -1,5 +1,16 @@
 const patchNotes = [
   {
+    version: "5.3", date: "2026-10-11",
+    changes: [
+      "Introduced the new quest board. Use /quest for an introduction and /quests to open your personal board with progress bars and one-click reward claims; the old /quest view and /quest claim subcommands have been removed.",
+      "Added a permanent Top.gg vote quest: each verified vote grants 2 Species Rolls, with one eligible reward every 12 hours. Vote rewards are confirmed by Top.gg's authenticated webhook, recorded persistently, and protected against duplicate webhook deliveries and test votes.",
+      "Added a rotating quest pool with Common, Uncommon, Rare, Epic, Legendary, and Mythic rarities. Rarity chances are 45%, 27%, 15%, 8%, 4%, and 1%, respectively. Quest rewards scale with difficulty; the Mythic Trial of the Rift rewards 1 Species Token.",
+      "Quest boards start with one random rotating quest. Additional quests are added every 12 hours when a slot is available, up to 3 rotating quests plus the permanent vote quest. Active progress never resets or expires just because a new quest appears.",
+      "Quest buttons show grey In Progress, a yellow ready-to-claim marker, and green Claimed. Claimed quests remain visible for 5 minutes and then disappear; vote reminder DMs repeat every 12 hours and can be turned off from the DM or /quests.",
+      "Added the Railway health endpoint and Top.gg webhook receiver. Configure TOPGG_WEBHOOK_SECRET in Railway and enter the matching secret and /topgg/webhook URL in Top.gg before vote rewards can go live.",
+    ],
+  },
+  {
     version: "5.2.1", date: "2026-10-11",
     changes: [
       "Fixed a bot-fight state bug that could discard the player’s active ULT before the bot responded. Player ULT effects now persist correctly and clear when consumed.",
