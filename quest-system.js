@@ -145,7 +145,7 @@ function makeQuestSection(userId, quest) {
   return new SectionBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent(body)).setButtonAccessory(button);
 }
 
-function buildBoardPayload(userId, board, notice="") {
+function buildBoardPayload(userId, board, notice="", ephemeral=true) {
   const now=Date.now(), vote=board.vote||{}, nextVoteAt=Number(vote.nextVoteAt)||0, voteReady=nextVoteAt<=now;
   const voteStatus=!vote.lastVoteAt?"Available now — vote once every 12 hours."
     : voteReady?"✅ Your next vote is available now.":"⏰ Next vote: <t:"+Math.floor(nextVoteAt/1000)+":R>.";
@@ -171,7 +171,7 @@ function buildBoardPayload(userId, board, notice="") {
   const nextQuestAt=Number(board.nextQuestAt)||now;
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent("### Quest Rotation\nNew quests are added every 12 hours when a slot is available. Claimed quests stay visible for 5 minutes, then disappear.\n**Next scheduled addition:** <t:"+Math.floor(nextQuestAt/1000)+":R>\n**Vote reminders:** "+(vote.remindersEnabled===false?"Off":"On")));
   container.addActionRowComponents(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("quest_reminders:"+userId).setLabel(vote.remindersEnabled===false?"Enable Vote Reminders":"Disable Vote Reminders").setStyle(vote.remindersEnabled===false?ButtonStyle.Success:ButtonStyle.Secondary)));
-  return {components:[container],flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral,allowedMentions:{parse:[]}};
+  return {components:[container],flags:MessageFlags.IsComponentsV2|(ephemeral?MessageFlags.Ephemeral:0),allowedMentions:{parse:[]}};
 }
 
 function buildVoteDmPayload(title, body, userId, canDisable=true) {
@@ -314,7 +314,7 @@ async function handleButton(interaction) {
     const existing=_state.questBoards.get(user.id);
     const enable=!!(existing&&existing.vote&&existing.vote.remindersEnabled===false);
     const board=await setReminders(user.id,enable);
-    return interaction.update(buildBoardPayload(user.id,board,"Vote reminders are now "+(enable?"on":"off")+"."));
+    return interaction.update(buildBoardPayload(user.id,board,"Vote reminders are now "+(enable?"on":"off")+".",false));
   }
   if (customId.startsWith("quest_reminders_off:")||customId.startsWith("quest_reminders_on:")) {
     const off=customId.startsWith("quest_reminders_off:");
@@ -330,7 +330,7 @@ async function handleButton(interaction) {
 async function renderBoardWithNotice(userId,notice) {
   return withUserLock(String(userId),async()=>{
     const board=await ensureBoardLocked(String(userId));
-    return buildBoardPayload(String(userId),board,notice||"");
+    return buildBoardPayload(String(userId),board,notice||"",false);
   });
 }
 
