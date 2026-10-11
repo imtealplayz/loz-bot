@@ -192,9 +192,12 @@ function buildBoardPayload(userId, board, notice="", ephemeral=true) {
     container.addTextDisplayComponents(new TextDisplayBuilder().setContent("✅ "+notice));
   }
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-  const voteButton=new ButtonBuilder().setLabel(voteReady?"Vote on Top.gg":"Vote Cooldown");
-  if (voteReady) voteButton.setStyle(ButtonStyle.Link).setURL(topggVoteUrl());
-  else voteButton.setStyle(ButtonStyle.Secondary).setDisabled(true);
+  let voteButton;
+  if (voteReady) {
+    voteButton=new ButtonBuilder().setLabel("Vote on Top.gg").setStyle(ButtonStyle.Link).setURL(topggVoteUrl());
+  } else {
+    voteButton=new ButtonBuilder().setCustomId("quest_vote_cooldown:"+userId).setLabel("Vote Cooldown").setStyle(ButtonStyle.Secondary).setDisabled(true);
+  }
   container.addSectionComponents(new SectionBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent(voteText)).setButtonAccessory(voteButton));
   for (const quest of board.quests||[]) {
     container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
