@@ -182,17 +182,13 @@ function makeQuestSection(userId, quest) {
 
 function buildBoardPayload(userId, board, notice="", ephemeral=true) {
   const now=Date.now(), vote=board.vote||{}, nextVoteAt=Number(vote.nextVoteAt)||0, voteReady=_voteWebhookEnabled && nextVoteAt<=now;
-  const voteStatus=!_voteWebhookEnabled?"⚠️ Vote rewards are unavailable until the Top.gg webhook is configured."
-    : !vote.lastVoteAt?"Available now — vote once every 12 hours."
-    : voteReady?"✅ Your next vote is available now.":"⏰ Next vote: <t:"+Math.floor(nextVoteAt/1000)+":R>.";
-  const voteText="### 🗳️ Permanent Quest — Vote for LOZ\n- Vote on Top.gg every 12 hours to earn **+2 Species Rolls**.\n**Status:** "+voteStatus
-    +"\n**Verified votes credited:** "+(Number(vote.totalVotes)||0)
-    +"\n**Reward delivery:** automatically added after Top.gg verifies your vote.";
+  const voteStatus=!_voteWebhookEnabled?"Unavailable"
+    : !vote.lastVoteAt?"Available now"
+    : voteReady?"Available now":"Next vote: <t:"+Math.floor(nextVoteAt/1000)+":R>";
+  const voteText="### 🗳️ Vote for LOZ\n**Reward:** +2 Species Rolls every 12 hours.\n**Status:** "+voteStatus
+    +"\n**Verified votes:** "+(Number(vote.totalVotes)||0);
   const container=new ContainerBuilder().setAccentColor(0x0891b2);
-  // ContainerBuilder supports at most 10 direct components. Keep the optional
-  // notice inside the header and use one divider for the rotating quest list.
-  const header="## 📜 QUEST BOARD\nComplete objectives to earn rewards. Active quests keep their progress and do not expire.\nYou can have up to **3 rotating quests**, plus the permanent vote quest."
-    +(notice?"\n\n✅ "+notice:"");
+  const header="## 📜 QUEST BOARD"+(notice?"\n\n✅ "+notice:"");
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(header));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
   let voteButton;
@@ -206,9 +202,6 @@ function buildBoardPayload(userId, board, notice="", ephemeral=true) {
     container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
     for (const quest of board.quests||[]) container.addSectionComponents(makeQuestSection(userId,quest));
   }
-  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-  const nextQuestAt=Number(board.nextQuestAt)||now;
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("### Quest Rotation\nNew quests are added every 12 hours when a slot is available. Claimed quests stay visible for 5 minutes, then disappear.\n**Next scheduled addition:** <t:"+Math.floor(nextQuestAt/1000)+":R>\n**Vote reminders:** "+(vote.remindersEnabled===false?"Off":"On")));
   container.addActionRowComponents(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("quest_reminders:"+userId).setLabel(vote.remindersEnabled===false?"Enable Vote Reminders":"Disable Vote Reminders").setStyle(vote.remindersEnabled===false?ButtonStyle.Success:ButtonStyle.Secondary)));
   return {components:[container],flags:MessageFlags.IsComponentsV2|(ephemeral?MessageFlags.Ephemeral:0),allowedMentions:{parse:[]}};
 }

@@ -153,9 +153,7 @@ function clearFightRequestLocks(challengeId, ...userIds) {
 }
 
 function buildSpeciesRollAnnouncement(userId, userName, species, rollsRemaining, isResult = false) {
-  const title = isResult
-    ? `${species.emoji} ${species.name} — Species Roll Result`
-    : `<:reroll_dice:1558042108965822515> Species Roll`;
+  const title = `<:reroll_dice:1558042108965822515> Species Roll`;
   const sections = isResult ? [
     { heading:"Roll Result", body:`**${userName}** rolled ${species.emoji} **${species.name}**.\n\n**Roll chance:** ${species.name.endsWith("Dragon") ? "2.0% (random element)" : (species.chance || "Special unlock")}` },
     { heading:"Species Stats", body:`❤️ **HP:** ${species.hp}\n⚔️ **ATK:** ${species.atkMin}–${species.atkMax}\n💚 **HEAL:** ${species.healMin}–${species.healMax}\n✨ **ULT cooldown:** ${species.ultCooldown || "—"} rounds` },
@@ -163,31 +161,25 @@ function buildSpeciesRollAnnouncement(userId, userName, species, rollsRemaining,
   ] : [
     { heading:"Current Species", body:`${species.emoji} **${species.name}**` },
     { heading:"Available Rolls", body:`<:reroll_dice:1558042108965822515> **${rollsRemaining}**` },
-    { heading:"How to Roll", body:"Your reroll controls are visible only to you in the private message below. Use **REROLL** to roll again or **CANCEL** to keep your current species." },
   ];
   const payload = buildStyledCardPayload(title, species.color || 0x0891b2, sections, false);
+  const components = [
+    new TextDisplayBuilder().setContent(`<@${userId}>'s Species Roll`),
+    ...payload.components,
+  ];
+
+  if (rollsRemaining > 0) {
+    components.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`reroll_${userId}`).setLabel("Reroll").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`cancel_${userId}`).setLabel("Cancel").setStyle(ButtonStyle.Secondary)
+    ));
+  }
+
   return {
     ...payload,
-    components:[new TextDisplayBuilder().setContent(`<@${userId}>'s Species Roll`),...payload.components],
+    components,
     allowedMentions:{ parse:[], users:[userId] },
   };
-}
-
-function buildSpeciesRollControlsPayload(userId, rollsRemaining) {
-  const container = new ContainerBuilder().setAccentColor(0x0891b2);
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    `## Species Roll Controls\nYou have **${rollsRemaining}** species roll${rollsRemaining === 1 ? "" : "s"} remaining. These controls are private to you.`
-  ));
-  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-  if (rollsRemaining > 0) {
-    container.addActionRowComponents(new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`reroll_${userId}`).setLabel("REROLL").setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId(`cancel_${userId}`).setLabel("CANCEL").setStyle(ButtonStyle.Secondary)
-    ));
-  } else {
-    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("No rolls remain. Use `/daily` for your next free roll."));
-  }
-  return { components:[container], flags:MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, allowedMentions:{ parse:[] } };
 }
 
 
@@ -870,13 +862,15 @@ async function handleCommand(interaction) {
   if (commandName === "species-roll") {
     if (isPlayerInFight(user.id)||isPlayerInBotFight(user.id))
       return safeReply(interaction,buildStyledCardPayload("Roll Unavailable",0xff0000,[{body:"You can't reroll during an active fight."}],true));
-    let userData=_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:1,speciesTokens:0,requestsEnabled:true,lastSwitch:0,badges:[]};
+    if (_state.activeRolls.has(user.id))
+      return safeReply(interaction,{content:"You already have a Species Roll open. Use its Reroll or Cancel button first.",flags:MessageFlags.Ephemeral});
+    const userData=_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:1,speciesTokens:0,requestsEnabled:true,lastSwitch:0,badges:[]};
     if ((userData.rolls||0)<1)
       return safeReply(interaction,buildStyledCardPayload("No Rolls Left",0xff0000,[{body:"Use `/daily` for a free roll or win fights for a chance to earn rolls."}],true));
     const currentSp=userData.species||humanSpecies;
     const pubMsg=await channel.send(buildSpeciesRollAnnouncement(user.id,user.displayName||user.username,currentSp,userData.rolls,false));
     _state.activeRolls.set(user.id,{channelId:channel.id,messageId:pubMsg.id,timestamp:Date.now()});
-    return safeReply(interaction,buildSpeciesRollControlsPayload(user.id,userData.rolls));
+    return safeReply(interaction,{content:"Use the Reroll or Cancel button on the Species Roll message above.",flags:MessageFlags.Ephemeral});
   }
 
   // ── AWAKENING ─────────────────────────────────────────────────
@@ -1643,29 +1637,29 @@ async function handleButton(interaction) {
 
   // ── REROLL ────────────────────────────────────────────────────
   if (customId.startsWith("reroll_")||customId.startsWith("cancel_")) {
-    const uid=customId.split("_")[1];
-    if (user.id!==uid) return safeReply(interaction,{embeds:[createErrorEmbed("This isn't your roll!")],flags:64});
+    const uid=customId.slice(customId.indexOf("_")+1);
+    if (user.id!==uid) return safeReply(interaction,{content:"This isn't your Species Roll.",flags:MessageFlags.Ephemeral});
+    const rollData=_state.activeRolls.get(user.id);
+    if (!rollData || rollData.messageId!==interaction.message.id)
+      return interaction.update(buildStyledCardPayload("Species Roll Expired",0x808080,[{body:"Run `/species-roll` to start a new roll."}],false));
     if (customId.startsWith("cancel_")) {
       _state.activeRolls.delete(user.id);
-      return interaction.update(buildStyledCardPayload("Species Roll Cancelled",0x808080,[{body:"You kept your current species. No additional roll was used."}],true));
+      return interaction.update(buildStyledCardPayload("Species Roll Cancelled",0x808080,[{body:"You kept your current species. No roll was used."}],false));
     }
     const userData=_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:1,requestsEnabled:true,lastSwitch:0};
-    if ((userData.rolls||0)<1) return interaction.update(buildStyledCardPayload("No Rolls Left",0xff0000,[{body:"Use `/daily` for a free roll."}],true));
+    if ((userData.rolls||0)<1) {
+      _state.activeRolls.delete(user.id);
+      return interaction.update(buildStyledCardPayload("No Rolls Left",0xff0000,[{body:"Use `/daily` for a free roll."}],false));
+    }
     const rollResult=getRandomSpecies();
     const newSpecies=rollResult.isDragon?getDragonSubtype():rollResult;
     userData.species=newSpecies;
     userData.originalSpecies=newSpecies;
     userData.rolls=(userData.rolls||0)-1;
-    const rollData=_state.activeRolls.get(user.id);
-    const pubMsgId=rollData?.messageId;
-    await interaction.update(buildSpeciesRollControlsPayload(user.id,userData.rolls));
+    _state.userSpecies.set(user.id,userData);
     if(userData.rolls<1) _state.activeRolls.delete(user.id);
-    if(pubMsgId) {
-      const payload=buildSpeciesRollAnnouncement(user.id,user.displayName||user.username,newSpecies,userData.rolls,true);
-      channel.messages.fetch(pubMsgId).then(pubMsg=>pubMsg.edit(payload)).catch(()=>{});
-    }
     database.saveUserSpecies(user.id,userData).catch(console.error);
-    return;
+    return interaction.update(buildSpeciesRollAnnouncement(user.id,user.displayName||user.username,newSpecies,userData.rolls,true));
   }
 
   // ── SWITCH ────────────────────────────────────────────────────
