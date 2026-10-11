@@ -185,36 +185,24 @@ function buildSpeciesRollAnnouncement(userId, userName, species, rollsRemaining,
 
 const GUIDE_PAGES = [
   {
-    title:"Welcome to Legends of the Rift",
-    body:"LOZ is a turn-based RPG set in a world of powerful species, strange abilities, and awakenings. Your species determines your combat stats, passive trait, and ultimate ability.\n\nYour journey is about more than collecting a rare species: learn its strengths, build your battle record, challenge LOZ, and work toward special awakenings.\n\n**Your goal:** discover your playstyle, win battles, and grow stronger over time.",
+    title:"Welcome to LOZ",
+    body:"Collect species, learn their abilities, and battle players or bots. Unlock stronger forms as you progress.",
   },
   {
-    title:"Understand Species",
-    body:"Every species has its own combat profile:\n\n❤️ **HP** is how much damage you can take.\n⚔️ **ATK** is your attack damage range.\n💚 **HEAL** is your potential recovery.\n✨ **ULT cooldown** is how many rounds you wait before your ultimate is ready again.\n\nSpecies also have a **passive** that may trigger automatically and an **active ultimate** with a special effect. Type matchups can matter, too.\n\nUse `/species` to browse the compendium, or `/species species:<name>` to inspect one species in detail. Rarity is exciting, but understanding your abilities is what helps you use them well.",
+    title:"Species & Rolls",
+    body:"Your species determines your HP, attack, healing, passive, and ultimate.\n\n`/species` browses species. `/species species:<name>` shows details.\n\n`/species-roll` opens a roll: **Reroll** spends 1 roll; **Cancel** spends none. Use `/daily` for your daily roll and `/profile` to check your balance.",
   },
   {
-    title:"Rolls, Daily Rewards, and Your Profile",
-    body:"Species rolls let you change your current species. `/daily` grants a daily roll, while `/species-roll` opens the roll controls and uses one roll each time you reroll. The result is posted publicly so everyone can see what you got; the controls stay private to you.\n\nYour `/profile` is your player card. It tracks your species, rolls, Species Tokens, fight record, streak, and abilities.\n\nA **Species Token** is a separate item that lets you choose an available species rather than relying on random odds. Use `/items use item:Species Token` and confirm the change only when you're sure.",
+    title:"Battles",
+    body:"Use `/fight player user:<player>` to challenge someone or `/fight bot difficulty:<difficulty>` to practice.\n\n- **Attack:** deal damage.\n- **Heal:** recover HP when available.\n- **Ultimate:** use your species ability when ready.\n- **Forfeit:** end the fight.\n\nWatch HP and cooldowns.",
   },
   {
-    title:"How Combat Works",
-    body:"Challenge another player with `/fight player user:<player>`, or practice against LOZ with `/fight bot difficulty:<difficulty>`. Player challenges need the other player to accept before the battle starts.\n\nOn your turn:\n\n⚔️ **Attack** deals damage and can trigger combat effects.\n💚 **Heal** restores HP when it is available; it is disabled when you're above 80% HP or its cooldown is active.\n✨ **Ultimate** uses your species' special ability when its cooldown reaches zero. Some ultimates ask you to pick an effect.\n🏳️ **Forfeit** gives up the battle.\n\nWatch your HP, cooldowns, passives, and opponent's effects. An ultimate used at the right moment can matter more than simply attacking every turn.",
+    title:"Quests & Vote Rewards",
+    body:"Open `/quests` to see rotating quests, track objectives, and claim completed rewards.\n\nVote for LOZ on Top.gg to earn **+2 Species Rolls**. Rewards are added after LOZ receives and verifies your vote. You can earn a vote reward once every **12 hours**. Toggle vote reminders on the quest board.",
   },
   {
-    title:"Practice, Rewards, and Rankings",
-    body:"Bot fights have five difficulties: **Easy, Medium, Hard, Impossible, and Brutal**. Start with a level you can handle, then try tougher opponents as you learn your species. Brutal opponents include Reaper, Mechangel, and Archdemon and use stronger decisions. A Brutal victory grants **10 leaderboard points and 1 species roll**.\n\nUse `/fightstats` to review your player battle record, `/history` to revisit recent battles, `/botstats` to compare results by bot difficulty, and `/fights` to see the fight leaderboard. These commands help you track progress, not just individual wins.",
-  },
-  {
-    title:"Awakenings and Long-Term Progress",
-    body:"Some species can awaken into stronger forms. Use `/awakening` to check your progress and requirements.\n\n⚡🤖 **Cyborg → Mechangel:** requires 25 wins, 500 damage dealt, and 15 ultimate uses. Awakening grants **5 species rolls**.\n\n😈 **Demon → Archdemon:** requires 25 player-fight wins, 20 Demon bot victories, and 20 rolls to pay the awakening cost. The awakening is permanent; after rolling another species, `/switch` can return you to Archdemon.\n\nUse `/switch` to manage eligible original or awakened forms. Use `/quests` to track rotating quests, rewards, and your permanent vote quest.",
-  },
-  {
-    title:"Your LOZ Toolkit",
-    body:"Here are a few useful commands to keep close:\n\n• `/daily` — collect your daily roll.\n• `/species-roll` — reroll your species.\n• `/profile` — inspect your player card.\n• `/species` — learn species stats and abilities.\n• `/fight player` and `/fight bot` — battle players or bots.\n• `/awakening` and `/quests` — track awakenings and earn quest rewards.\n• `/gift` — send rolls to another player within the limits.\n• `/patchnotes` — read the latest changes.\n• `/guide` — revisit this tutorial whenever you need a refresher.\n\nYou don't need to memorize everything now. Try a command, read the result panel, and use `/help` whenever you need a reminder.",
-  },
-  {
-    title:"Ready to Enter the Rift?",
-    body:"That's the foundation: understand your species, keep an eye on your resources, and learn when to attack, heal, or use your ultimate. LOZ tracks your progress so every battle helps tell your story.\n\nComplete this tutorial to claim your one-time welcome reward. The reward is saved to your player record, so finishing the guide again won't grant another roll.",
+    title:"Awakenings & Useful Commands",
+    body:"Use `/awakening` to check unlock requirements and `/switch` to equip unlocked forms. `/items use item:Species Token` lets you choose an eligible species.\n\nTry `/fightstats`, `/history`, and `/patchnotes` to review your progress and the latest changes. Finish this guide and press **Complete Tutorial** to claim your one-time reward.",
   },
 ];
 
@@ -248,6 +236,8 @@ ${page.body}`
       .setStyle(ButtonStyle.Success));
   }
   container.addActionRowComponents(new ActionRowBuilder().addComponents(buttons));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("🎁 Complete the guide to claim your reward."));
   return {
     components:[
       new TextDisplayBuilder().setContent(`<@${userId}>'s LOZ Guide`),
