@@ -1,7 +1,7 @@
 const { EmbedBuilder } = require("discord.js");
 const {
   speciesList, dragonSpecies, botSpecies,
-  godSpecies, humanSpecies, reaperSpecies, archdemonSpecies, slimeLordSpecies,
+  godSpecies, humanSpecies, reaperSpecies, archdemonSpecies, slimeLordSpecies, eclipsedSovereignSpecies,
   awakeningRequirements,
 } = require("./constants.js");
 const database = require("./database.js");
@@ -50,6 +50,7 @@ function getSpeciesByName(name) {
   if (name === "Reaper")    return reaperSpecies;
   if (name === "Archdemon") return archdemonSpecies;
   if (name === "Slime Lord") return slimeLordSpecies;
+  if (name === "Eclipsed Sovereign") return eclipsedSovereignSpecies;
   const s = speciesList.find(x => x.name === name);
   if (s) return s;
   for (const t of dragonSpecies.types) {
@@ -180,13 +181,23 @@ function initAwakeningData(ud) {
 
 async function updateCyborgProgress(id, type, val=1) {
   const ud = _state.userSpecies.get(id);
-  if (!ud || ud.species.name !== "Cyborg") return false;
+  if (!ud || ud.species?.name !== "Cyborg") return false;
   initAwakeningData(ud);
   const p = ud.awakening.cyborg;
   const req = awakeningRequirements.cyborg;
-  if (type==="win")    p.wins        = Math.min(p.wins+val,        req.wins);
-  if (type==="damage") p.damageDealt = Math.min(p.damageDealt+val, req.damageDealt);
-  if (type==="ult")    p.ultUses     = Math.min(p.ultUses+val,     req.ultUses);
+  // Advance only the current stage. Existing later-stage values are deliberately preserved.
+  if (type === "win" && (Number(p.wins) || 0) < req.wins) {
+    p.wins = Math.min((Number(p.wins) || 0) + val, req.wins);
+  } else if (type === "damage" && (Number(p.wins) || 0) >= req.wins
+      && (Number(p.damageDealt) || 0) < req.damageDealt) {
+    p.damageDealt = Math.min((Number(p.damageDealt) || 0) + val, req.damageDealt);
+  } else if (type === "ult" && (Number(p.wins) || 0) >= req.wins
+      && (Number(p.damageDealt) || 0) >= req.damageDealt
+      && (Number(p.ultUses) || 0) < req.ultUses) {
+    p.ultUses = Math.min((Number(p.ultUses) || 0) + val, req.ultUses);
+  } else {
+    return false;
+  }
   _state.userSpecies.set(id, ud);
   await database.saveUserSpecies(id, ud);
   return true;
@@ -210,9 +221,15 @@ async function updateDemonAwakeningProgress(id, type, val=1) {
   const p = initDemonAwakeningData(ud);
   if (p.awakened) return false;
   const req = awakeningRequirements.demon;
-  if (type === "playerWin") p.playerWins = Math.min((p.playerWins || 0) + val, req.playerWins);
-  else if (type === "demonBotWin") p.demonBotWins = Math.min((p.demonBotWins || 0) + val, req.demonBotWins);
-  else return false;
+  // The player-fight stage must be complete before new Demon-bot progress counts.
+  if (type === "playerWin" && (Number(p.playerWins) || 0) < req.playerWins) {
+    p.playerWins = Math.min((Number(p.playerWins) || 0) + val, req.playerWins);
+  } else if (type === "demonBotWin" && (Number(p.playerWins) || 0) >= req.playerWins
+      && (Number(p.demonBotWins) || 0) < req.demonBotWins) {
+    p.demonBotWins = Math.min((Number(p.demonBotWins) || 0) + val, req.demonBotWins);
+  } else {
+    return false;
+  }
   _state.userSpecies.set(id, ud);
   await database.saveUserSpecies(id, ud);
   return true;
@@ -226,6 +243,40 @@ function isDemonReadyForAwakening(ud) {
     && (ud.rolls || 0) >= req.costRolls;
 }
 
+async function updateHalfBloodProgress(id, type, val=1) {
+  const ud = _state.userSpecies.get(id);
+  if (!ud || ud.species?.name !== "Half-Blood") return false;
+  if (!ud.awakening) ud.awakening = {};
+  if (!ud.awakening.halfBlood) ud.awakening.halfBlood = { wins:0, damageDealt:0, ultUses:0, awakened:false };
+  const p = ud.awakening.halfBlood;
+  if (p.awakened) return false;
+  const req = awakeningRequirements.halfBlood;
+  // Only count the objective currently shown by /awakening; never erase pre-existing progress.
+  if (type === "win" && (Number(p.wins) || 0) < req.wins) {
+    p.wins = Math.min((Number(p.wins) || 0) + val, req.wins);
+  } else if (type === "damage" && (Number(p.wins) || 0) >= req.wins
+      && (Number(p.damageDealt) || 0) < req.damageDealt) {
+    p.damageDealt = Math.min((Number(p.damageDealt) || 0) + val, req.damageDealt);
+  } else if (type === "ult" && (Number(p.wins) || 0) >= req.wins
+      && (Number(p.damageDealt) || 0) >= req.damageDealt
+      && (Number(p.ultUses) || 0) < req.ultUses) {
+    p.ultUses = Math.min((Number(p.ultUses) || 0) + val, req.ultUses);
+  } else {
+    return false;
+  }
+  _state.userSpecies.set(id, ud);
+  await database.saveUserSpecies(id, ud);
+  return true;
+}
+
+function isHalfBloodReadyForAwakening(ud) {
+  const p = ud?.awakening?.halfBlood, req = awakeningRequirements.halfBlood;
+  return !!p && !p.awakened
+    && (Number(p.wins) || 0) >= req.wins
+    && (Number(p.damageDealt) || 0) >= req.damageDealt
+    && (Number(p.ultUses) || 0) >= req.ultUses;
+}
+
 module.exports = {
   setState,
   hpBar, createErrorEmbed, createSuccessEmbed, safeReply,
@@ -235,4 +286,5 @@ module.exports = {
   updateLeaderboard, updateFightStats, updateBotStats,
   updateReaperQuest, initAwakeningData, updateCyborgProgress, isCyborgReadyForAwakening,
   initDemonAwakeningData, updateDemonAwakeningProgress, isDemonReadyForAwakening,
+  updateHalfBloodProgress, isHalfBloodReadyForAwakening,
 };
