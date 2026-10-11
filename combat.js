@@ -134,7 +134,12 @@ function calculateDamage(attacker, defender) {
         // Below 20% — instant kill
         const killDmg=defender.currentHp;
         const assimilation=absorbSlimeLordDamage(attacker, defender, killDmg, specialLines);
-        if (assimilation) return { damage:0, baseDamage, specialLines, attackerMutations:{hpDelta:0}, missedAttack:false, absorbed:true };
+        if (assimilation) {
+          // Predatory Assimilation blocks the execution and consumes Death's Judgment.
+          attacker.ultBuff=null;
+          specialLines.push("🌑 **DEATH'S JUDGMENT ABSORBED!** Predatory Assimilation prevents the execution.");
+          return { damage:0, baseDamage, specialLines, attackerMutations:{hpDelta:0}, missedAttack:false, absorbed:true };
+        }
         defender.currentHp=0;
         specialLines.push("💀 **DEATH'S JUDGMENT — INSTANT KILL!**");
         attacker.ultBuff=null;
