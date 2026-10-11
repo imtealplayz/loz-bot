@@ -243,21 +243,28 @@ function isDemonReadyForAwakening(ud) {
     && (ud.rolls || 0) >= req.costRolls;
 }
 
-async function updateHalfBloodProgress(id, type, val=1) {
+async function updateHalfBloodProgress(id, type, val=1, speciesUsed="Half-Blood") {
   const ud = _state.userSpecies.get(id);
-  if (!ud || ud.species?.name !== "Half-Blood") return false;
+  // Fight handlers pass the species frozen at battle start, so a completed fight
+  // is credited to the species actually used even if a moderator changed the cache mid-fight.
+  if (!ud || speciesUsed !== "Half-Blood") return false;
   if (!ud.awakening) ud.awakening = {};
-  if (!ud.awakening.halfBlood) ud.awakening.halfBlood = { wins:0, damageDealt:0, ultUses:0, awakened:false };
+  if (!ud.awakening.halfBlood) ud.awakening.halfBlood = { fights:0, wins:0, damageDealt:0, ultUses:0, awakened:false };
   const p = ud.awakening.halfBlood;
   if (p.awakened) return false;
   const req = awakeningRequirements.halfBlood;
-  // Only count the objective currently shown by /awakening; never erase pre-existing progress.
-  if (type === "win" && (Number(p.wins) || 0) < req.wins) {
-    p.wins = Math.min((Number(p.wins) || 0) + val, req.wins);
-  } else if (type === "damage" && (Number(p.wins) || 0) >= req.wins
+
+  // v5.1 tracked only wins up to 10. Preserve that stored progress as the
+  // minimum known number of completed fights instead of resetting anyone to 0.
+  p.fights = Math.max(Number(p.fights) || 0, Number(p.wins) || 0);
+
+  // New fight count records every completed Half-Blood battle, win or loss.
+  if (type === "fight" && p.fights < req.fights) {
+    p.fights = Math.min(p.fights + val, req.fights);
+  } else if (type === "damage" && p.fights >= req.fights
       && (Number(p.damageDealt) || 0) < req.damageDealt) {
     p.damageDealt = Math.min((Number(p.damageDealt) || 0) + val, req.damageDealt);
-  } else if (type === "ult" && (Number(p.wins) || 0) >= req.wins
+  } else if (type === "ult" && p.fights >= req.fights
       && (Number(p.damageDealt) || 0) >= req.damageDealt
       && (Number(p.ultUses) || 0) < req.ultUses) {
     p.ultUses = Math.min((Number(p.ultUses) || 0) + val, req.ultUses);
@@ -269,10 +276,15 @@ async function updateHalfBloodProgress(id, type, val=1) {
   return true;
 }
 
+function getHalfBloodFightProgress(p) {
+  // Migration fallback for 5.1 records that only have a win counter.
+  return Math.max(Number(p?.fights) || 0, Number(p?.wins) || 0);
+}
+
 function isHalfBloodReadyForAwakening(ud) {
   const p = ud?.awakening?.halfBlood, req = awakeningRequirements.halfBlood;
   return !!p && !p.awakened
-    && (Number(p.wins) || 0) >= req.wins
+    && getHalfBloodFightProgress(p) >= req.fights
     && (Number(p.damageDealt) || 0) >= req.damageDealt
     && (Number(p.ultUses) || 0) >= req.ultUses;
 }
