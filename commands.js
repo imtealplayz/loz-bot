@@ -18,6 +18,7 @@ const {
   canSendRequest,
   updateLeaderboard, updateFightStats, updateCyborgProgress,
   isCyborgReadyForAwakening, isDemonReadyForAwakening, updateReaperQuest,
+  updateHalfBloodProgress, isHalfBloodReadyForAwakening,
 } = require("./helpers.js");
 const { buildFightMessagePayload, buildBotFightMessagePayload, makeCombatant, calculateDamage, applyUltEffect, tickCooldowns, tickBothUltCooldowns, applyOgreRegen, processCurseTick } = require("./combat.js");
 const { startFight, endFight, doBotTurn, endBotFight } = require("./fights.js");
@@ -834,14 +835,18 @@ async function handleCommand(interaction) {
         const row=new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("awaken_cyborg").setLabel("✨ STEP INTO THE ALTAR").setStyle(ButtonStyle.Success));
         return safeReply(interaction,{embeds:[embed],components:[row],flags:64});
       }
-      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x00ffff).setTitle("✨ AWAKENING ALTAR")
-        .setDescription(`*The altar awaits your worthiness. Prove yourself in battle.*\n\n**» YOUR PROGRESS «**\n\n⚔️ **Combat Trials:** ${prog.wins}/${req.wins} wins\n└ ${bar(wPct)} ${wPct}%\n\n💥 **Damage Output:** ${prog.damageDealt.toLocaleString()}/${req.damageDealt.toLocaleString()} dmg\n└ ${bar(dPct)} ${dPct}%\n\n⚡ **ULT Mastery:** ${prog.ultUses}/${req.ultUses} ULT uses\n└ ${bar(uPct)} ${uPct}%`)
-        .setFooter({text:"25 wins • 500 damage • 15 ULTs to unlock your true form"})],flags:64});
+      let step=1, title="Combat Trials", detail="Win battles while using Cyborg.", value=Number(prog.wins)||0, max=req.wins;
+      if (value>=req.wins) { step=2; title="Damage Output"; detail="Deal damage in battle while using Cyborg."; value=Number(prog.damageDealt)||0; max=req.damageDealt; }
+      if ((Number(prog.wins)||0)>=req.wins && (Number(prog.damageDealt)||0)>=req.damageDealt) { step=3; title="ULT Mastery"; detail="Use your ultimate while using Cyborg."; value=Number(prog.ultUses)||0; max=req.ultUses; }
+      const pct=Math.min(100,Math.floor(value/max*100));
+      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x00ffff).setTitle(`✨ AWAKENING ALTAR — QUEST ${step}/3`)
+        .setDescription(`*The altar reveals only the trial before you.*\n\n**${title}**\n${detail}\n\n**Progress:** ${value.toLocaleString()}/${max.toLocaleString()}\n${bar(pct)} ${pct}%`)
+        .setFooter({text:"Complete each trial in order. Your existing progress remains saved."})],flags:64});
     }
 
 
     // ── Demon → Archdemon ─────────────────────────────────────────
-    if (sp==="Demon" || sp==="Archdemon") {
+    if (sp==="Demon" || sp==="Archdemon" || userData.awakening.demon) {
       const prog=userData.awakening.demon || {playerWins:0,demonBotWins:0,awakened:false};
       userData.awakening.demon=prog;
       const req=awakeningRequirements.demon;
@@ -864,15 +869,41 @@ async function handleCommand(interaction) {
         return safeReply(interaction,{embeds:[embed],components:[row],flags:64});
       }
 
-      const costLine=rolls>=req.costRolls
-        ? `✅ Reroll payment: ${rolls}/${req.costRolls} available`
-        : `❌ Reroll payment: ${rolls}/${req.costRolls} available — need ${req.costRolls-rolls} more`;
-      const detail=trialsReady
-        ? `Combat trials complete. Get ${Math.max(0,req.costRolls-rolls)} more rolls, then return here to awaken.`
-        : "Complete both combat requirements while using Demon, then pay the reroll cost.";
-      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x4a0404).setTitle("👿 AWAKENING ALTAR")
-        .setDescription(`*Prove your strength as a Demon to awaken into Archdemon.*\n\n**» YOUR PROGRESS «**\n\n⚔️ **Player Fight Wins:** ${barFor(playerWins,req.playerWins)}\n\n👹 **Demon Bot Defeats:** ${barFor(demonBotWins,req.demonBotWins)}\n\n${costLine}\n\n${detail}`)
-        .setFooter({text:"25 player wins • 20 Demon bot defeats • 20 rolls"})],flags:64});
+      let step=1, title="Player Fight Trials", detail="Win player battles while using Demon.", value=playerWins, max=req.playerWins;
+      if (playerWins>=req.playerWins) { step=2; title="Demon Hunt"; detail="Defeat Demon opponents in bot battles while using Demon."; value=demonBotWins; max=req.demonBotWins; }
+      if (playerWins>=req.playerWins && demonBotWins>=req.demonBotWins) { step=3; title="Reroll Tribute"; detail="Have 20 rolls available. They are only spent when you awaken."; value=rolls; max=req.costRolls; }
+      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x4a0404).setTitle(`👿 AWAKENING ALTAR — QUEST ${step}/3`)
+        .setDescription(`*The darkness reveals only the trial before you.*\n\n**${title}**\n${detail}\n\n${barFor(value,max)}`)
+        .setFooter({text:"Complete each trial in order. Your existing progress remains saved."})],flags:64});
+    }
+
+    // ── Half-Blood → Eclipsed Sovereign ─────────────────────────
+    if (sp==="Half-Blood" || sp==="Eclipsed Sovereign" || userData.awakening.halfBlood) {
+      const req=awakeningRequirements.halfBlood;
+      if (!userData.awakening.halfBlood) userData.awakening.halfBlood={wins:0,damageDealt:0,ultUses:0,awakened:false};
+      const prog=userData.awakening.halfBlood;
+      const wins=Math.min(Number(prog.wins)||0,req.wins);
+      const damage=Math.min(Number(prog.damageDealt)||0,req.damageDealt);
+      const ults=Math.min(Number(prog.ultUses)||0,req.ultUses);
+      if (prog.awakened) {
+        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x6f2da8).setTitle("🌘 ECLIPSED SOVEREIGN — AWAKENING COMPLETE")
+          .setDescription(`**Unlocked Form:** 🌘 Eclipsed Sovereign\n**Status:** Permanently Awakened\n\n*The Half-Blood no longer fights against its divided nature. Both lineages answer as one, and the shadow of the eclipse crowns its new sovereign.*\n\nUse \`/switch\` to equip Eclipsed Sovereign after changing species.`)
+          .setFooter({text:"Half-Blood → Eclipsed Sovereign"})],flags:64});
+      }
+      if (wins>=req.wins && damage>=req.damageDealt && ults>=req.ultUses && sp==="Half-Blood") {
+        const readyEmbed=new EmbedBuilder().setColor(0x6f2da8).setTitle("🌘 AWAKENING ALTAR — READY")
+          .setDescription("*The two bloodlines finally resonate. The eclipse answers.*\n\n**All three trials are complete.**\n\n**Eclipsed Sovereign**\n├ 115 HP\n├ 15–22 ATK\n├ Passive: Hybrid Instinct\n└ Ultimate: Bloodline Overdrive");
+        const row=new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("awaken_eclipsed_sovereign").setLabel("🌘 AWAKEN AS ECLIPSED SOVEREIGN").setStyle(ButtonStyle.Primary));
+        return safeReply(interaction,{embeds:[readyEmbed],components:[row],flags:64});
+      }
+      let step=1, title="Prove Your Resolve", detail="Win battles while using Half-Blood.", value=wins, max=req.wins;
+      if (wins>=req.wins) { step=2; title="Unite the Bloodlines"; detail="Deal damage in battle while using Half-Blood."; value=damage; max=req.damageDealt; }
+      if (wins>=req.wins && damage>=req.damageDealt) { step=3; title="Bloodline Mastery"; detail="Use your ultimate while using Half-Blood."; value=ults; max=req.ultUses; }
+      const pct=Math.min(100,Math.floor(value/max*100));
+      const equipNote=sp==="Half-Blood" ? "" : "\n\nEquip Half-Blood to continue this trial.";
+      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x6f2da8).setTitle(`🌘 AWAKENING ALTAR — QUEST ${step}/3`)
+        .setDescription(`*Two legacies dwell within you. Master them one trial at a time.*\n\n**${title}**\n${detail}\n\n**Progress:** ${value.toLocaleString()}/${max.toLocaleString()}\n${bar(pct)} ${pct}%${equipNote}`)
+        .setFooter({text:"Your progress is permanent. The next trial appears after this one is complete."})],flags:64});
     }
 
     // ── No awakening available for this species ─────────────────
@@ -1971,6 +2002,22 @@ async function handleButton(interaction) {
     return interaction.update({embeds:[new EmbedBuilder().setColor(0x00ffff).setTitle("⚡ MECHANGEL AWAKENING COMPLETE ⚡")
       .setDescription("🤖 **Cyborg → ⚡ Mechangel**\n\n+15 HP · New passive: Quantum Processing · New ULT: System Restoration\n\n🎁 +5 Species Rolls!\n\n*Machine and angel, fused as one.*")],components:[]});
 
+  }
+
+  if (customId==="awaken_eclipsed_sovereign") {
+    const ud=_state.userSpecies.get(user.id);
+    if (!ud || ud.species?.name!=="Half-Blood") return interaction.update({content:"❌ You must currently be Half-Blood to awaken.",components:[]});
+    if (!isHalfBloodReadyForAwakening(ud)) return interaction.update({content:"❌ The three trials are not complete yet. Check /awakening.",components:[]});
+    const awakened=require("./constants.js").eclipsedSovereignSpecies;
+    if (!ud.awakening) ud.awakening={};
+    if (!ud.awakening.halfBlood) ud.awakening.halfBlood={wins:0,damageDealt:0,ultUses:0,awakened:false};
+    ud.awakening.halfBlood.awakened=true;
+    ud.species=awakened;
+    ud.originalSpecies=awakened;
+    _state.userSpecies.set(user.id,ud);
+    await database.saveUserSpecies(user.id,ud);
+    return interaction.update({embeds:[new EmbedBuilder().setColor(0x6f2da8).setTitle("🌘 ECLIPSED SOVEREIGN AWAKENING COMPLETE")
+      .setDescription("🩸 **Half-Blood → 🌘 Eclipsed Sovereign**\n\n**115 HP · 15–22 ATK · 14–22 HEAL**\n\n**Hybrid Instinct:** below 50% HP, deal 20% more damage and take 10% less damage.\n**Bloodline Overdrive:** empower your next attack by 1.8× and heal 15 HP.\n\n*At last, neither bloodline must silence the other. The eclipse crowns a power born from both.*")],components:[]});
   }
 
   if (customId==="awaken_archdemon") {
