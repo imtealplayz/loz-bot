@@ -1493,7 +1493,13 @@ async function handleCommand(interaction) {
 async function handleButton(interaction) {
   const { customId, user, guild, channel, message } = interaction;
 
-
+  if (customId.startsWith("switch_page_")) {
+    const ud=_state.userSpecies.get(user.id);
+    if (!ud || !ud.species)
+      return interaction.update(buildStyledCardPayload("Species Data Unavailable",0xff0000,[{body:"No species data was found. Use /species-roll to begin."}],true));
+    const page=Number(customId.slice("switch_page_".length));
+    return interaction.update(buildSpeciesSwitchPayload(ud,Number.isInteger(page)?page:0));
+  }
 
   // ── UPDATE SUBSCRIPTION PROMPT ─────────────────────────────────
   if (customId.startsWith("loz_updates_prompt_subscribe_")) {
@@ -1673,27 +1679,27 @@ async function handleButton(interaction) {
   // ── SWITCH ────────────────────────────────────────────────────
   if (customId==="switch_original"||customId==="switch_reaper"||customId==="switch_archdemon"||customId==="switch_mechangel"||customId==="switch_slime_lord"||customId==="switch_eclipsed_sovereign") {
     const ud=_state.userSpecies.get(user.id);
-    if (!ud) return interaction.update({content:"❌ No species data!",components:[]});
+    if (!ud) return interaction.update(buildStyledCardPayload("Switch Failed",0xff0000,[{body:"No species data was found."}],true));
     const now=Date.now(), th=3*60*60*1000;
     if (user.id!==_state.ownerId&&user.id!==_state.secondGodId&&ud.lastSwitch&&now-ud.lastSwitch<th) {
       const tl=th-(now-ud.lastSwitch), h=Math.floor(tl/3600000), m=Math.floor((tl%3600000)/60000);
-      return interaction.update({embeds:[createErrorEmbed(`Switch in **${h}h ${m}m**!`)],components:[]});
+      return interaction.update(buildStyledCardPayload("Switch Cooldown",0x808080,[{body:`You can switch again in **${h}h ${m}m**.`}],true));
     }
     let newSp;
     if (customId==="switch_original") newSp=ud.originalSpecies;
-    else if (customId==="switch_reaper") { if(!ud.questSpecies?.reaper?.unlocked) return interaction.update({content:"❌ Reaper not unlocked!",components:[]}); newSp=reaperSpecies; }
-    else if (customId==="switch_archdemon") { if(ud.awakening?.demon?.awakened!==true) return interaction.update({content:"❌ Archdemon is locked. Complete the Demon awakening first.",components:[]}); newSp=archdemonSpecies; }
-    else if (customId==="switch_slime_lord") { if(ud.questSpecies?.slimeLord?.unlocked!==true) return interaction.update({content:"❌ Slime Lord is locked. Defeat the rare Slime Lord boss first.",components:[]}); newSp=getSpeciesByName("Slime Lord"); }
-    else if (customId==="switch_eclipsed_sovereign") { if(ud.awakening?.halfBlood?.awakened!==true) return interaction.update({content:"❌ Eclipsed Sovereign is locked. Complete the Half-Blood awakening first.",components:[]}); newSp=getSpeciesByName("Eclipsed Sovereign"); }
+    else if (customId==="switch_reaper") { if(!ud.questSpecies?.reaper?.unlocked && ud.originalSpecies?.name!=="Reaper") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Reaper has not been unlocked for your account."}],true)); newSp=reaperSpecies; }
+    else if (customId==="switch_archdemon") { if(ud.awakening?.demon?.awakened!==true && ud.originalSpecies?.name!=="Archdemon") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Complete the Demon awakening before equipping Archdemon."}],true)); newSp=archdemonSpecies; }
+    else if (customId==="switch_slime_lord") { if(ud.questSpecies?.slimeLord?.unlocked!==true && ud.originalSpecies?.name!=="Slime Lord") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Defeat the rare Slime Lord boss or ask God to permanently unlock this species."}],true)); newSp=getSpeciesByName("Slime Lord"); }
+    else if (customId==="switch_eclipsed_sovereign") { if(ud.awakening?.halfBlood?.awakened!==true && ud.originalSpecies?.name!=="Eclipsed Sovereign") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Complete the Half-Blood awakening or ask God to permanently unlock this species."}],true)); newSp=getSpeciesByName("Eclipsed Sovereign"); }
     else {
-      if (ud.awakening?.cyborg?.awakened!==true) return interaction.update({content:"❌ Mechangel is locked. Complete the Cyborg awakening first.",components:[]});
+      if (ud.awakening?.cyborg?.awakened!==true && ud.originalSpecies?.name!=="Mechangel") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Complete the Cyborg awakening before equipping Mechangel."}],true));
       newSp=getSpeciesByName("Mechangel");
     }
-    if (!newSp) return interaction.update({content:"❌ That species is unavailable.",components:[]});
+    if (!newSp) return interaction.update(buildStyledCardPayload("Switch Failed",0xff0000,[{body:"That species is unavailable."}],true));
     ud.species=newSp; ud.lastSwitch=Date.now();
     _state.userSpecies.set(user.id,ud);
     await database.saveUserSpecies(user.id,ud);
-    return interaction.update({embeds:[createSuccessEmbed(`Switched to ${newSp.emoji} **${newSp.name}**! Next switch in 3h.`)],components:[]});
+    return interaction.update(buildStyledCardPayload("Species Switched",newSp.color||0x9b59b6,[{body:`Your species is now ${newSp.emoji} **${newSp.name}**. Your next switch is available in 3 hours.`}],true));
   }
 
   // ── DUEL ACCEPT/DECLINE ───────────────────────────────────────
