@@ -1327,6 +1327,9 @@ async function handleCommand(interaction) {
       } else if (speciesName==="Slime Lord") {
         ud.questSpecies.slimeLord={...(ud.questSpecies.slimeLord||{}),unlocked:true,equipped:false,godGranted:true};
         unlockLabel="Slime Lord";
+      } else if (speciesName==="Eclipsed Sovereign") {
+        ud.awakening.halfBlood={...(ud.awakening.halfBlood||{}),awakened:true};
+        unlockLabel="Eclipsed Sovereign";
       } else {
         return safeReply(interaction,{embeds:[createErrorEmbed("That exclusive species cannot be unlocked with this command.")],flags:64});
       }
@@ -1372,13 +1375,24 @@ async function handleCommand(interaction) {
       if (spname==="Kitsune"&&target.id!==_client.user.id) return safeReply(interaction,{embeds:[createErrorEmbed("Kitsune is exclusive to Loz!")],flags:64});
       const newSp=getSpeciesByName(spname);
       if (!newSp) return safeReply(interaction,{embeds:[createErrorEmbed("Unknown species! Pick one from the dropdown.")],flags:64});
-      const ud=_state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0,badges:[]};
-      // Only overwrite originalSpecies if currently Human
-      // God-given species always becomes the new original
+      const ud=_state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,speciesTokens:0,awakening:{},requestsEnabled:true,lastSwitch:0,badges:[]};
+      ud.questSpecies={...(ud.questSpecies||{})};
+      ud.awakening={...(ud.awakening||{})};
+      // God-given exclusive forms must also set their permanent unlock flags so /switch can equip them later.
+      if (spname==="Reaper") ud.questSpecies.reaper={...(ud.questSpecies.reaper||{}),unlocked:true,equipped:false,godGranted:true};
+      else if (spname==="Archdemon") ud.awakening.demon={...(ud.awakening.demon||{}),awakened:true};
+      else if (spname==="Mechangel") ud.awakening.cyborg={...(ud.awakening.cyborg||{}),awakened:true};
+      else if (spname==="Slime Lord") ud.questSpecies.slimeLord={...(ud.questSpecies.slimeLord||{}),unlocked:true,equipped:false,godGranted:true};
+      else if (spname==="Eclipsed Sovereign") ud.awakening.halfBlood={...(ud.awakening.halfBlood||{}),awakened:true};
+      // God-given species becomes the new original species.
       ud.originalSpecies=newSp;
       ud.species=newSp;
+      const isExclusive=["Reaper","Archdemon","Mechangel","Slime Lord","Eclipsed Sovereign"].includes(spname);
+      const saved=isExclusive
+        ? await database.saveUserSpecies(target.id,ud)
+        : await database.saveUserSpeciesFields(target.id,ud.species,ud.originalSpecies);
+      if (!saved) return safeReply(interaction,{embeds:[createErrorEmbed("MongoDB save failed. This change is not confirmed as saved; check the database before redeploying.")],flags:64});
       _state.userSpecies.set(target.id,ud);
-      if (!await database.saveUserSpeciesFields(target.id,ud.species,ud.originalSpecies)) return safeReply(interaction,{embeds:[createErrorEmbed("MongoDB save failed. This change is not confirmed as saved; check the database before redeploying.")],flags:64});
       return safeReply(interaction,{embeds:[createSuccessEmbed(`Changed <@${target.id}>'s species to ${newSp.emoji} **${newSp.name}** and saved it to MongoDB!`)]});
     }
 
@@ -2164,13 +2178,13 @@ const commands = [
   // default_member_permissions=0 hides these from normal members; handlers still enforce the exact allow-list.
   new SlashCommandBuilder().setName("god").setDescription("God-only commands")
     .addSubcommand(s=>s.setName("menu").setDescription("Show god menu"))
-    .addSubcommand(s=>s.setName("species-unlock").setDescription("Permanently unlock an exclusive species for a user").addUserOption(o=>o.setName("user").setDescription("Target user, including yourself").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Exclusive species to unlock").setRequired(true).addChoices({name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"Slime Lord 🫧",value:"Slime Lord"})))
+    .addSubcommand(s=>s.setName("species-unlock").setDescription("Permanently unlock an exclusive species for a user").addUserOption(o=>o.setName("user").setDescription("Target user, including yourself").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Exclusive species to unlock").setRequired(true).addChoices({name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"Slime Lord 🫧",value:"Slime Lord"},{name:"Eclipsed Sovereign 🌘",value:"Eclipsed Sovereign"})))
     .addSubcommandGroup(g=>g.setName("add").setDescription("Give items to a user")
       .addSubcommand(s=>s.setName("items").setDescription("Give inventory items to a user")
         .addUserOption(o=>o.setName("user").setDescription("User receiving the item").setRequired(true))
         .addStringOption(o=>o.setName("item").setDescription("Item to give").setRequired(true).addChoices({name:"Species Token",value:"species_token"}))
         .addIntegerOption(o=>o.setName("quantity").setDescription("Quantity to give").setRequired(true).setMinValue(1).setMaxValue(1000000))))
-    .addSubcommand(s=>s.setName("species-change").setDescription("Change a user's species").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Species to set").setRequired(true).addChoices({name:"Demi God ⚡",value:"Demi God"},{name:"Demon Lord 🔥",value:"Demon Lord"},{name:"Demon King 👑😈",value:"Demon King"},{name:"Chimera 🎭",value:"Chimera"},{name:"Angel 👼",value:"Angel"},{name:"Demon 😈",value:"Demon"},{name:"Oni 👿",value:"Oni"},{name:"Orc Lord 👑",value:"Orc Lord"},{name:"Kijin 🎭",value:"Kijin"},{name:"Cyborg 🤖",value:"Cyborg"},{name:"High Orc ⚔️",value:"High Orc"},{name:"Ogre 👹",value:"Ogre"},{name:"Goblin 👺",value:"Goblin"},{name:"Orc 🟢",value:"Orc"},{name:"Half-Blood 🩸",value:"Half-Blood"},{name:"Fire Dragon 🔥🐉",value:"Fire Dragon"},{name:"Thunder Dragon ⚡🐉",value:"Thunder Dragon"},{name:"Ice Dragon ❄️🐉",value:"Ice Dragon"},{name:"Earth Dragon 🌍🐉",value:"Earth Dragon"},{name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"God 👑✨",value:"God"},{name:"Human 👤",value:"Human"})))
+    .addSubcommand(s=>s.setName("species-change").setDescription("Change a user's species").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Species to set").setRequired(true).addChoices({name:"Demi God ⚡",value:"Demi God"},{name:"Demon Lord 🔥",value:"Demon Lord"},{name:"Demon King 👑😈",value:"Demon King"},{name:"Chimera 🎭",value:"Chimera"},{name:"Angel 👼",value:"Angel"},{name:"Demon 😈",value:"Demon"},{name:"Oni 👿",value:"Oni"},{name:"Orc Lord 👑",value:"Orc Lord"},{name:"Kijin 🎭",value:"Kijin"},{name:"Cyborg 🤖",value:"Cyborg"},{name:"High Orc ⚔️",value:"High Orc"},{name:"Ogre 👹",value:"Ogre"},{name:"Goblin 👺",value:"Goblin"},{name:"Orc 🟢",value:"Orc"},{name:"Half-Blood 🩸",value:"Half-Blood"},{name:"Fire Dragon 🔥🐉",value:"Fire Dragon"},{name:"Thunder Dragon ⚡🐉",value:"Thunder Dragon"},{name:"Ice Dragon ❄️🐉",value:"Ice Dragon"},{name:"Earth Dragon 🌍🐉",value:"Earth Dragon"},{name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"God 👑✨",value:"God"},{name:"Slime Lord 🫧",value:"Slime Lord"},{name:"Eclipsed Sovereign 🌘",value:"Eclipsed Sovereign"})))
     .addSubcommand(s=>s.setName("species-reset").setDescription("Reset a user to Human").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)))
     .addSubcommand(s=>s.setName("species-add").setDescription("Give rolls to a user").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)).addIntegerOption(o=>o.setName("amount").setDescription("Amount of rolls").setRequired(true).setMinValue(1).setMaxValue(1000000)))
     .addSubcommand(s=>s.setName("rolls-reset").setDescription("Reset a user's rolls to 0").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)))
