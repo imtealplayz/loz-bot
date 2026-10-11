@@ -28,6 +28,7 @@ let databaseReady = false;
 // ==================== HEALTH + TOP.GG WEBHOOK ====================
 const webhookApp = express();
 const topggSecret = (process.env.TOPGG_WEBHOOK_SECRET || "").trim();
+questSystem.setVoteWebhookEnabled(Boolean(topggSecret));
 webhookApp.get("/health", (_req, res) => res.status(200).json({ status:"ok", service:"loz-bot" }));
 if (topggSecret) {
   const topggWebhook = new Webhook(topggSecret);
