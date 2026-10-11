@@ -45,6 +45,77 @@ function buildStyledCardPayload(title, color, sections = [], ephemeral = false) 
   };
 }
 
+function buildSpeciesSwitchPayload(userData, requestedPage=0) {
+  const current=userData.species || humanSpecies;
+  const specialForms=[
+    {id:"switch_reaper",name:"Reaper",emoji:"🌑",unlocked:userData.questSpecies?.reaper?.unlocked===true,style:ButtonStyle.Primary},
+    {id:"switch_archdemon",name:"Archdemon",emoji:"👿",unlocked:userData.awakening?.demon?.awakened===true,style:ButtonStyle.Danger},
+    {id:"switch_mechangel",name:"Mechangel",emoji:"⚡🤖",unlocked:userData.awakening?.cyborg?.awakened===true,style:ButtonStyle.Primary},
+    {id:"switch_slime_lord",name:"Slime Lord",emoji:"🫧",unlocked:userData.questSpecies?.slimeLord?.unlocked===true,style:ButtonStyle.Success},
+    {id:"switch_eclipsed_sovereign",name:"Eclipsed Sovereign",emoji:"🌘",unlocked:userData.awakening?.halfBlood?.awakened===true,style:ButtonStyle.Primary},
+  ];
+  const specialNames=new Set(specialForms.map(form=>form.name));
+  const forms=[];
+  const original=userData.originalSpecies;
+  if (original?.name && original.name!==current.name && !specialNames.has(original.name)) {
+    forms.push({
+      id:"switch_original",
+      name:original.name,
+      emoji:original.emoji || "👤",
+      unlocked:true,
+      style:ButtonStyle.Primary,
+    });
+  }
+  for (const form of specialForms) {
+    if (form.name===current.name) continue;
+    // Older God species-change records may have the special species as the original
+    // even if they predate the permanent unlock flag. Keep those switchable.
+    if (original?.name===form.name) form.unlocked=true;
+    forms.push(form);
+  }
+
+  const pageSize=3;
+  const pageCount=Math.max(1,Math.ceil(forms.length/pageSize));
+  const page=Math.max(0,Math.min(Number.isInteger(requestedPage)?requestedPage:0,pageCount-1));
+  const container=new ContainerBuilder().setAccentColor(0x9b59b6);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    "## 🔄 Species Switch\n**Current species:** "+(current.emoji||"👤")+" **"+current.name+"**\n**Cooldown:** 3 hours"
+  ));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+
+  const pageForms=forms.slice(page*pageSize,page*pageSize+pageSize);
+  for (const form of pageForms) {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("### "+form.emoji+" "+form.name));
+    const button=new ButtonBuilder().setCustomId(form.id);
+    if (form.unlocked) {
+      button.setLabel("Switch to "+form.name).setStyle(form.style);
+    } else {
+      button.setLabel("Locked").setStyle(ButtonStyle.Secondary).setDisabled(true);
+    }
+    container.addActionRowComponents(new ActionRowBuilder().addComponents(button));
+  }
+
+  if (pageCount>1) {
+    const nav=[];
+    nav.push(new ButtonBuilder().setCustomId("switch_page_"+Math.max(0,page-1))
+      .setLabel("← Previous").setStyle(ButtonStyle.Secondary).setDisabled(page===0));
+    nav.push(new ButtonBuilder().setCustomId("switch_page_"+Math.min(pageCount-1,page+1))
+      .setLabel("Next →").setStyle(ButtonStyle.Secondary).setDisabled(page===pageCount-1));
+    container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("Page "+(page+1)+" of "+pageCount+" · Each species has its own button directly below its name."));
+    container.addActionRowComponents(new ActionRowBuilder().addComponents(nav));
+  } else {
+    container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("Each species has its own button directly below its name. Locked forms are unavailable until unlocked."));
+  }
+
+  return {
+    components:[container],
+    flags:MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+    allowedMentions:{ parse:[] },
+  };
+}
+
 function buildFightChallengePayload(challengerId, targetId, challengerSpecies, targetSpecies) {
   const container = new ContainerBuilder().setAccentColor(0xf97316);
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
@@ -984,46 +1055,16 @@ async function handleCommand(interaction) {
 
   // ── SWITCH ────────────────────────────────────────────────────
   if (commandName === "switch") {
-    await interaction.deferReply({flags:64});
+    await interaction.deferReply({flags:MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral});
     const userData=_state.userSpecies.get(user.id);
-    if (!userData||!userData.species) return interaction.editReply({embeds:[createErrorEmbed("No species yet! Use `/species-roll` first.")]});
+    if (!userData||!userData.species) return interaction.editReply(buildStyledCardPayload("No Species Yet",0xff0000,[{body:"Use `/species-roll` to begin your adventure."}],true));
     const now=Date.now(), threeH=3*60*60*1000;
     if (user.id!==_state.ownerId&&user.id!==_state.secondGodId&&userData.lastSwitch&&now-userData.lastSwitch<threeH) {
       const tl=threeH-(now-userData.lastSwitch), h=Math.floor(tl/3600000), m=Math.floor((tl%3600000)/60000);
-      return interaction.editReply({embeds:[createErrorEmbed(`Switch available in **${h}h ${m}m**!`)]});
+      return interaction.editReply(buildStyledCardPayload("Switch Cooldown",0x808080,[{body:`You can switch species again in **${h}h ${m}m**.`}],true));
     }
-    const sp=userData.species||humanSpecies;
-    const buttons=[new ButtonBuilder().setCustomId("switch_current").setLabel("✅ "+sp.name+" (Current)").setStyle(ButtonStyle.Success).setDisabled(true)];
-    if (userData.originalSpecies?.name && userData.originalSpecies.name!==sp.name) {
-      buttons.push(new ButtonBuilder().setCustomId("switch_original").setLabel(userData.originalSpecies.name).setStyle(ButtonStyle.Primary));
-    }
-    const switchForms=[
-      {id:"switch_reaper",name:"Reaper",emoji:"🌑",unlocked:userData.questSpecies?.reaper?.unlocked===true,style:ButtonStyle.Primary},
-      {id:"switch_archdemon",name:"Archdemon",emoji:"👿",unlocked:userData.awakening?.demon?.awakened===true,style:ButtonStyle.Danger},
-      {id:"switch_mechangel",name:"Mechangel",emoji:"⚡",unlocked:userData.awakening?.cyborg?.awakened===true,style:ButtonStyle.Primary},
-      {id:"switch_slime_lord",name:"Slime Lord",emoji:"🫧",unlocked:userData.questSpecies?.slimeLord?.unlocked===true,style:ButtonStyle.Success},
-      {id:"switch_eclipsed_sovereign",name:"Eclipsed Sovereign",emoji:"🌘",unlocked:userData.awakening?.halfBlood?.awakened===true,style:ButtonStyle.Primary},
-    ];
-    for (const form of switchForms) {
-      if (sp.name===form.name) continue;
-      const button=new ButtonBuilder().setCustomId(form.id);
-      if (form.unlocked) button.setLabel(form.emoji+" "+form.name).setStyle(form.style);
-      else button.setLabel("Locked").setStyle(ButtonStyle.Secondary).setDisabled(true);
-      buttons.push(button);
-    }
-    const rows=[];
-    for(let i=0;i<buttons.length;i+=5) rows.push(new ActionRowBuilder().addComponents(buttons.slice(i,i+5)));
-    const embed=new EmbedBuilder().setColor(0x9b59b6).setTitle("🔄 Class Switch")
-      .setDescription("**Current:** " + sp.emoji + " " + sp.name + "\n**Original:** " + (userData.originalSpecies?.emoji||"👤") + " " + (userData.originalSpecies?.name||"Human")
-        + "\n🌑 Reaper: " + (userData.questSpecies?.reaper?.unlocked?"✅ Unlocked":"❌ Locked")
-        + "\n👿 Archdemon: " + (userData.awakening?.demon?.awakened?"✅ Awakened":"❌ Locked")
-        + "\n⚡ Mechangel: " + (userData.awakening?.cyborg?.awakened?"✅ Awakened":"❌ Locked")
-        + "\n🫧 Slime Lord: " + (userData.questSpecies?.slimeLord?.unlocked?"✅ Unlocked":"❌ Locked")
-        + "\n🌘 Eclipsed Sovereign: " + (userData.awakening?.halfBlood?.awakened?"✅ Awakened":"❌ Locked")
-        + "\n\n⏰ Cooldown: 3 hours");
-    return interaction.editReply({embeds:[embed],components:rows});
+    return interaction.editReply(buildSpeciesSwitchPayload(userData,0));
   }
-
 
   // ── FIGHTSTATS ────────────────────────────────────────────────
   if (commandName === "fightstats") {
