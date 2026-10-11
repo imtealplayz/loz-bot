@@ -1059,11 +1059,11 @@ async function handleCommand(interaction) {
   if (commandName === "switch") {
     await interaction.deferReply({flags:MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral});
     const userData=_state.userSpecies.get(user.id);
-    if (!userData||!userData.species) return interaction.editReply(buildStyledCardPayload("No Species Yet",0xff0000,[{body:"Use `/species-roll` to begin your adventure."}],true));
+    if (!userData||!userData.species) return interaction.editReply(buildStyledCardPayload("No Species Yet",0xff0000,[{body:"Use `/species-roll` to begin your adventure."}]));
     const now=Date.now(), threeH=3*60*60*1000;
     if (user.id!==_state.ownerId&&user.id!==_state.secondGodId&&userData.lastSwitch&&now-userData.lastSwitch<threeH) {
       const tl=threeH-(now-userData.lastSwitch), h=Math.floor(tl/3600000), m=Math.floor((tl%3600000)/60000);
-      return interaction.editReply(buildStyledCardPayload("Switch Cooldown",0x808080,[{body:`You can switch species again in **${h}h ${m}m**.`}],true));
+      return interaction.editReply(buildStyledCardPayload("Switch Cooldown",0x808080,[{body:`You can switch species again in **${h}h ${m}m**.`}]));
     }
     return interaction.editReply(buildSpeciesSwitchPayload(userData,0));
   }
