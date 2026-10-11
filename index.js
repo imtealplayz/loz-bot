@@ -29,7 +29,7 @@ let databaseReady = false;
 const webhookApp = express();
 const topggSecret = (process.env.TOPGG_WEBHOOK_SECRET || "").trim();
 questSystem.setVoteWebhookEnabled(Boolean(topggSecret));
-webhookApp.get("/health", (_req, res) => res.status(200).json({ status:"ok", service:"loz-bot" }));
+webhookApp.get("/health", (_req, res) => res.status(databaseReady ? 200 : 503).json({ status:databaseReady ? "ok" : "starting", service:"loz-bot", voteWebhookEnabled:Boolean(topggSecret) }));
 if (topggSecret) {
   const topggWebhook = new Webhook(topggSecret);
   webhookApp.post("/topgg/webhook", topggWebhook.listener(async vote => {
