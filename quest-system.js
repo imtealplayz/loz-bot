@@ -232,26 +232,34 @@ async function trackProgress(userId,type,amount=1) {
   if (!userId||!_state||!_state.questBoards) return false;
   const id=String(userId);
   if (!_state.questBoards.has(id)) return false;
-  return withUserLock(id,async()=>{
-    const board=_state.questBoards.get(id);
-    if (!board||!Array.isArray(board.quests)) return false;
-    const increment=Math.max(0,Number(amount)||0);
-    if (!increment) return false;
-    let changed=false;
-    for (const quest of board.quests) {
-      if (quest.status!=="active") continue;
-      for (const objective of quest.objectives||[]) {
-        if (objective.type!==type) continue;
-        const target=Math.max(0,Number(objective.target)||0);
-        const current=Math.max(0,Number(objective.progress)||0);
-        if (current>=target) continue;
-        objective.progress=Math.min(target,current+increment);
-        changed=true;
+  try {
+    return await withUserLock(id,async()=>{
+      const currentBoard=_state.questBoards.get(id);
+      if (!currentBoard||!Array.isArray(currentBoard.quests)) return false;
+      // Work on a copy so a failed write cannot silently alter in-memory progress.
+      const board=JSON.parse(JSON.stringify(currentBoard));
+      const increment=Math.max(0,Number(amount)||0);
+      if (!increment) return false;
+      let changed=false;
+      for (const quest of board.quests) {
+        if (quest.status!=="active") continue;
+        for (const objective of quest.objectives||[]) {
+          if (objective.type!==type) continue;
+          const target=Math.max(0,Number(objective.target)||0);
+          const current=Math.max(0,Number(objective.progress)||0);
+          if (current>=target) continue;
+          objective.progress=Math.min(target,current+increment);
+          changed=true;
+        }
       }
-    }
-    if (changed) await saveBoard(id,board);
-    return changed;
-  });
+      if (changed) await saveBoard(id,board);
+      return changed;
+    });
+  } catch(error) {
+    // Quest storage failures must never cancel a player's battle turn or outcome.
+    console.error("[Quests] Could not record "+type+" progress for "+id+":",error.message);
+    return false;
+  }
 }
 
 async function claimQuest(userId,questId) {
@@ -313,7 +321,7 @@ async function handleButton(interaction) {
     const expectedUserId=customId.slice(off?"quest_reminders_off:".length:"quest_reminders_on:".length);
     if (user.id!==expectedUserId) { await interaction.reply({content:"These reminder settings belong to another player.",flags:MessageFlags.Ephemeral}); return true; }
     await setReminders(user.id,!off);
-    const payload=buildVoteDmPayload("Vote Reminders Updated","Vote reminders are now **"+(off?"disabled":"enabled")+"**. You can change this any time with /quests.",user.id,off);
+    const payload=buildVoteDmPayload("Vote Reminders Updated","Vote reminders are now **"+(off?"disabled":"enabled")+"**. You can change this any time with /quests.",user.id,!off);
     return interaction.update({components:payload.components,flags:MessageFlags.IsComponentsV2,allowedMentions:{parse:[]}});
   }
   return false;
