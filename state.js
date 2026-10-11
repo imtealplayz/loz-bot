@@ -17,6 +17,7 @@ const dailyClaims     = new Collection();
 const activeBotFights = new Map();
 const fightMessages   = new Map();
 const questProgress   = new Collection();
+const questBoards      = new Collection();
 const activeRequests  = new Map();
 const duelChannels    = new Collection();
 
@@ -26,6 +27,6 @@ module.exports = {
   cooldowns, challenges, leaderboard, fightLeaderboard, fightStats,
   duelCooldowns, userSpecies, botStats, activeRolls, activeFights,
   fightChallenges, fightCooldowns, dailyClaims, activeBotFights,
-  fightMessages, questProgress, activeRequests, duelChannels,
+  fightMessages, questProgress, questBoards, activeRequests, duelChannels,
   disabledChannels,
 };

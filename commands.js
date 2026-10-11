@@ -22,6 +22,7 @@ const {
 } = require("./helpers.js");
 const { buildFightMessagePayload, buildBotFightMessagePayload, makeCombatant, calculateDamage, applyUltEffect, tickCooldowns, tickBothUltCooldowns, applyOgreRegen, processCurseTick } = require("./combat.js");
 const { startFight, endFight, doBotTurn, endBotFight } = require("./fights.js");
+const questSystem = require("./quest-system.js");
 
 let _state = null;
 let _client = null;
@@ -213,11 +214,11 @@ const GUIDE_PAGES = [
   },
   {
     title:"Awakenings and Long-Term Progress",
-    body:"Some species can awaken into stronger forms. Use `/awakening` to check your progress and requirements.\n\n⚡🤖 **Cyborg → Mechangel:** requires 25 wins, 500 damage dealt, and 15 ultimate uses. Awakening grants **5 species rolls**.\n\n😈 **Demon → Archdemon:** requires 25 player-fight wins, 20 Demon bot victories, and 20 rolls to pay the awakening cost. The awakening is permanent; after rolling another species, `/switch` can return you to Archdemon.\n\nUse `/switch` to manage eligible original or awakened forms. Quest availability can change, so check `/quest view` for the currently displayed quest status before planning around it.",
+    body:"Some species can awaken into stronger forms. Use `/awakening` to check your progress and requirements.\n\n⚡🤖 **Cyborg → Mechangel:** requires 25 wins, 500 damage dealt, and 15 ultimate uses. Awakening grants **5 species rolls**.\n\n😈 **Demon → Archdemon:** requires 25 player-fight wins, 20 Demon bot victories, and 20 rolls to pay the awakening cost. The awakening is permanent; after rolling another species, `/switch` can return you to Archdemon.\n\nUse `/switch` to manage eligible original or awakened forms. Use `/quests` to track rotating quests, rewards, and your permanent vote quest.",
   },
   {
     title:"Your LOZ Toolkit",
-    body:"Here are a few useful commands to keep close:\n\n• `/daily` — collect your daily roll.\n• `/species-roll` — reroll your species.\n• `/profile` — inspect your player card.\n• `/species` — learn species stats and abilities.\n• `/fight player` and `/fight bot` — battle players or bots.\n• `/awakening` and `/quest view` — track special progression.\n• `/gift` — send rolls to another player within the limits.\n• `/patchnotes` — read the latest changes.\n• `/guide` — revisit this tutorial whenever you need a refresher.\n\nYou don't need to memorize everything now. Try a command, read the result panel, and use `/help` whenever you need a reminder.",
+    body:"Here are a few useful commands to keep close:\n\n• `/daily` — collect your daily roll.\n• `/species-roll` — reroll your species.\n• `/profile` — inspect your player card.\n• `/species` — learn species stats and abilities.\n• `/fight player` and `/fight bot` — battle players or bots.\n• `/awakening` and `/quests` — track awakenings and earn quest rewards.\n• `/gift` — send rolls to another player within the limits.\n• `/patchnotes` — read the latest changes.\n• `/guide` — revisit this tutorial whenever you need a refresher.\n\nYou don't need to memorize everything now. Try a command, read the result panel, and use `/help` whenever you need a reminder.",
   },
   {
     title:"Ready to Enter the Rift?",
@@ -562,7 +563,7 @@ async function handleCommand(interaction) {
       { heading:"Species & Rewards", body:"`/species-roll` — Roll for a species.\n`/species` — Browse species, stats, passives, and ultimates.\n`/daily` — Claim your daily roll.\n`/switch` and `/items use` — Manage species and eligible items." },
       { heading:"Combat", body:"`/fight player user:<player>` — Challenge another player.\n`/fight bot difficulty:<difficulty>` — Battle an LOZ bot.\nA rare Slime Lord boss can appear after a bot victory.\n`/togglerequests` — Control whether you receive player challenges." },
       { heading:"Records & Rankings", body:"`/fightstats`, `/history`, and `/botstats` — Review fight records.\n`/fights` and `/lb` — View leaderboards." },
-      { heading:"Quests & Progression", body:"`/quest view`, `/quest claim`, and `/awakening` — Track quests and awakenings." },
+      { heading:"Quests & Progression", body:"`/quest` — Learn how to open the quest board.\n`/quests` — View rotating quests, track progress, and claim rewards.\n`/awakening` — Track species awakenings." },
       { heading:"Updates & Support", body:"`/patchnotes` — Read recent changes.\n`/updates` — Manage update DMs.\nNeed help or found a problem? Join the [LOZ Support Server](https://discord.gg/TKBYpjqnPC)." },
     ]));
   }
@@ -1152,48 +1153,21 @@ async function handleCommand(interaction) {
     ]));
   }
 
-  // ── QUEST ─────────────────────────────────────────────────────
+  // ── QUEST BOARD ───────────────────────────────────────────────
   if (commandName === "quest") {
-    const sub=options.getSubcommand();
-    if (sub==="view") {
-      const target=options.getUser("user")||user;
-      const qd=_state.questProgress.get(target.id)||{};
-      const r=qd.reaper||{easyBots:0,mediumBots:0,hardBots:0,impossibleBots:0,playerFights:0,completed:false,claimed:false};
-      const bar=(c,m)=>{ const f=Math.round((c/m)*10); return "█".repeat(f)+"░".repeat(10-f)+` ${c}/${m}`; };
-      const now=Date.now();
-      const REAPER_EXPIRY=1774355400000;
-      const expired=now>=REAPER_EXPIRY&&!r.claimed;
-      const embed=new EmbedBuilder().setColor(0x9b59b6).setTitle(`📋 Quests — ${target.displayName}`).setDescription("Complete quests to unlock exclusive species!");
-      let rstatus, rvalue;
-      if (r.claimed || _state.userSpecies.get(target.id)?.questSpecies?.reaper?.unlocked===true) { rstatus="✅ CLAIMED"; rvalue="Reaper unlocked! Use `/switch` to equip."; }
-      else if (expired) { rstatus="⌛ EXPIRED"; rvalue=`The Reaper Quest has ended.\n\n*The Reaper has returned to the shadows.*\n\nDeadline was: **24 March 2026 at 6:00 PM**`; }
-      else if (r.completed) { rstatus="🎁 CLAIM READY"; rvalue="Use `/quest claim quest:reaper` to claim!"; }
-      else {
-        rstatus="🔄 In Progress";
-        rvalue=`⏰ **Quest ends:** <t:${Math.floor(REAPER_EXPIRY/1000)}:R>\n*(Deadline: **24 March 2026 at 6:00 PM**)*\n\n🧸 Easy Bots: ${bar(r.easyBots,35)}\n⚔️ Medium Bots: ${bar(r.mediumBots,25)}\n👹 Hard Bots: ${bar(r.hardBots,15)}\n💀 Impossible: ${bar(r.impossibleBots,5)}\n👤 Player Fights: ${bar(r.playerFights,15)}`;
-      }
-      embed.addFields({name:`🌑 Reaper Quest — ${rstatus}`,value:rvalue,inline:false});
-      return safeReply(interaction,{embeds:[embed]});
-    }
-    if (sub==="claim") {
-      const qn=options.getString("quest");
-      if (qn==="reaper") {
-        const qd=_state.questProgress.get(user.id)||{};
-        const r=qd.reaper||{easyBots:0,mediumBots:0,hardBots:0,impossibleBots:0,playerFights:0,completed:false,claimed:false};
-        if (r.claimed || _state.userSpecies.get(user.id)?.questSpecies?.reaper?.unlocked===true) return safeReply(interaction,{embeds:[createErrorEmbed("Already unlocked! Use `/switch` to equip.")],flags:64});
-        if (Date.now()>=1774355400000&&!r.claimed) return safeReply(interaction,{embeds:[createErrorEmbed("The Reaper Quest has expired. The window to claim has closed.")],flags:64});
-        if (!r.completed) return safeReply(interaction,{embeds:[createErrorEmbed("Quest not complete yet! Check `/quest view`.")],flags:64});
-        r.claimed=true; qd.reaper=r; _state.questProgress.set(user.id,qd); database.saveQuestProgress(user.id,"reaper",r);
-        const ud=_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0};
-        if (!ud.questSpecies) ud.questSpecies={};
-        ud.questSpecies.reaper={unlocked:true,equipped:false};
-        _state.userSpecies.set(user.id,ud); database.saveUserSpecies(user.id,ud);
-        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x2f4f4f).setTitle("🌑 Reaper Unlocked!").setDescription("Use `/switch` to equip Reaper!")]});
-      }
-
+    return safeReply(interaction, buildStyledCardPayload("Quest Board", 0x0891b2, [
+      { body:"Use /quests to open your quest board, track rotating quests, claim rewards, and vote for LOZ to earn Species Rolls. New quests are added every 12 hours; active quests keep their progress." },
+    ], true));
+  }
+  if (commandName === "quests") {
+    try { return safeReply(interaction, await questSystem.openBoard(user.id, interaction)); }
+    catch (error) {
+      console.error("[Quest board] Could not open board:", error && (error.stack || error));
+      return safeReply(interaction, buildStyledCardPayload("Quest Board Unavailable", 0xff0000, [
+        { body:"LOZ could not load your saved quest board from MongoDB. No reward was changed. Please retry in a moment." },
+      ], true));
     }
   }
-
 
   // ── GIFT ──────────────────────────────────────────────────────
   if (commandName === "gift") {
@@ -1861,6 +1835,7 @@ async function handleButton(interaction) {
         const {message:um,requiresChoice,choiceType}=applyUltEffect(playerC,botC);
         fight.playerUltBuff=playerC.ultBuff;
         fight.playerLastUltUsed=playerC.lastUltUsed;
+        await questSystem.trackProgress(user.id,"ults",1);
         if (requiresChoice) {
           fight.playerUltBuff=playerC.ultBuff; fight.playerUltCooldown=playerC.species.ultCooldown;
           fight.botHp=botC.currentHp; fight.playerHp=playerC.currentHp; fight.log=log.slice(-3);
@@ -1876,6 +1851,7 @@ async function handleButton(interaction) {
       }
     } else if (action==="attack") {
       const result=calculateDamage(playerC,botC);
+      if (result.damage > 0) await questSystem.trackProgress(user.id,"damage",result.damage);
       playerC.currentHp=Math.max(0,Math.min(playerC.maxHp,playerC.currentHp+result.attackerMutations.hpDelta));
       if (result.instantKill) {
         botC.currentHp=0;
@@ -1986,6 +1962,7 @@ async function handleButton(interaction) {
       if (player.ultCooldown>0) { log.push(`❌ <@${user.id}>'s ULT on cooldown for ${player.ultCooldown} more rounds!`); fight.currentTurn=opponent.id; fight.round++; }
       else {
         const {message:um,requiresChoice,choiceType}=applyUltEffect(player,opponent);
+        await questSystem.trackProgress(player.id,"ults",1);
         if (requiresChoice) {
           player.ultChoicePending=true;
           const msg=_state.fightMessages.get(fightId);
@@ -2036,6 +2013,7 @@ async function handleButton(interaction) {
         fight.currentTurn=opponent.id; fight.round++;
       } else {
         const result=calculateDamage(player,opponent);
+        if (result.damage > 0) await questSystem.trackProgress(player.id,"damage",result.damage);
         player.currentHp=Math.max(0,Math.min(player.maxHp,player.currentHp+result.attackerMutations.hpDelta));
         if (result.instantKill) {
           opponent.currentHp=0;
@@ -2175,9 +2153,8 @@ const commands = [
     .addUserOption(o=>o.setName("user").setDescription("Player to gift rolls to").setRequired(true))
     .addIntegerOption(o=>o.setName("amount").setDescription("Number of rolls to gift (maximum 5)").setRequired(true).setMinValue(1).setMaxValue(5)),
   new SlashCommandBuilder().setName("togglerequests").setDescription("Toggle receiving challenge requests").addStringOption(o=>o.setName("status").setDescription("Enable or disable").setRequired(true).addChoices({name:"Enable",value:"enable"},{name:"Disable",value:"disable"})),
-  new SlashCommandBuilder().setName("quest").setDescription("Quest system")
-    .addSubcommand(s=>s.setName("view").setDescription("View your quests").addUserOption(o=>o.setName("user").setDescription("User to check")))
-    .addSubcommand(s=>s.setName("claim").setDescription("Claim a quest reward").addStringOption(o=>o.setName("quest").setDescription("Quest to claim").setRequired(true).addChoices({name:"Reaper",value:"reaper"},))),
+  new SlashCommandBuilder().setName("quest").setDescription("Learn how to open the quest board"),
+  new SlashCommandBuilder().setName("quests").setDescription("View quests, track progress, and claim rewards"),
   // default_member_permissions=0 hides these from normal members; handlers still enforce the exact allow-list.
   new SlashCommandBuilder().setName("god").setDescription("God-only commands")
     .addSubcommand(s=>s.setName("menu").setDescription("Show god menu"))

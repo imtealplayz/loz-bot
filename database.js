@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { humanSpecies } = require("./constants.js");
 
 // ==================== CONNECT ====================
 mongoose.set("bufferCommands", false);
@@ -107,6 +108,12 @@ const questSchema = new mongoose.Schema({
 }, { minimize:false });
 questSchema.index({ userId:1, questName:1 }, { unique:true });
 
+// Separate persistent board for rotating quests and verified Top.gg vote state.
+const questBoardSchema = new mongoose.Schema({
+  userId: { type:String, required:true, unique:true },
+  data:   { type:Object, default:{} },
+}, { minimize:false });
+
 const duelChannelSchema = new mongoose.Schema({
   guildId:   { type:String, required:true, unique:true },
   channelId: { type:String, required:true },
@@ -125,6 +132,7 @@ const FightStats       = mongoose.model("FightStats",       fightStatsSchema);
 const BotStats         = mongoose.model("BotStats",         botStatsSchema);
 const Daily            = mongoose.model("Daily",            dailySchema);
 const Quest            = mongoose.model("Quest",            questSchema);
+const QuestBoard       = mongoose.model("QuestBoard",       questBoardSchema);
 const DuelChannel      = mongoose.model("DuelChannel",      duelChannelSchema);
 const FightLeaderboard = mongoose.model("FightLeaderboard", fightLeaderboardSchema);
 
@@ -426,6 +434,164 @@ async function saveQuestProgress(userId, questName, data) {
     return;
   }
   await upsert(Quest, { userId, questName }, { userId, questName, data });
+}
+
+
+async function saveQuestBoard(userId, data) {
+  return await upsert(QuestBoard, { userId }, { userId, data });
+}
+
+async function loadAllQuestBoards(questBoards) {
+  try {
+    if (!await connect()) return false;
+    const boards = await QuestBoard.find({}).lean();
+    for (const board of boards) {
+      if (!board.userId || !board.data || typeof board.data !== "object") continue;
+      questBoards.set(board.userId, board.data);
+    }
+    console.log(`✅ Loaded persistent quest boards for ${questBoards.size} users`);
+    return true;
+  } catch(e) {
+    console.error("❌ Quest board load error:", e.message);
+    return false;
+  }
+}
+
+// A Top.gg vote and its 2-roll reward are applied in one MongoDB transaction.
+// The nextVoteAt filter prevents duplicate webhook retries and concurrent replay.
+async function persistRewardBalance(userId, existingRecords, rolls, speciesTokens, session) {
+  if (existingRecords.length > 0) {
+    await User.updateMany(
+      { userId, archivedForRepair:{ $ne:true } },
+      { $set:{ userId, archivedForRepair:false, rolls, speciesTokens } },
+      { session, upsert:true }
+    );
+    return;
+  }
+
+  // First-time voters get a normal Human profile so their earned rolls still
+  // work after a Railway restart and they can use /species-roll immediately.
+  const defaultProfile = {
+    userId, archivedForRepair:false,
+    species:humanSpecies, originalSpecies:humanSpecies, questSpecies:{},
+    rolls, speciesTokens, guideRewardClaimed:false, requestsEnabled:true, lastSwitch:0,
+    awakening:{}, giftSent:{count:0,resetAt:0}, giftReceived:{count:0,resetAt:0}, badges:[],
+  };
+  await User.create([defaultProfile], { session });
+}
+
+async function awardTopggVote(userId, now, cooldownMs, rollReward = 2) {
+  let session;
+  try {
+    if (userRepairPromise) await userRepairPromise;
+    if (!await connect()) return { ok:false, error:true };
+    session = await mongoose.startSession();
+    let outcome = null;
+    await session.withTransaction(async () => {
+      outcome = null;
+      const board = await QuestBoard.findOneAndUpdate(
+        { userId, "data.vote.nextVoteAt": { $lte:now } },
+        {
+          $set: {
+            "data.vote.lastVoteAt":now,
+            "data.vote.nextVoteAt":now + cooldownMs,
+            "data.vote.lastReminderAt":0,
+          },
+          $inc:{ "data.vote.totalVotes":1 },
+        },
+        { new:true, session }
+      );
+      if (!board) {
+        outcome = { ok:true, accepted:false, reason:"cooldown" };
+        return;
+      }
+
+      const existing = await User.find({ userId, archivedForRepair:{ $ne:true } })
+        .select({ rolls:1, speciesTokens:1 }).session(session).lean();
+      const rolls = Math.max(0, ...existing.map(record => Number(record.rolls)||0)) + rollReward;
+      const speciesTokens = Math.max(0, ...existing.map(record => Number(record.speciesTokens)||0));
+      await persistRewardBalance(userId, existing, rolls, speciesTokens, session);
+
+      outcome = {
+        ok:true, accepted:true, boardData:board.data,
+        rolls, speciesTokens,
+        totalVotes:Number(board.data?.vote?.totalVotes)||0,
+        nextVoteAt:Number(board.data?.vote?.nextVoteAt)||now + cooldownMs,
+      };
+    });
+    return outcome || { ok:false, error:true };
+  } catch(e) {
+    console.error("❌ Top.gg vote reward transaction failed:", e.message);
+    return { ok:false, error:true };
+  } finally {
+    if (session) await session.endSession().catch(()=>{});
+  }
+}
+
+// Claims are also transactional: the quest becomes claimed exactly once, and the
+// matching rolls/tokens are credited in the same commit.
+async function claimQuestReward(userId, questId, now) {
+  let session;
+  try {
+    if (userRepairPromise) await userRepairPromise;
+    if (!await connect()) return { ok:false, error:true };
+    session = await mongoose.startSession();
+    let outcome = null;
+    await session.withTransaction(async () => {
+      outcome = null;
+      const current = await QuestBoard.findOne({ userId }).session(session).lean();
+      if (!current?.data) {
+        outcome = { ok:false, reason:"not_found" };
+        return;
+      }
+      const quest = (current.data.quests || []).find(item => item.id === questId);
+      if (!quest) {
+        outcome = { ok:false, reason:"not_found" };
+        return;
+      }
+      if (quest.status === "claimed") {
+        outcome = { ok:false, reason:"claimed" };
+        return;
+      }
+      const ready = Array.isArray(quest.objectives) && quest.objectives.length > 0
+        && quest.objectives.every(objective => (Number(objective.progress)||0) >= (Number(objective.target)||0));
+      if (!ready) {
+        outcome = { ok:false, reason:"not_ready" };
+        return;
+      }
+
+      const updatedBoard = await QuestBoard.findOneAndUpdate(
+        { userId, data:{ $exists:true }, "data.quests":{ $elemMatch:{ id:questId, status:"active" } } },
+        { $set:{ "data.quests.$.status":"claimed", "data.quests.$.claimedAt":now } },
+        { new:true, session }
+      );
+      if (!updatedBoard) {
+        outcome = { ok:false, reason:"claimed" };
+        return;
+      }
+
+      const rewardRolls = Math.max(0, Number(quest.reward?.rolls)||0);
+      const rewardTokens = Math.max(0, Number(quest.reward?.speciesTokens)||0);
+      const existing = await User.find({ userId, archivedForRepair:{ $ne:true } })
+        .select({ rolls:1, speciesTokens:1 }).session(session).lean();
+      const rolls = Math.max(0, ...existing.map(record => Number(record.rolls)||0)) + rewardRolls;
+      const speciesTokens = Math.max(0, ...existing.map(record => Number(record.speciesTokens)||0)) + rewardTokens;
+      await persistRewardBalance(userId, existing, rolls, speciesTokens, session);
+
+      outcome = {
+        ok:true, claimed:true, boardData:updatedBoard.data,
+        rolls, speciesTokens,
+        reward:{ rolls:rewardRolls, speciesTokens:rewardTokens },
+        questTitle:quest.title,
+      };
+    });
+    return outcome || { ok:false, error:true };
+  } catch(e) {
+    console.error("❌ Quest reward transaction failed:", e.message);
+    return { ok:false, error:true };
+  } finally {
+    if (session) await session.endSession().catch(()=>{});
+  }
 }
 
 async function saveDuelChannel(guildId, channelId) {
@@ -951,7 +1117,7 @@ module.exports = {
   saveUserSpecies, saveUserRolls, saveUserSpeciesFields, addSpeciesTokens, redeemSpeciesToken, awardGuideCompletionRoll, repairUserRecords,
   saveLeaderboard, saveFightLeaderboard,
   saveFightStats, saveBotStats, saveDailyClaim,
-  saveQuestProgress, saveDuelChannel,
+  saveQuestProgress, saveQuestBoard, loadAllQuestBoards, awardTopggVote, claimQuestReward, saveDuelChannel,
   loadAllData, loadAllQuestProgress, loadDuelChannel,
   listAllKeys, deleteUser,
   setBroadcastOptIn, getBroadcastOptIn, getBroadcastSubscribers,
