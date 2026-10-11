@@ -208,7 +208,7 @@ function buildBoardPayload(userId, board, notice="", ephemeral=true) {
   }
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
   const nextQuestAt=Number(board.nextQuestAt)||now;
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("### Quest Rotation\nNew quests are added every 12 hours when a slot is available. Claimed quests stay visible for 5 minutes, then disappear.\n**Next scheduled addition:** <t:"+Math.floor(nextQuestAt/1000)+":R>\n**Appearance chances:** Common 45% · Uncommon 27% · Rare 15% · Epic 8% · Legendary 4% · Mythic 1%\n**Vote reminders:** "+(vote.remindersEnabled===false?"Off":"On")));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("### Quest Rotation\nNew quests are added every 12 hours when a slot is available. Claimed quests stay visible for 5 minutes, then disappear.\n**Next scheduled addition:** <t:"+Math.floor(nextQuestAt/1000)+":R>\n**Vote reminders:** "+(vote.remindersEnabled===false?"Off":"On")));
   container.addActionRowComponents(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("quest_reminders:"+userId).setLabel(vote.remindersEnabled===false?"Enable Vote Reminders":"Disable Vote Reminders").setStyle(vote.remindersEnabled===false?ButtonStyle.Success:ButtonStyle.Secondary)));
   return {components:[container],flags:MessageFlags.IsComponentsV2|(ephemeral?MessageFlags.Ephemeral:0),allowedMentions:{parse:[]}};
 }
