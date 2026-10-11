@@ -12,6 +12,7 @@ let _state = null;
 let _client = null;
 let _scheduler = null;
 const userLocks = new Map();
+const activeBoardViews = new Map();
 
 const QUEST_TEMPLATES = [
   { rarity:"Common", weight:45, emoji:"⚪", title:"Rift Patrol", description:"Complete 3 battles. Wins and losses count.", objectives:[{type:"battles",target:3,label:"Complete battles"}], reward:{rolls:1,speciesTokens:0} },
@@ -114,9 +115,41 @@ async function ensureBoardLocked(userId) {
   return board;
 }
 
-async function openBoard(userId) {
+async function openBoard(userId, interaction=null) {
   if (!_state || !_state.questBoards) throw new Error("Quest board state is not ready.");
+  if (interaction && interaction.webhook) rememberBoardView(userId, interaction.webhook);
   return withUserLock(userId, async () => buildBoardPayload(userId, await ensureBoardLocked(userId)));
+}
+
+
+function rememberBoardView(userId, webhook) {
+  if (!webhook || typeof webhook.editMessage !== "function") return;
+  const id=String(userId);
+  const now=Date.now();
+  const existing=(activeBoardViews.get(id)||[]).filter(view=>view.expiresAt>now);
+  // A new component interaction supplies a fresh token for the same board message.
+  existing.push({ webhook, expiresAt:now+14*60*1000 });
+  activeBoardViews.set(id,existing.slice(-5));
+}
+
+async function refreshBoardViews(userId, board) {
+  const id=String(userId);
+  const now=Date.now();
+  const views=(activeBoardViews.get(id)||[]).filter(view=>view.expiresAt>now);
+  const remaining=[];
+  for (const view of views) {
+    try {
+      await view.webhook.editMessage("@original",buildBoardPayload(id,board,"",false));
+      remaining.push(view);
+    } catch(error) {
+      // Expired interaction tokens/messages are expected; discard the stale editor.
+      if (error?.code!==10015 && error?.code!==10062 && error?.status!==404) {
+        console.warn("[Quests] Could not refresh active quest board for "+id+":",error.message);
+      }
+    }
+  }
+  if (remaining.length) activeBoardViews.set(id,remaining);
+  else activeBoardViews.delete(id);
 }
 
 function progressBar(progress, target, width=8) {
@@ -290,6 +323,7 @@ async function setReminders(userId,enabled) {
 
 async function handleButton(interaction) {
   const customId=interaction.customId,user=interaction.user;
+  if (customId.startsWith("quest_") && interaction.webhook) rememberBoardView(user.id,interaction.webhook);
   if (customId.startsWith("quest_claim:")) {
     const parts=customId.split(":");
     const ownerId=parts[1],questId=parts.slice(2).join(":");
@@ -347,7 +381,10 @@ async function tickUser(userId) {
       board.nextQuestAt=now+QUEST_INTERVAL_MS;
       changed=true;
     }
-    if (changed) await saveBoard(userId,board);
+    if (changed) {
+      await saveBoard(userId,board);
+      await refreshBoardViews(userId,board);
+    }
     const vote=board.vote||{},lastVoteAt=Number(vote.lastVoteAt)||0;
     if (lastVoteAt>0&&vote.remindersEnabled!==false) {
       const nextVoteAt=Number(vote.nextVoteAt)||lastVoteAt+VOTE_INTERVAL_MS;
