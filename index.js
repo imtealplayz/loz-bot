@@ -3,7 +3,6 @@ const {
   ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags,
 } = require("discord.js");
 const express = require("express");
-const { Webhook } = require("@top-gg/sdk");
 
 const database = require("./database.js"); // MongoDB
 const state    = require("./state.js");
@@ -28,22 +27,45 @@ let databaseReady = false;
 // ==================== HEALTH + TOP.GG WEBHOOK ====================
 const webhookApp = express();
 const topggSecret = (process.env.TOPGG_WEBHOOK_SECRET || "").trim();
-questSystem.setVoteWebhookEnabled(Boolean(topggSecret));
-webhookApp.get("/health", (_req, res) => res.status(databaseReady ? 200 : 503).json({ status:databaseReady ? "ok" : "starting", service:"loz-bot", voteWebhookEnabled:Boolean(topggSecret) }));
-if (topggSecret) {
-  const topggWebhook = new Webhook(topggSecret);
-  webhookApp.post("/topgg/webhook", topggWebhook.listener(async vote => {
-    if (!databaseReady) throw new Error("LOZ is still starting up; retry this vote webhook.");
-    await questSystem.handleTopggVote(vote);
-  }));
-} else {
-  webhookApp.post("/topgg/webhook", (_req, res) => res.status(503).json({ error:"TOPGG_WEBHOOK_SECRET is not configured" }));
-  console.warn("[Top.gg] Vote rewards are disabled until TOPGG_WEBHOOK_SECRET is configured in Railway and on Top.gg.");
+let topggWebhookEnabled = false;
+
+webhookApp.get("/health", (_req, res) => res.status(databaseReady ? 200 : 503).json({
+  status: databaseReady ? "ok" : "starting",
+  service: "loz-bot",
+  voteWebhookEnabled: topggWebhookEnabled,
+}));
+
+async function startHttpServer() {
+  if (topggSecret) {
+    try {
+      // @top-gg/sdk is ESM-only, so load it with dynamic import from this CommonJS file.
+      const { Webhook } = await import("@top-gg/sdk");
+      const topggWebhook = new Webhook(topggSecret);
+      webhookApp.post("/topgg/webhook", topggWebhook.listener(async vote => {
+        if (!databaseReady) throw new Error("LOZ is still starting up; retry this vote webhook.");
+        await questSystem.handleTopggVote(vote);
+      }));
+      topggWebhookEnabled = true;
+      questSystem.setVoteWebhookEnabled(true);
+      console.log("[Top.gg] Vote webhook initialized.");
+    } catch (error) {
+      questSystem.setVoteWebhookEnabled(false);
+      console.error("[Top.gg] Failed to initialize vote webhook:", error);
+      webhookApp.post("/topgg/webhook", (_req, res) => res.status(503).json({ error:"Top.gg webhook failed to initialize" }));
+    }
+  } else {
+    questSystem.setVoteWebhookEnabled(false);
+    webhookApp.post("/topgg/webhook", (_req, res) => res.status(503).json({ error:"TOPGG_WEBHOOK_SECRET is not configured" }));
+    console.warn("[Top.gg] Vote rewards are disabled until TOPGG_WEBHOOK_SECRET is configured in Railway and on Top.gg.");
+  }
+
+  const httpServer = webhookApp.listen(Number(process.env.PORT) || 3000, "0.0.0.0", () => {
+    console.log("[HTTP] LOZ health and Top.gg webhook service is listening.");
+  });
+  httpServer.on("error", error => console.error("[HTTP] Health/webhook server error:", error));
 }
-const httpServer = webhookApp.listen(Number(process.env.PORT) || 3000, "0.0.0.0", () => {
-  console.log("[HTTP] LOZ health and Top.gg webhook service is listening.");
-});
-httpServer.on("error", error => console.error("[HTTP] Health/webhook server error:", error));
+
+startHttpServer();
 
 // ==================== CLIENT ====================
 const client = new Client({
