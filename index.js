@@ -2,6 +2,8 @@ const {
   Client, GatewayIntentBits, PermissionsBitField, REST, Routes,
   ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags,
 } = require("discord.js");
+const express = require("express");
+const { Webhook } = require("@top-gg/sdk");
 
 const database = require("./database.js"); // MongoDB
 const state    = require("./state.js");
@@ -9,6 +11,7 @@ const { setState: setHelperState } = require("./helpers.js");
 const { setState: setFightState }   = require("./fights.js");
 const { setState: setCommandState, setClient, handleCommand, handleButton, handleSelectMenu, maybePromptForUpdates, commands } = require("./commands.js");
 const { disintegrationMessages } = require("./constants.js");
+const questSystem = require("./quest-system.js");
 
 // ==================== CONSTANTS ====================
 const ownerId     = "926063716057894953";
@@ -21,6 +24,25 @@ state.ownerId     = ownerId;
 state.secondGodId = secondGodId;
 
 let databaseReady = false;
+
+// ==================== HEALTH + TOP.GG WEBHOOK ====================
+const webhookApp = express();
+const topggSecret = (process.env.TOPGG_WEBHOOK_SECRET || "").trim();
+webhookApp.get("/health", (_req, res) => res.status(200).json({ status:"ok", service:"loz-bot" }));
+if (topggSecret) {
+  const topggWebhook = new Webhook(topggSecret);
+  webhookApp.post("/topgg/webhook", topggWebhook.listener(async vote => {
+    if (!databaseReady) throw new Error("LOZ is still starting up; retry this vote webhook.");
+    await questSystem.handleTopggVote(vote);
+  }));
+} else {
+  webhookApp.post("/topgg/webhook", (_req, res) => res.status(503).json({ error:"TOPGG_WEBHOOK_SECRET is not configured" }));
+  console.warn("[Top.gg] Vote rewards are disabled until TOPGG_WEBHOOK_SECRET is configured in Railway and on Top.gg.");
+}
+const httpServer = webhookApp.listen(Number(process.env.PORT) || 3000, "0.0.0.0", () => {
+  console.log("[HTTP] LOZ health and Top.gg webhook service is listening.");
+});
+httpServer.on("error", error => console.error("[HTTP] Health/webhook server error:", error));
 
 // ==================== CLIENT ====================
 const client = new Client({
@@ -36,6 +58,8 @@ setHelperState(state);
 setFightState(state);
 setCommandState(state);
 setClient(client);
+questSystem.setState(state);
+questSystem.setClient(client);
 
 // ==================== PROCESS HANDLERS ====================
 process.on("unhandledRejection", e => console.error("Unhandled rejection:", e));
@@ -106,6 +130,13 @@ client.once("clientReady", async () => {
   }
 
   await database.loadAllQuestProgress(state.questProgress, state.userSpecies);
+  const questBoardsLoaded = await database.loadAllQuestBoards(state.questBoards);
+  if (!questBoardsLoaded) {
+    console.error("❌ LOZ cannot start without loading persistent quest-board data. Refusing to serve state-changing interactions.");
+    process.exit(1);
+    return;
+  }
+  questSystem.startScheduler();
 
   // Only allow state-changing interactions after persistent data is fully loaded.
   databaseReady = true;
@@ -229,8 +260,10 @@ client.on("interactionCreate", async (interaction) => {
       await handleCommand(interaction);
       // The command's main response is sent first; subscription prompt is a separate ephemeral follow-up.
       await maybePromptForUpdates(interaction);
-    } else if (interaction.isButton()) await handleButton(interaction);
-    else if (interaction.isStringSelectMenu()) await handleSelectMenu(interaction);
+    } else if (interaction.isButton()) {
+      const questHandled = await questSystem.handleButton(interaction);
+      if (!questHandled) await handleButton(interaction);
+    } else if (interaction.isStringSelectMenu()) await handleSelectMenu(interaction);
   } catch (e) {
     if (e.code === 10062 || e.message?.includes("Unknown interaction")) return;
     console.error("Interaction error:", e);
