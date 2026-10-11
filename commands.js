@@ -194,31 +194,31 @@ function buildSpeciesRollAnnouncement(userId, userName, species, rollsRemaining,
 const GUIDE_PAGES = [
   {
     title:"Step 1: Get Your First Roll",
-    body:"First, run \x60/daily\x60. You receive **+1 Species Roll** every 24 hours, with an extra roll on a 7-day streak.\\n\\nAlready claimed today? No problem. Continue with any rolls you already have.",
+    body:"First, run \x60/daily\x60. You receive **+1 Species Roll** every 24 hours, with an extra roll on a 7-day streak.\n\nAlready claimed today? No problem. Continue with any rolls you already have. Then click **Next Page**.",
   },
   {
     title:"Step 2: Roll Your Species",
-    body:"Run \x60/species-roll\x60. Your Species Roll message appears in the channel.\\n\\n- **Reroll** spends 1 roll and gives you a new species.\\n- **Cancel** keeps your current species and spends nothing.\\n\\nIf you're out of rolls, return after your next daily reward.",
+    body:"Run \x60/species-roll\x60. Your Species Roll message appears in the channel.\n\n- **Reroll** spends 1 roll and gives you a new species.\n- **Cancel** keeps your current species and spends nothing.\n\nIf you're out of rolls, return after your next daily reward. Then click **Next Page**.",
   },
   {
     title:"Step 3: Learn Your Species",
-    body:"Run \x60/species\x60 to browse the species list, or select your species with \x60/species species:<name>\x60 to see its stats and abilities.\\n\\nCheck **HP**, **ATK**, **HEAL**, passive, and ultimate. Run \x60/profile\x60 to see your current species, rolls, and progress.",
+    body:"Run \x60/species\x60 to browse the species list, or select your species with \x60/species species:<name>\x60 to see its stats and abilities.\n\nCheck **HP**, **ATK**, **HEAL**, passive, and ultimate. Run \x60/profile\x60 to see your current species, rolls, and progress. Try it now, then click **Next Page**.",
   },
   {
     title:"Step 4: Fight Players or Bots",
-    body:"Challenge a player with \x60/fight player user:@player\x60, or train with \x60/fight bot difficulty:Easy\x60. Choose a bot difficulty from the command options.\\n\\nUse **Attack**, **Heal**, and **ULT** when available. **Forfeit** ends the battle.\\n\\n**Rare boss:** a genuine bot victory has a **7.5% chance** to spawn the Slime Lord boss. Defeating that boss gives a separate **9.2% chance** to permanently unlock Slime Lord.",
+    body:"Challenge a player with \x60/fight player user:@player\x60, or train with \x60/fight bot difficulty:Easy\x60. Choose a bot difficulty from the command options.\n\nUse **Attack**, **Heal**, and **ULT** when available. **Forfeit** ends the battle.\n\n**Rare boss:** a genuine bot victory has a **7.5% chance** to spawn the Slime Lord boss. Defeating that boss gives a separate **9.2% chance** to permanently unlock Slime Lord. Try a bot fight when you're ready, then click **Next Page**.",
   },
   {
     title:"Step 5: Quests & Awakenings",
-    body:"Run \x60/quests\x60 to track objectives and claim completed quest rewards. Vote for LOZ on Top.gg through the quest board to earn **+2 Species Rolls** once every 12 hours after your vote is verified.\\n\\nCyborg, Demon, and Half-Blood have awakening paths. Run \x60/awakening\x60 to check requirements and \x60/switch\x60 to equip forms you've unlocked. A Species Token can be used with \x60/items use item:Species Token\x60.",
+    body:"Run \x60/quests\x60 to track objectives and claim completed quest rewards. Vote for LOZ on Top.gg through the quest board to earn **+2 Species Rolls** once every 12 hours after your vote is verified.\n\nCyborg, Demon, and Half-Blood have awakening paths. Run \x60/awakening\x60 to check requirements and \x60/switch\x60 to equip forms you've unlocked. A Species Token can be used with \x60/items use item:Species Token\x60. Explore these commands when you're ready, then click **Next Page**.",
   },
   {
     title:"Step 6: Command Cheat Sheet",
-    body:"**Species & Profile**\\n\x60/daily\x60 · daily roll | \x60/species-roll\x60 · reroll species | \x60/species\x60 · species list/details | \x60/profile\x60 · player info\\n\\n**Battles & Records**\\n\x60/fight player user:@player\x60 · challenge | \x60/fight bot difficulty:Easy\x60 · practice | \x60/fightstats\x60 · record | \x60/history\x60 · recent fights | \x60/botstats\x60 · bot results | \x60/fights\x60 · leaderboard\\n\\n**Progress & Settings**\\n\x60/quests\x60 · quests/votes | \x60/awakening\x60 · awakening progress | \x60/switch\x60 · unlocked forms | \x60/gift user:@player amount:1\x60 · gift rolls | \x60/togglerequests status:Enable\x60 · challenge requests | \x60/updates subscribe\x60 or \x60/updates unsubscribe\x60 · update DMs | \x60/patchnotes\x60 · latest changes | \x60/help\x60 · command guide.",
+    body:"**Species & Profile**\n\x60/daily\x60 · daily roll | \x60/species-roll\x60 · reroll species | \x60/species\x60 · species list/details | \x60/profile\x60 · player info\n\n**Battles & Records**\n\x60/fight player user:@player\x60 · challenge | \x60/fight bot difficulty:Easy\x60 · practice | \x60/fightstats\x60 · record | \x60/history\x60 · recent fights | \x60/botstats\x60 · bot results | \x60/fights\x60 · leaderboard\n\n**Progress & Settings**\n\x60/quests\x60 · quests/votes | \x60/awakening\x60 · awakening progress | \x60/switch\x60 · unlocked forms | \x60/gift user:@player amount:1\x60 · gift rolls | \x60/togglerequests status:Enable\x60 · challenge requests | \x60/updates subscribe\x60 or \x60/updates unsubscribe\x60 · update DMs | \x60/patchnotes\x60 · latest changes | \x60/help\x60 · command guide. Click **Next Page** when you're ready to finish.",
   },
   {
     title:"Ready to Enter the Rift?",
-    body:"You're ready! Start with a daily roll, learn your species, and jump into a battle. You can run \x60/guide\x60 again any time.\\n\\nPress **Complete Tutorial** below to claim your **one-time +1 Species Roll**. This reward can only be claimed once.",
+    body:"You're ready! Start with a daily roll, learn your species, and jump into a battle. You can run \x60/guide\x60 again any time.\n\nPress **Complete Tutorial** below to claim your **one-time +1 Species Roll**. This reward can only be claimed once.",
   },
 ];
 
@@ -557,12 +557,12 @@ async function handleCommand(interaction) {
   // ── HELP ──────────────────────────────────────────────────────
   if (commandName === "help") {
     return safeReply(interaction, buildStyledCardPayload("LOZ Command Guide", 0x0891b2, [
-      { heading:"Getting Started", body:"\x60/guide\x60 — Step-by-step tutorial and one-time reward.\\n\x60/daily\x60 — Claim +1 Species Roll every 24 hours.\\n\x60/species-roll\x60 — Open your species roll with Reroll and Cancel buttons.\\n\x60/profile [user]\x60 — View your species, rolls, and progress." },
-      { heading:"Species & Awakening", body:"\x60/species\x60 — Browse species; choose \x60species:<name>\x60 for stats and abilities.\\n\x60/awakening\x60 — Check Cyborg, Demon, or Half-Blood awakening progress.\\n\x60/switch\x60 — Equip an unlocked form (3-hour cooldown).\\n\x60/items use item:Species Token\x60 — Use a Species Token to choose an eligible species." },
-      { heading:"Battles", body:"\x60/fight player user:@player\x60 — Challenge a player.\\n\x60/fight bot difficulty:<difficulty>\x60 — Fight a bot; choose difficulty from the options.\\n\x60/togglerequests status:Enable|Disable\x60 — Control incoming challenges.\\nA bot win has a 7.5% chance to spawn the Slime Lord boss; defeating it gives a separate 9.2% chance to unlock Slime Lord." },
-      { heading:"Quests & Rewards", body:"\x60/quest\x60 — Open a quick explanation of quests.\\n\x60/quests\x60 — Track and claim quests; vote for LOZ for +2 Species Rolls every 12 hours after the vote is verified.\\n\x60/gift user:@player amount:1\x60 — Gift 1–5 rolls to a player." },
-      { heading:"Stats & Rankings", body:"\x60/fightstats [user]\x60 — View a fight record.\\n\x60/history [user]\x60 — View recent fights.\\n\x60/botstats [user]\x60 — View bot battle stats.\\n\x60/fights\x60 — View the fight leaderboard." },
-      { heading:"Updates & Support", body:"\x60/updates subscribe\x60 — Receive major update DMs. \x60/updates unsubscribe\x60 — Stop them. \x60/updates status\x60 — Check your preference.\\n\x60/patchnotes\x60 — Read recent changes.\\nNeed more help? Join the [LOZ Support Server](https://discord.gg/TKBYpjqnPC)." },
+      { heading:"Getting Started", body:"\x60/guide\x60 — Step-by-step tutorial and one-time reward.\n\x60/daily\x60 — Claim +1 Species Roll every 24 hours.\n\x60/species-roll\x60 — Open your species roll with Reroll and Cancel buttons.\n\x60/profile [user]\x60 — View your species, rolls, and progress." },
+      { heading:"Species & Awakening", body:"\x60/species\x60 — Browse species; choose \x60species:<name>\x60 for stats and abilities.\n\x60/awakening\x60 — Check Cyborg, Demon, or Half-Blood awakening progress.\n\x60/switch\x60 — Equip an unlocked form (3-hour cooldown).\n\x60/items use item:Species Token\x60 — Use a Species Token to choose an eligible species." },
+      { heading:"Battles", body:"\x60/fight player user:@player\x60 — Challenge a player.\n\x60/fight bot difficulty:<difficulty>\x60 — Fight a bot; choose difficulty from the options.\n\x60/togglerequests status:Enable|Disable\x60 — Control incoming challenges.\nA bot win has a 7.5% chance to spawn the Slime Lord boss; defeating it gives a separate 9.2% chance to unlock Slime Lord." },
+      { heading:"Quests & Rewards", body:"\x60/quest\x60 — Open a quick explanation of quests.\n\x60/quests\x60 — Track and claim quests; vote for LOZ for +2 Species Rolls every 12 hours after the vote is verified.\n\x60/gift user:@player amount:1\x60 — Gift 1–5 rolls to a player." },
+      { heading:"Stats & Rankings", body:"\x60/fightstats [user]\x60 — View a fight record.\n\x60/history [user]\x60 — View recent fights.\n\x60/botstats [user]\x60 — View bot battle stats.\n\x60/fights\x60 — View the fight leaderboard." },
+      { heading:"Updates & Support", body:"\x60/updates subscribe\x60 — Receive major update DMs. \x60/updates unsubscribe\x60 — Stop them. \x60/updates status\x60 — Check your preference.\n\x60/patchnotes\x60 — Read recent changes.\nNeed more help? Join the [LOZ Support Server](https://discord.gg/TKBYpjqnPC)." },
     ]));
   }
 
