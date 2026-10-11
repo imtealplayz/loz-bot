@@ -846,7 +846,7 @@ async function handleCommand(interaction) {
 
 
     // ── Demon → Archdemon ─────────────────────────────────────────
-    if (sp==="Demon" || sp==="Archdemon" || userData.awakening.demon) {
+    if (sp==="Demon" || sp==="Archdemon" || userData.awakening.demon?.awakened===true) {
       const prog=userData.awakening.demon || {playerWins:0,demonBotWins:0,awakened:false};
       userData.awakening.demon=prog;
       const req=awakeningRequirements.demon;
