@@ -1,5 +1,6 @@
 const { botPersonalities, humanSpecies, slimeLordSpecies } = require("./constants.js");
 const database = require("./database.js");
+const questSystem = require("./quest-system.js");
 const {
   updateFightStats, updateBotStats,
   updateReaperQuest, updateCyborgProgress, updateDemonAwakeningProgress, updateHalfBloodProgress,
@@ -146,6 +147,13 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
   if (fight.timeout) clearTimeout(fight.timeout);
   const winner=fight.player1Id===winnerId?fight.player1:fight.player2;
   const loser =fight.player1Id===loserId ?fight.player1:fight.player2;
+  // Rotating quest progress is independent from existing leaderboard/awakening progress.
+  await Promise.all([
+    questSystem.trackProgress(fight.player1Id,"battles",1),
+    questSystem.trackProgress(fight.player2Id,"battles",1),
+  ]);
+  if (reason!=="timeout" && reason!=="disintegration" && reason!=="judge")
+    await questSystem.trackProgress(winnerId,"playerWins",1);
   if (winner.species.name==="Cyborg") await updateCyborgProgress(winnerId,"win");
   // The new Half-Blood quest counts completed fights regardless of who won.
   if (fight.player1.species.name==="Half-Blood")
@@ -454,6 +462,12 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
   // Count every completed Half-Blood bot fight, including losses and Slime Lord boss attempts.
   if (fight.playerSpecies?.name==="Half-Blood")
     await updateHalfBloodProgress(fight.playerId,"fight",1,fight.playerSpecies.name);
+  // Count completed battles before the Slime Lord boss early-return as well.
+  await questSystem.trackProgress(fight.playerId,"battles",1);
+  if (winner==="player" && reason!=="timeout") {
+    await questSystem.trackProgress(fight.playerId,"botWins",1);
+    if (difficulty==="brutal") await questSystem.trackProgress(fight.playerId,"brutalWins",1);
+  }
   if (fight.isSlimeBoss) {
     await finishSlimeLordBoss(channel,fight,winner,reason);
     return;
