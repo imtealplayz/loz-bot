@@ -67,6 +67,7 @@ function getSpeciesByName(name) {
 }
 
 function getRandomSpecies() {
+  if (Math.random() < 0.002) return godSpecies;
   if (Math.random() * 100 < 2) return { isDragon: true };
   const rollable = speciesList.filter(s => s.rarity && s.rarity > 0);
   const total = rollable.reduce((s, x) => s + x.rarity, 0);
