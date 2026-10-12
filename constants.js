@@ -1,5 +1,13 @@
 const patchNotes = [
   {
+    version: "5.5", date: "2026-10-13",
+    changes: [
+      "Added Chaos Creator, a primary-owner-exclusive species with 50% incoming damage reduction, attacks that cannot miss, counter-countering, and Disintegrate (2-round cooldown).",
+      "Chaos Creator can publicly nullify enemy ultimates, undo enemy healing, or reverse incoming attack damage after a primary-owner confirmation. Prompts expire after 15 seconds and resolved messages are cleaned up.",
+      "Fixed the owner-only 'disintegrate command so the existing battle message updates to the final result and the normal victory rewards and statistics are recorded."
+    ],
+  },
+  {
     version: "5.4", date: "2026-10-12",
     changes: [
       "Made God obtainable through normal Species Rolls with a 0.2% chance per roll. God is now listed in the species compendium as a Divine-tier roll.",
@@ -184,6 +192,7 @@ const reaperSpecies    = { number:18, name:"Reaper",   emoji:"🌑",   roleName:
 const archdemonSpecies = { number:19, name:"Archdemon",emoji:"👿",   roleName:"Archdemon",color:0x4a0404, hp:150, atkMin:28, atkMax:40, healMin:15, healMax:25, ultCooldown:10 };
 const slimeLordSpecies = { number:20, name:"Slime Lord",emoji:"🫧",roleName:"Slime-Lord",color:0x2dd4bf,hp:130,atkMin:18,atkMax:27,healMin:15,healMax:25,ultCooldown:9,chance:"Special boss unlock" };
 const eclipsedSovereignSpecies = { number:21, name:"Eclipsed Sovereign", emoji:"🌘", roleName:"Eclipsed-Sovereign", color:0x6f2da8, hp:115, atkMin:15, atkMax:22, healMin:14, healMax:22, ultCooldown:7, chance:"Special awakening" };
+const chaosCreatorSpecies = { number:22, name:"Chaos Creator", emoji:"🌀", roleName:null, color:0x18181b, hp:150, atkMin:20, atkMax:28, healMin:18, healMax:30, ultCooldown:2, chance:"Primary owner only" };
 
 // ==================== BOT DIFFICULTY ====================
 const botSpeciesByDifficulty = {
@@ -340,6 +349,7 @@ function getPassiveDescription(name) {
     Mechangel:"**Quantum Processing** — every 2 attacks = 1.4×",
     Archdemon:"**Lord of Darkness** — +15% dmg and +5 flat all attacks",
     "Slime Lord":"**Adaptive Momentum** — each miss or counter builds a next-attack multiplier: ×1.2, ×1.4, ×1.6, ×1.8, up to ×2.0; a successful hit consumes the bonus.",
+    "Chaos Creator":"**Absolute Authority** — receives 50% less damage, cannot miss normal attacks, and counter attempts against its attacks are counter-countered.",
   };
   return passives[name] || "Unknown passive";
 }
@@ -372,13 +382,14 @@ function getActiveDescription(name) {
     Mechangel:"**System Restoration** — heal 40% + 20% reduction 2 turns (CD: 6)",
     Archdemon:"**Abyssal Gate** — 2× + 10 curse 3 turns (CD: 10)",
     "Slime Lord":"**Predatory Assimilation** — converts the next incoming damage hit into HP; any amount beyond max HP is reflected to the attacker (CD: 9).",
+    "Chaos Creator":"**Disintegrate** — after primary-owner confirmation, instantly eliminates the current opponent. Victory rewards and stats are credited normally (CD: 2).",
   };
   return actives[name] || "Unknown active";
 }
 
 module.exports = {
   patchNotes, speciesList, dragonSpecies, botSpecies,
-  godSpecies, humanSpecies, reaperSpecies, archdemonSpecies, slimeLordSpecies, eclipsedSovereignSpecies,
+  godSpecies, humanSpecies, reaperSpecies, archdemonSpecies, slimeLordSpecies, eclipsedSovereignSpecies, chaosCreatorSpecies,
   botSpeciesByDifficulty, botPersonalities,
   typeAdvantages, critRates, failChances, awakeningRequirements,
   disintegrationMessages, getPassiveDescription, getActiveDescription,
