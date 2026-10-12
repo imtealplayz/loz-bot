@@ -1,6 +1,7 @@
 const { botPersonalities, humanSpecies, slimeLordSpecies } = require("./constants.js");
 const database = require("./database.js");
 const questSystem = require("./quest-system.js");
+const chaosSystem = require("./chaos.js");
 const {
   updateFightStats, updateBotStats,
   updateReaperQuest, updateCyborgProgress, updateDemonAwakeningProgress, updateHalfBloodProgress,
@@ -145,6 +146,7 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
   const fight = _state.activeFights.get(fightId);
   if (!fight) return;
   if (fight.timeout) clearTimeout(fight.timeout);
+  chaosSystem.cancelChaosReaction(fight);
   const winner=fight.player1Id===winnerId?fight.player1:fight.player2;
   const loser =fight.player1Id===loserId ?fight.player1:fight.player2;
   // Rotating quest progress is independent from existing leaderboard/awakening progress.
@@ -166,7 +168,7 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
     if (Math.random()<0.3)  { rollEarned=true; const ud=_state.userSpecies.get(winnerId); if(ud){ ud.rolls=(ud.rolls||0)+1; _state.userSpecies.set(winnerId,ud); database.saveUserSpecies(winnerId,ud); } }
   }
   // FIX: only update fightLeaderboard via updateFightStats, not bomb tag leaderboard
-  updateFightStats(winnerId,true,loserId,{opponentName:loser.species.name,opponentSpecies:loser.species,hpLeft:winner.currentHp,special:reason==="forfeit"?"😵 forfeit":reason==="counter"?"💥 counter":"",doubleWin,rollEarned,leaderboardPoints:winPoints});
+  updateFightStats(winnerId,true,loserId,{opponentName:loser.species.name,opponentSpecies:loser.species,hpLeft:winner.currentHp,special:reason==="forfeit"?"😵 forfeit":reason==="counter"?"💥 counter":reason==="chaos-disintegrate"?"🌀 Disintegrate":reason==="divine-intervention"?"💀 Divine intervention":"",doubleWin,rollEarned,leaderboardPoints:winPoints});
   updateFightStats(loserId,false,winnerId,{opponentName:winner.species.name,opponentSpecies:winner.species,hpLeft:loser.currentHp,special:reason==="forfeit"?"😵 forfeited":"",doubleWin:false,rollEarned:false});
   updateReaperQuest(winnerId,"player");
   if (reason!=="disintegration" && reason!=="judge" && winner.species.name==="Demon")
@@ -178,6 +180,8 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
   if (reason === "timeout") desc += "Opponent timed out.\n";
   if (reason === "forfeit") desc += "Opponent forfeited.\n";
   if (reason === "counter") desc += "Opponent was defeated by a counter-strike.\n";
+  if (reason === "chaos-disintegrate") desc += "Disintegrated by Chaos Creator.\n";
+  if (reason === "divine-intervention") desc += "Disintegrated by divine intervention.\n";
   desc += "⚔️ Leaderboard: +" + winPoints + "\n";
   if (rollEarned) desc += "<:reroll_dice:1558042108965822515> Species Rolls: +1\n";
   const resultPayload = buildFightResultPayload("<@" + winnerId + "> wins the fight", desc, 0x2ecc71, []);
@@ -253,14 +257,44 @@ async function runBotTurn(channel, fightId, turnToken) {
           else { rawH=Math.floor(rawH*1.3); log.push("✨ Bot's miracle heal +30%!"); }
         }
         // FIX: update botC.currentHp then sync to fight.botHp
+        const botHpBeforeHeal=botC.currentHp;
         botC.currentHp=Math.min(botC.maxHp,botC.currentHp+rawH);
         fight.botHp=botC.currentHp; fight.botHealCooldown=3;
         log.push(`💚 Bot heals for ${rawH} HP! (${fight.botHp}/${fight.botMaxHp})`);
+        if (botC.currentHp>botHpBeforeHeal && chaosSystem.isChaosCreatorOwner(playerC)) {
+          const decision=await chaosSystem.askChaosReaction({
+            fight,channel,
+            question:"This individual named "+botC.species.name+" has healed. Do you want to undo the heal?",
+            confirmedText:"Healing reversal confirmed.",
+            declinedText:"Healing reversal declined.",
+          });
+          if (!isCurrentBotTurn(fightId,fight,turnToken)) return;
+          if (decision.confirmed) {
+            botC.currentHp=botHpBeforeHeal;
+            fight.botHp=botC.currentHp;
+            log.push("🌀 **Recovery Reversal!** The healing was undone.");
+          }
+        }
       }
     }
     if (botAction==="ult") {
-      // Chimera bot copies player's species ULT directly
-      if (botC.species.name==="Chimera") {
+      let chaosUltNullified=false;
+      if (chaosSystem.isChaosCreatorOwner(playerC)) {
+        const decision=await chaosSystem.askChaosReaction({
+          fight,channel,
+          question:"This individual named "+botC.species.name+" has activated their ULT. Do you wish to nullify it?",
+          confirmedText:"Ultimate nullification confirmed.",
+          declinedText:"Ultimate nullification declined.",
+        });
+        if (!isCurrentBotTurn(fightId,fight,turnToken)) return;
+        chaosUltNullified=decision.confirmed;
+      }
+      if (chaosUltNullified) {
+        fight.botUltCooldown=botC.species.ultCooldown;
+        botC.ultCooldown=fight.botUltCooldown;
+        fight.botUltBuff=botC.ultBuff;
+        log.push("🌀 **ABSOLUTE NULLIFICATION!** "+botC.species.name+"'s ultimate was nullified.");
+      } else if (botC.species.name==="Chimera") {
         const savedSpecies=botC.species;
         botC.species=playerC.species;
         const copied=applyUltEffect(botC,playerC);
@@ -289,6 +323,7 @@ async function runBotTurn(channel, fightId, turnToken) {
       }
     }
     if (botAction==="attack") {
+      const playerHpBeforeBotAttack=playerC.currentHp;
       const result=calculateDamage(botC,playerC);
       // Apply counter-strike damage to bot (attackerMutations.hpDelta is negative on counter)
       botC.currentHp=Math.max(0,Math.min(botC.maxHp,botC.currentHp+result.attackerMutations.hpDelta));
@@ -311,6 +346,22 @@ async function runBotTurn(channel, fightId, turnToken) {
         if (playerC.species.name==="God"&&result.missedAttack) { const gh=Math.floor(playerC.currentHp*0.2); playerC.currentHp=Math.min(playerC.maxHp,playerC.currentHp+gh); log.push(`👑 **DIVINE RETRIBUTION!** God heals ${gh}!`); }
         log.push(`⚔️ Bot deals **${result.damage}** damage!${result.specialLines.length?` (${result.specialLines.slice(0,2).join(", ")})`:""}  Your HP: ${Math.max(0,playerC.currentHp)}/${fight.playerMaxHp}`);
       }
+      const damageTaken=Math.max(0,playerHpBeforeBotAttack-playerC.currentHp);
+      if (damageTaken>0 && chaosSystem.isChaosCreatorOwner(playerC)) {
+        const decision=await chaosSystem.askChaosReaction({
+          fight,channel,
+          question:"This individual named "+botC.species.name+" attacked you. Do you want to reverse the damage?",
+          confirmedText:"Damage reversal confirmed.",
+          declinedText:"Damage reversal declined.",
+        });
+        if (!isCurrentBotTurn(fightId,fight,turnToken)) return;
+        if (decision.confirmed) {
+          playerC.currentHp=Math.min(playerC.maxHp,playerC.currentHp+damageTaken);
+          const damageReturned=Math.min(damageTaken,botC.currentHp);
+          botC.currentHp=Math.max(0,botC.currentHp-damageReturned);
+          log.push("🌀 **Causal Reversal!** Restored "+damageTaken+" HP and returned "+damageReturned+" damage.");
+        }
+      }
       fight.botHp=Math.max(0,botC.currentHp); fight.playerHp=Math.max(0,playerC.currentHp);
       fight.botUltBuff=botC.ultBuff; fight.botAdaptiveStacks=botC.adaptiveStacks; fight.botAttackCounter=botC.attackCounter;
     }
@@ -329,7 +380,9 @@ async function runBotTurn(channel, fightId, turnToken) {
 
   // Burn tick on player
   if (fight.playerBurn>0) {
-    const bd=fight.playerBurn; fight.playerHp=Math.max(0,fight.playerHp-bd);
+    const rawBurn=fight.playerBurn;
+    const bd=playerC.species.name==="Chaos Creator"?Math.ceil(rawBurn*0.5):rawBurn;
+    fight.playerHp=Math.max(0,fight.playerHp-bd);
     fight.playerBurnRounds--; if(fight.playerBurnRounds<=0){fight.playerBurn=0;fight.playerBurnRounds=0;}
     log.push(`🔥 Burn deals ${bd} to you!`);
   }
@@ -459,6 +512,7 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
   const fight = _state.activeBotFights.get(fightId);
   if (!fight) return;
   if (fight.timeout) clearTimeout(fight.timeout);
+  chaosSystem.cancelChaosReaction(fight);
   // Count every completed Half-Blood bot fight, including losses and Slime Lord boss attempts.
   if (fight.playerSpecies?.name==="Half-Blood")
     await updateHalfBloodProgress(fight.playerId,"fight",1,fight.playerSpecies.name);
@@ -498,6 +552,7 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
   desc += "**" + fight.botSpecies.name + "**: " + formatFightHealth(won ? 0 : fight.botHp, fight.botMaxHp) + "\n\n";
   if (reason === "timeout") desc += won ? "LOZ took too long to respond. You win by default.\n" : "Your turn timed out. LOZ wins.\n";
   if (reason === "counter") desc += "LOZ was defeated by your counter-strike.\n";
+  if (reason === "chaos-disintegrate") desc += "Disintegrated by Chaos Creator.\n";
   if (won) {
     desc += "⚔️ Leaderboard: +" + winsEarned + "\n";
     if (rollEarned) desc += "<:reroll_dice:1558042108965822515> Species Rolls: +1\n";
