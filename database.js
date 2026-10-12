@@ -496,6 +496,7 @@ async function awardTopggVote(userId, now, cooldownMs, rollReward = 2) {
             "data.vote.lastVoteAt":now,
             "data.vote.nextVoteAt":now + cooldownMs,
             "data.vote.lastReminderAt":0,
+            "data.vote.lastReminderAttemptAt":0,
           },
           $inc:{ "data.vote.totalVotes":1 },
         },
