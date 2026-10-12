@@ -143,6 +143,21 @@ function normalizeTopggPayload(payload) {
     return "";
   }
 
+  // Modern v1 vote.create events have a nested user/project shape. For these,
+  // only use platform_id (the Discord snowflake), never Top.gg's own .id.
+  if (typeValues.includes("vote.create")) {
+    const eventData = objects.find(item =>
+      item.user && typeof item.user === "object"
+      && item.project && typeof item.project === "object"
+    );
+    return {
+      user:String(eventData?.user?.platform_id ?? ""),
+      bot:String(eventData?.project?.platform_id ?? ""),
+      type:"upvote",
+      isWeekend:objects.some(item => item.isWeekend === true),
+    };
+  }
+
   return {
     user:firstIdentifier(userKeys),
     bot:firstIdentifier(botKeys),
