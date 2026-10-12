@@ -124,7 +124,7 @@ function normalizeTopggPayload(payload) {
   const upvoteTypes = new Set(["vote.create", "vote.created", "vote", "upvote", "vote.received"]);
   const recognizedType = typeValues.find(type => upvoteTypes.has(type));
   const type = recognizedType || typeValues[0] || "";
-  const normalizedType = recognizedType || (!type ? "upvote" : type);
+  const normalizedType = recognizedType ? "upvote" : (!type ? "upvote" : type);
 
   const userKeys = ["user", "userId", "voterId", "voter", "discordUserId"];
   const botKeys = ["bot", "botId", "receiverId", "projectId", "entityId"];
