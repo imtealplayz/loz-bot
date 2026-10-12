@@ -8,7 +8,7 @@ const database = require("./database.js"); // MongoDB
 const state    = require("./state.js");
 const { setState: setHelperState } = require("./helpers.js");
 const { setState: setFightState }   = require("./fights.js");
-const { setState: setCommandState, setClient, handleCommand, handleButton, handleSelectMenu, maybePromptForUpdates, commands } = require("./commands.js");
+const { setState: setCommandState, setClient, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForUpdates, commands } = require("./commands.js");
 const { disintegrationMessages } = require("./constants.js");
 const questSystem = require("./quest-system.js");
 
@@ -430,6 +430,11 @@ Users can use LOZ commands here again.`);
 // ==================== INTERACTION CREATE ====================
 client.on("interactionCreate", async (interaction) => {
   try {
+    if (interaction.isAutocomplete()) {
+      await handleAutocomplete(interaction);
+      return;
+    }
+
     // Never let startup-time commands write fallback/default state over saved records.
     if (!databaseReady && (interaction.isCommand() || interaction.isButton() || interaction.isStringSelectMenu())) {
       return interaction.reply({
