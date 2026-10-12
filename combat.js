@@ -303,7 +303,7 @@ function applyUltEffect(attacker, defender) {
     case "Demon Lord":  attacker.ultBuff={type:"nextAttack",multiplier:2,burn:7,burnRounds:2}; msg="🔥 **HELLFIRE!**\n2× + 7 burn 2 rounds!"; break;
     case "Demi God":    attacker.ultBuff={type:"nextAttack",multiplier:2.5}; msg="✨ **DIVINE WRATH!**\n2.5× next attack!"; break;
     case "God": {
-      const dmg=Math.floor(defender.currentHp*0.5), heal=Math.floor(attacker.currentHp*0.5);
+      const dmg=Math.floor(defender.currentHp*0.4), heal=Math.floor(attacker.currentHp*0.4);
       attacker.currentHp=Math.min(attacker.maxHp,attacker.currentHp+heal);
       const assimilationLines=[];
       const assimilation=absorbSlimeLordDamage(attacker,defender,dmg,assimilationLines);
