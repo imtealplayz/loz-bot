@@ -1876,6 +1876,7 @@ async function handleButton(interaction) {
         }
         fight.playerUltCooldown=playerC.species.ultCooldown;
         if (playerC.species.name==="Cyborg") await updateCyborgProgress(fight.playerId,"ult");
+        if (playerC.species.name==="Half-Blood") await updateHalfBloodProgress(fight.playerId,"ult",1,playerC.species.name);
         if (playerC.species.name==="Ogre") botC.stunnedTurns=1;
         fight.playerHp=Math.max(0,playerC.currentHp); fight.botHp=Math.max(0,botC.currentHp); fight.botUltBuff=botC.ultBuff;
         log.push(`✨ **YOU USE ULT!**\n${um}`);
@@ -2011,6 +2012,7 @@ async function handleButton(interaction) {
         }
         player.ultCooldown=player.species.ultCooldown;
         if (player.species.name==="Cyborg") await updateCyborgProgress(player.id,"ult");
+        if (player.species.name==="Half-Blood") await updateHalfBloodProgress(player.id,"ult",1,player.species.name);
         if (player.species.name==="Ogre") { opponent.stunnedTurns=1; log.push(`💥 **MASSIVE BLOW!** Opponent stunned! Extra turn!`); }
         log.push(`✨ <@${user.id}> uses ULT!\n${um}`);
         if (player.species.name==="Ogre") fight.currentTurn=user.id;
