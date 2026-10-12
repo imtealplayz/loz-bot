@@ -170,7 +170,7 @@ async function startHttpServer() {
         version:verification.version,
         type:vote.type || "unknown",
         isTest:vote.isTest === true,
-        hasUserId:/^\\d{17,20}$/.test(String(vote.user || "")),
+        hasUserId:/^\d{17,20}$/.test(String(vote.user || "")),
         hasBotId:Boolean(vote.bot),
       }));
       if (vote.isTest) {
