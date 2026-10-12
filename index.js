@@ -259,20 +259,20 @@ async function registerCommands() {
     }
 
     const rest = new REST({ version:"10" }).setToken(client.token);
-    const localGod = commands.find(command => command.name === "god");
+    const localOwner = commands.find(command => command.name === "owner");
     console.log(`🔄 Registering ${commands.length} global slash commands...`);
-    console.log("🔎 Local /god subcommands:", (localGod?.options ?? []).map(option => option.name).join(", ") || "(none)");
+    console.log("🔎 Local /owner subcommands:", (localOwner?.options ?? []).map(option => option.name).join(", ") || "(none)");
 
     const registered = await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-    const remoteGod = registered.find(command => command.name === "god");
-    const remoteSubcommands = (remoteGod?.options ?? []).map(option => option.name);
+    const remoteOwner = registered.find(command => command.name === "owner");
+    const remoteSubcommands = (remoteOwner?.options ?? []).map(option => option.name);
     console.log(`✅ Discord accepted ${registered.length} global slash commands.`);
-    console.log("🔎 Discord returned /god subcommands:", remoteSubcommands.join(", ") || "(none)");
+    console.log("🔎 Discord returned /owner subcommands:", remoteSubcommands.join(", ") || "(none)");
 
     if (remoteSubcommands.includes("repair-user-db")) {
-      console.log("✅ Verified /god repair-user-db in Discord's registered command response.");
+      console.log("✅ Verified /owner repair-user-db in Discord's registered command response.");
     } else {
-      console.error("❌ Discord's registration response is missing /god repair-user-db.");
+      console.error("❌ Discord's registration response is missing /owner repair-user-db.");
     }
   } catch (e) {
     console.error("❌ Slash command registration failed:", e);
@@ -379,7 +379,7 @@ Users can use LOZ commands here again.`);
 
     // ── 'disintegrate ─────────────────────────────────────────────
     if (command === "disintegrate") {
-      if (message.author.id !== ownerId) return message.reply("❌ Only God can use this command!");
+      if (message.author.id !== ownerId) return message.reply("❌ Only the bot owner can use this command!");
       let activeFight = null, fightId = null;
       for (const [id, fight] of state.activeFights.entries()) {
         if (fight.player1Id === message.author.id || fight.player2Id === message.author.id) { activeFight = fight; fightId = id; break; }
