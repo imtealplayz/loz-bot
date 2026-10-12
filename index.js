@@ -94,37 +94,57 @@ function getIdentifier(value) {
 }
 
 function normalizeTopggPayload(payload) {
-  const eventType = String(payload?.type ?? payload?.event ?? payload?.eventType ?? "").toLowerCase();
-  const vote = payload?.vote && typeof payload.vote === "object"
-    ? payload.vote
-    : payload?.data && typeof payload.data === "object"
-      ? payload.data
-      : payload;
-  const voteType = String(vote?.type ?? vote?.event ?? "").toLowerCase();
-  const type = eventType || voteType;
-  const isTest = payload?.isTest === true || vote?.isTest === true
-    || type === "test" || type === "webhook.test" || type === "vote.test";
-  if (isTest) return { isTest:true };
+  // Top.gg has sent both flat legacy payloads and wrapped event payloads.
+  // Walk known envelope keys from the innermost event outward so a wrapper
+  // event label cannot hide the actual vote/test type or voter identifiers.
+  const objects = [];
+  const seen = new Set();
+  function collect(value, depth=0) {
+    if (!value || typeof value !== "object" || Array.isArray(value) || seen.has(value) || depth > 5) return;
+    seen.add(value);
+    for (const key of ["vote", "data", "event", "payload", "details"]) {
+      if (value[key] && typeof value[key] === "object") collect(value[key], depth+1);
+    }
+    objects.push(value);
+  }
+  collect(payload);
 
-  let normalizedType;
-  if (["vote.create", "vote.created", "vote", "upvote"].includes(type)) {
-    normalizedType = "upvote";
-  } else if (!type) {
-    // Legacy payloads sometimes contain only user and bot identifiers.
-    normalizedType = "upvote";
-  } else {
-    normalizedType = type;
+  const typeValues = [];
+  for (const item of objects) {
+    for (const key of ["type", "eventType", "event"]) {
+      if (typeof item[key] === "string" && item[key].trim()) {
+        typeValues.push(item[key].trim().toLowerCase());
+      }
+    }
+  }
+  const testTypes = new Set(["test", "webhook.test", "vote.test", "testvote", "vote.tested"]);
+  const isTest = objects.some(item => item.isTest === true) || typeValues.some(type => testTypes.has(type));
+  if (isTest) return { isTest:true, type:"test" };
+
+  const upvoteTypes = new Set(["vote.create", "vote.created", "vote", "upvote", "vote.received"]);
+  const recognizedType = typeValues.find(type => upvoteTypes.has(type));
+  const type = recognizedType || typeValues[0] || "";
+  const normalizedType = recognizedType || (!type ? "upvote" : type);
+
+  const userKeys = ["user", "userId", "voterId", "voter", "discordUserId"];
+  const botKeys = ["bot", "botId", "receiverId", "projectId", "entityId"];
+  function firstIdentifier(keys) {
+    for (const item of objects) {
+      for (const key of keys) {
+        if (item[key] !== undefined && item[key] !== null && item[key] !== "") {
+          const identifier = getIdentifier(item[key]);
+          if (identifier !== "") return String(identifier);
+        }
+      }
+    }
+    return "";
   }
 
-  const user = getIdentifier(vote?.user ?? vote?.userId ?? vote?.voterId ?? vote?.voter
-    ?? payload?.user ?? payload?.userId);
-  const bot = getIdentifier(vote?.bot ?? vote?.botId ?? vote?.receiverId ?? vote?.projectId
-    ?? payload?.bot ?? payload?.botId ?? payload?.receiverId ?? payload?.projectId);
   return {
-    user:String(user),
-    bot:String(bot),
+    user:firstIdentifier(userKeys),
+    bot:firstIdentifier(botKeys),
     type:normalizedType,
-    isWeekend:vote?.isWeekend === true || payload?.isWeekend === true,
+    isWeekend:objects.some(item => item.isWeekend === true),
   };
 }
 
@@ -146,8 +166,15 @@ async function startHttpServer() {
       }
 
       const vote = normalizeTopggPayload(payload);
+      console.info("[Top.gg] Verified webhook received:", JSON.stringify({
+        version:verification.version,
+        type:vote.type || "unknown",
+        isTest:vote.isTest === true,
+        hasUserId:/^\\d{17,20}$/.test(String(vote.user || "")),
+        hasBotId:Boolean(vote.bot),
+      }));
       if (vote.isTest) {
-        console.log("[Top.gg] Verified " + verification.version + " test webhook; no reward was granted.");
+        console.log("[Top.gg] Test webhook acknowledged; no reward was granted.");
         return res.status(204).end();
       }
 
@@ -157,7 +184,12 @@ async function startHttpServer() {
       }
 
       try {
-        await questSystem.handleTopggVote(vote);
+        const result = await questSystem.handleTopggVote(vote);
+        if (result && result.accepted === true) {
+          console.log("[Top.gg] Reward handler accepted vote for user " + String(vote.user) + ".");
+        } else {
+          console.warn("[Top.gg] Webhook acknowledged without a reward:", String(result && result.reason || "unreported_reason"));
+        }
         return res.status(204).end();
       } catch (error) {
         console.error("[Top.gg] Vote processing failed; asking Top.gg to retry:", error);
