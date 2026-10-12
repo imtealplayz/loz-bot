@@ -1921,6 +1921,7 @@ async function handleButton(interaction) {
         return;
       }
       chaosDisintegrateConfirmed = true;
+      fight.chaosDisintegrated = true;
     }
 
     if (action==="possessed") {
@@ -2027,7 +2028,7 @@ async function handleButton(interaction) {
     fight.botBlockHeal=botC.blockHeal; fight.botAdaptiveStacks=botC.adaptiveStacks; fight.botAttackCounter=botC.attackCounter; fight.botSlimeMissStacks=botC.slimeMissStacks||0; fight.playerSlimeMissStacks=playerC.slimeMissStacks||0; fight.botStunnedTurns=botC.stunnedTurns||0;
     fight.log=log.slice(-3);
 
-    if (fight.botHp<=0) { await endBotFight(channel,fightId,"player","bot",fight.difficulty); return; }
+    if (fight.botHp<=0) { await endBotFight(channel,fightId,"player","bot",fight.difficulty,fight.chaosDisintegrated?"chaos-disintegrate":"normal"); return; }
     if (fight.playerHp<=0) { await endBotFight(channel,fightId,"bot","player",fight.difficulty); return; }
 
     if (msg) await msg.edit({ content: null, embeds: null, ...buildBotFightMessagePayload(fight, fight.log, "bot_thinking", "bot_thinking") }).catch(() => {});
