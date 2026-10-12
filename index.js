@@ -88,7 +88,10 @@ function verifyTopggRequest(req) {
 
 function getIdentifier(value) {
   if (value && typeof value === "object") {
-    return value.id ?? value.userId ?? value.discordId ?? "";
+    // Top.gg v1 uses id for its own user/project ID and platform_id for the
+    // linked Discord snowflake. Prefer platform_id so rewards target Discord users.
+    return value.platform_id ?? value.platformId ?? value.discordId ?? value.discord_id
+      ?? value.userId ?? value.id ?? "";
   }
   return value ?? "";
 }
@@ -127,7 +130,7 @@ function normalizeTopggPayload(payload) {
   const normalizedType = recognizedType ? "upvote" : (!type ? "upvote" : type);
 
   const userKeys = ["user", "userId", "voterId", "voter", "discordUserId"];
-  const botKeys = ["bot", "botId", "receiverId", "projectId", "entityId"];
+  const botKeys = ["bot", "botId", "receiverId", "projectId", "entityId", "project"];
   function firstIdentifier(keys) {
     for (const item of objects) {
       for (const key of keys) {
