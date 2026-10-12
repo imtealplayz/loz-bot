@@ -6,7 +6,7 @@ const {
 } = require("discord.js");
 const {
   patchNotes, speciesList, dragonSpecies, humanSpecies, godSpecies,
-  reaperSpecies, archdemonSpecies, slimeLordSpecies, eclipsedSovereignSpecies,
+  reaperSpecies, archdemonSpecies, slimeLordSpecies, eclipsedSovereignSpecies, chaosCreatorSpecies,
   botSpecies, botSpeciesByDifficulty, botPersonalities,
   typeAdvantages, disintegrationMessages,
   getPassiveDescription, getActiveDescription,
@@ -22,6 +22,7 @@ const {
   updateHalfBloodProgress, isHalfBloodReadyForAwakening,
 } = require("./helpers.js");
 const { buildFightMessagePayload, buildBotFightMessagePayload, makeCombatant, calculateDamage, applyUltEffect, tickCooldowns, tickBothUltCooldowns, applyOgreRegen, processCurseTick } = require("./combat.js");
+const chaosSystem = require("./chaos.js");
 const { startFight, endFight, doBotTurn, endBotFight } = require("./fights.js");
 const questSystem = require("./quest-system.js");
 
@@ -30,7 +31,7 @@ let _client = null;
 function setState(s) { _state = s; }
 function setClient(c) { _client = c; }
 
-function getSpeciesAutocompleteEntries() {
+function getSpeciesAutocompleteEntries(includeChaosCreator = false) {
   const entries = [
     ...speciesList,
     ...dragonSpecies.types.map(type => ({
@@ -42,6 +43,7 @@ function getSpeciesAutocompleteEntries() {
     archdemonSpecies,
     slimeLordSpecies,
     eclipsedSovereignSpecies,
+    ...(includeChaosCreator ? [chaosCreatorSpecies] : []),
   ];
   const seen = new Set();
   return entries
@@ -62,7 +64,8 @@ async function handleAutocomplete(interaction) {
     if (!isSpeciesLookup && !isOwnerSpeciesChange) return interaction.respond([]);
 
     const query = String(focused.value || "").trim().toLocaleLowerCase();
-    const entries = getSpeciesAutocompleteEntries()
+    const includeChaosCreator = isOwnerSpeciesChange && interaction.user?.id === _state?.ownerId;
+    const entries = getSpeciesAutocompleteEntries(includeChaosCreator)
       .filter(entry => !query || entry.value.toLocaleLowerCase().includes(query)
         || entry.name.toLocaleLowerCase().includes(query))
       .sort((a, b) => {
@@ -826,6 +829,11 @@ async function handleCommand(interaction) {
   // ── SPECIES ───────────────────────────────────────────────────
   if (commandName === "species") {
     const spName = options.getString("species");
+    if (spName === "Chaos Creator" && user.id !== _state.ownerId) {
+      return safeReply(interaction, buildStyledCardPayload("Species Restricted", 0x991b1b, [
+        { body:"🌀 Chaos Creator is exclusive to the primary LOZ owner." },
+      ], true));
+    }
     if (!spName) {
       const ranked = [
         {name:"God",emoji:"👑✨",chance:"0.2%",tier:"Divine"},
@@ -1429,6 +1437,9 @@ async function handleCommand(interaction) {
 
     if (sub==="species-change") {
       const target=options.getUser("user"), spname=options.getString("species");
+      if (spname==="Chaos Creator" && (user.id!==_state.ownerId || target.id!==_state.ownerId)) {
+        return safeReply(interaction,{embeds:[createErrorEmbed("Chaos Creator can only be assigned by the primary owner, to the primary owner account.")],flags:64});
+      }
       if (spname==="Kitsune"&&target.id!==_client.user.id) return safeReply(interaction,{embeds:[createErrorEmbed("Kitsune is exclusive to Loz!")],flags:64});
       const newSp=getSpeciesByName(spname);
       if (!newSp) return safeReply(interaction,{embeds:[createErrorEmbed("Unknown species! Pick one from the dropdown.")],flags:64});
@@ -1444,7 +1455,7 @@ async function handleCommand(interaction) {
       // God-given species becomes the new original species.
       ud.originalSpecies=newSp;
       ud.species=newSp;
-      const isExclusive=["Reaper","Archdemon","Mechangel","Slime Lord","Eclipsed Sovereign"].includes(spname);
+      const isExclusive=["Reaper","Archdemon","Mechangel","Slime Lord","Eclipsed Sovereign","Chaos Creator"].includes(spname);
       const saved=isExclusive
         ? await database.saveUserSpecies(target.id,ud)
         : await database.saveUserSpeciesFields(target.id,ud.species,ud.originalSpecies);
@@ -1874,6 +1885,7 @@ async function handleButton(interaction) {
     const fight=_state.activeBotFights.get(fightId);
     if (!fight) return safeReply(interaction,{embeds:[createErrorEmbed("Fight ended!")],flags:64});
     if (user.id!==fight.playerId) return safeReply(interaction,{embeds:[createErrorEmbed("This isn't your fight!")],flags:64});
+    if (fight.pendingChaosReaction) return safeReply(interaction,{content:"A Chaos Creator reaction is awaiting the primary owner's decision.",flags:64});
     if (action==="thinking") return safeReply(interaction,{embeds:[createErrorEmbed("It's the bot's turn!")],flags:64});
     if (fight.timeout) clearTimeout(fight.timeout);
     await interaction.deferUpdate();
@@ -1887,6 +1899,29 @@ async function handleButton(interaction) {
 
     // Oni possession consumes the target's next action.
     if (playerC.possession) action="possessed";
+
+    let chaosDisintegrateConfirmed = false;
+    if (action==="ult" && user.id===chaosSystem.PRIMARY_OWNER_ID
+      && playerC.species.name==="Chaos Creator" && playerC.ultCooldown<=0) {
+      const targetName = fight.botSpecies?.name || "opponent";
+      const decision = await chaosSystem.askChaosReaction({
+        fight, channel,
+        question:"Do you want to disintegrate this individual named " + targetName + "?",
+        confirmedText:"Disintegrating this individual named " + targetName + ".",
+        declinedText:"Disintegration cancelled.",
+      });
+      if (!_state.activeBotFights.has(fightId)) return;
+      if (!decision.confirmed) {
+        fight.timeout = setTimeout(() => {
+          if (_state.activeBotFights.get(fightId) === fight) {
+            endBotFight(channel,fightId,"bot","player",fight.difficulty,"timeout")
+              .catch(error => console.error("[Chaos Creator] Bot fight timeout failed:",error?.stack||error));
+          }
+        },60000);
+        return;
+      }
+      chaosDisintegrateConfirmed = true;
+    }
 
     if (action==="possessed") {
       playerC.possession=false;
@@ -1914,7 +1949,13 @@ async function handleButton(interaction) {
     } else if (action==="ult") {
       if (playerC.ultCooldown>0) { log.push(`❌ ULT on cooldown for ${playerC.ultCooldown} more rounds!`); }
       else {
-        const {message:um,requiresChoice,choiceType}=applyUltEffect(playerC,botC);
+        let um, requiresChoice=false, choiceType=null;
+        if (chaosDisintegrateConfirmed) {
+          um = "Disintegrating this individual named " + (fight.botSpecies?.name || "opponent") + ".";
+          botC.currentHp = 0;
+        } else {
+          ({message:um,requiresChoice,choiceType}=applyUltEffect(playerC,botC));
+        }
         fight.playerUltBuff=playerC.ultBuff;
         fight.playerLastUltUsed=playerC.lastUltUsed;
         await questSystem.trackProgress(user.id,"ults",1);
@@ -2032,11 +2073,15 @@ async function handleButton(interaction) {
     if (!fight) return;
     const isP1=user.id===fight.player1Id, isP2=user.id===fight.player2Id;
     if (!isP1&&!isP2) return;
+    if (fight.pendingChaosReaction) return interaction.followUp({content:"A Chaos Creator reaction is awaiting the primary owner's decision.",flags:64});
     if (user.id!==fight.currentTurn) return interaction.followUp({embeds:[createErrorEmbed("It's not your turn!")],flags:64});
     if (fight.timeout) clearTimeout(fight.timeout);
     const player=isP1?fight.player1:fight.player2;
     const opponent=isP1?fight.player2:fight.player1;
     const log=[];
+    let finishReason="normal";
+    let pendingHealReversal=null;
+    let pendingAttackReversal=null;
 
     if (action==="forfeit") {
       if (Math.random()<0.35) { log.push(`😵 <@${user.id}> tried to forfeit but pride won't let them! Turn wasted.`); fight.currentTurn=opponent.id; fight.round++; }
@@ -2044,7 +2089,44 @@ async function handleButton(interaction) {
     } else if (action==="ult") {
       if (player.ultCooldown>0) { log.push(`❌ <@${user.id}>'s ULT on cooldown for ${player.ultCooldown} more rounds!`); fight.currentTurn=opponent.id; fight.round++; }
       else {
-        const {message:um,requiresChoice,choiceType}=applyUltEffect(player,opponent);
+        let chaosDisintegrateConfirmed=false;
+        let chaosUltNullified=false;
+        const targetName=opponent.displayName||opponent.species.name;
+
+        if (player.id===chaosSystem.PRIMARY_OWNER_ID && player.species.name==="Chaos Creator") {
+          const decision=await chaosSystem.askChaosReaction({
+            fight,channel,
+            question:"Do you want to disintegrate this individual named "+targetName+"?",
+            confirmedText:"Disintegrating this individual named "+targetName+".",
+            declinedText:"Disintegration cancelled.",
+          });
+          if (!_state.activeFights.has(fightId)) return;
+          if (!decision.confirmed) {
+            fight.timeout=setTimeout(()=>{ if(_state.activeFights.has(fightId)){const l=fight.currentTurn;const w=fight.player1Id===l?fight.player2Id:fight.player1Id;endFight(channel,fightId,w,l,"timeout");} },120000);
+            return;
+          }
+          chaosDisintegrateConfirmed=true;
+          finishReason="chaos-disintegrate";
+        } else if (opponent.id===chaosSystem.PRIMARY_OWNER_ID && opponent.species.name==="Chaos Creator") {
+          const decision=await chaosSystem.askChaosReaction({
+            fight,channel,
+            question:"This individual named "+(player.displayName||player.species.name)+" has activated their ULT. Do you wish to nullify it?",
+            confirmedText:"Ultimate nullification confirmed.",
+            declinedText:"Ultimate nullification declined.",
+          });
+          if (!_state.activeFights.has(fightId)) return;
+          chaosUltNullified=decision.confirmed;
+        }
+
+        let um="",requiresChoice=false,choiceType=null;
+        if (chaosDisintegrateConfirmed) {
+          opponent.currentHp=0;
+          um="Disintegrating this individual named "+targetName+".";
+        } else if (chaosUltNullified) {
+          um="🌀 **ABSOLUTE NULLIFICATION!** "+player.species.name+"'s ultimate was nullified.";
+        } else {
+          ({message:um,requiresChoice,choiceType}=applyUltEffect(player,opponent));
+        }
         await questSystem.trackProgress(player.id,"ults",1);
         if (requiresChoice) {
           player.ultChoicePending=true;
@@ -2055,7 +2137,6 @@ async function handleButton(interaction) {
               player.ultChoicePending=false; player.ultCooldown=player.species.ultCooldown; player.ultBuff={type:"nextAttack",multiplier:1.5};
               fight.currentTurn=opponent.id; fight.round++;
               const msg2=_state.fightMessages.get(fightId);
-              const tp=fight.currentTurn===fight.player1Id?fight.player1:fight.player2;
               if (msg2) msg2.edit({ content: null, embeds: null, ...buildFightMessagePayload(fight, ["Ultimate choice timed out."], "playing") }).catch(() => {});
             }
           },30000);
@@ -2064,9 +2145,9 @@ async function handleButton(interaction) {
         player.ultCooldown=player.species.ultCooldown;
         if (player.species.name==="Cyborg") await updateCyborgProgress(player.id,"ult");
         if (player.species.name==="Half-Blood") await updateHalfBloodProgress(player.id,"ult",1,player.species.name);
-        if (player.species.name==="Ogre") { opponent.stunnedTurns=1; log.push(`💥 **MASSIVE BLOW!** Opponent stunned! Extra turn!`); }
+        if (player.species.name==="Ogre" && !chaosUltNullified) { opponent.stunnedTurns=1; log.push(`💥 **MASSIVE BLOW!** Opponent stunned! Extra turn!`); }
         log.push(`✨ <@${user.id}> uses ULT!\n${um}`);
-        if (player.species.name==="Ogre") fight.currentTurn=user.id;
+        if (player.species.name==="Ogre" && !chaosUltNullified) fight.currentTurn=user.id;
         else { fight.currentTurn=opponent.id; fight.round++; }
       }
     } else if (action==="heal") {
@@ -2084,18 +2165,24 @@ async function handleButton(interaction) {
         }
         const actualH=player.curse>0?Math.floor(rawH*0.5):rawH;
         if (player.curse>0) { processCurseTick(player); log.push(`👿 Curse halves heal! ${rawH}→${actualH}`); }
+        const hpBeforeHeal=player.currentHp;
         player.currentHp=Math.min(player.maxHp,player.currentHp+actualH); player.healCooldown=3;
+        if (opponent.id===chaosSystem.PRIMARY_OWNER_ID && opponent.species.name==="Chaos Creator" && player.currentHp>hpBeforeHeal) {
+          pendingHealReversal={healer:player,hpBefore:hpBeforeHeal};
+        }
         log.push(`💚 <@${user.id}> heals for **${actualH} HP**! (${player.currentHp}/${player.maxHp})`);
         fight.currentTurn=opponent.id; fight.round++;
       }
     } else if (action==="attack") {
       if (player.possession) {
         player.possession=false;
-        const selfHit=Math.floor(Math.random()*(player.species.atkMax-player.species.atkMin+1))+player.species.atkMin;
+        const rawSelfHit=Math.floor(Math.random()*(player.species.atkMax-player.species.atkMin+1))+player.species.atkMin;
+        const selfHit=player.species.name==="Chaos Creator"?Math.ceil(rawSelfHit*0.5):rawSelfHit;
         player.currentHp=Math.max(0,player.currentHp-selfHit);
         log.push(`🎭 **POSSESSION!** <@${user.id}> attacks themselves for ${selfHit}!`);
         fight.currentTurn=opponent.id; fight.round++;
       } else {
+        const targetHpBeforeAttack=opponent.currentHp;
         const result=calculateDamage(player,opponent);
         if (result.damage > 0) await questSystem.trackProgress(player.id,"damage",result.damage);
         player.currentHp=Math.max(0,Math.min(player.maxHp,player.currentHp+result.attackerMutations.hpDelta));
@@ -2114,12 +2201,47 @@ async function handleButton(interaction) {
           if (opponent.species.name==="God"&&result.missedAttack) { const gh=Math.floor(opponent.currentHp*0.2); opponent.currentHp=Math.min(opponent.maxHp,opponent.currentHp+gh); log.push(`👑 **Divine Retribution!** ${opponent.species.name} heals ${gh}!`); }
           log.push(`⚔️ <@${user.id}> deals **${result.damage}** damage!${result.specialLines.length?` (${result.specialLines.slice(0,2).join(", ")})`:""}`);
         }
+        if (opponent.id===chaosSystem.PRIMARY_OWNER_ID && opponent.species.name==="Chaos Creator" && opponent.currentHp<targetHpBeforeAttack) {
+          pendingAttackReversal={victim:opponent,attacker:player,hpBefore:targetHpBeforeAttack};
+        }
         fight.currentTurn=opponent.id; fight.round++;
       }
     }
 
+    if (pendingHealReversal) {
+      const decision=await chaosSystem.askChaosReaction({
+        fight,channel,
+        question:"This individual named "+(player.displayName||player.species.name)+" has healed. Do you want to undo the heal?",
+        confirmedText:"Healing reversal confirmed.",
+        declinedText:"Healing reversal declined.",
+      });
+      if (!_state.activeFights.has(fightId)) return;
+      if (decision.confirmed) {
+        pendingHealReversal.healer.currentHp=pendingHealReversal.hpBefore;
+        log.push("🌀 **Recovery Reversal!** The healing was undone.");
+      }
+    }
+    if (pendingAttackReversal) {
+      const decision=await chaosSystem.askChaosReaction({
+        fight,channel,
+        question:"This individual named "+(player.displayName||player.species.name)+" attacked you. Do you want to reverse the damage?",
+        confirmedText:"Damage reversal confirmed.",
+        declinedText:"Damage reversal declined.",
+      });
+      if (!_state.activeFights.has(fightId)) return;
+      if (decision.confirmed) {
+        const damageTaken=Math.max(0,pendingAttackReversal.hpBefore-pendingAttackReversal.victim.currentHp);
+        if (damageTaken>0) {
+          pendingAttackReversal.victim.currentHp=Math.min(pendingAttackReversal.victim.maxHp,pendingAttackReversal.victim.currentHp+damageTaken);
+          const damageReturned=Math.min(damageTaken,pendingAttackReversal.attacker.currentHp);
+          pendingAttackReversal.attacker.currentHp=Math.max(0,pendingAttackReversal.attacker.currentHp-damageReturned);
+          log.push("🌀 **Causal Reversal!** Restored "+damageTaken+" HP and returned "+damageReturned+" damage.");
+        }
+      }
+    }
+
     // Burn tick on opponent
-    if (opponent.burn>0) { const bd=opponent.burn; opponent.currentHp=Math.max(0,opponent.currentHp-bd); opponent.burnRounds--; if(opponent.burnRounds<=0){opponent.burn=0;opponent.burnRounds=0;} log.push(`🔥 ${opponent.species.name} takes ${bd} burn!`); }
+    if (opponent.burn>0) { const rawBurn=opponent.burn; const bd=opponent.species.name==="Chaos Creator"?Math.ceil(rawBurn*0.5):rawBurn; opponent.currentHp=Math.max(0,opponent.currentHp-bd); opponent.burnRounds--; if(opponent.burnRounds<=0){opponent.burn=0;opponent.burnRounds=0;} log.push(`🔥 ${opponent.species.name} takes ${bd} burn!`); }
     const or=applyOgreRegen(player); if(or) log.push(or);
     // FIX: tick BOTH players ULT cooldown every round
     tickBothUltCooldowns(player, opponent);
@@ -2127,7 +2249,7 @@ async function handleButton(interaction) {
         if (isP1) fight.player2.ultCooldown=opponent.ultCooldown;
         else      fight.player1.ultCooldown=opponent.ultCooldown;
 
-    if (opponent.currentHp<=0) { await endFight(channel,fightId,user.id,opponent.id,"normal"); return; }
+    if (opponent.currentHp<=0) { await endFight(channel,fightId,user.id,opponent.id,finishReason); return; }
     if (player.currentHp<=0)   { await endFight(channel,fightId,opponent.id,user.id,"normal"); return; }
 
     const nextTurnPlayer=fight.currentTurn===fight.player1Id?fight.player1:fight.player2;
