@@ -608,6 +608,13 @@ async function buildServersPagePayload(page, ownerId) {
 async function handleCommand(interaction) {
   const { commandName, options, user, guild, channel } = interaction;
 
+  // Older guild-scoped /fight registrations may still send a root-level player option.
+  // Read the subcommand optionally so those interactions cannot throw before handling.
+  const fightSubcommand = commandName === "fight" ? options.getSubcommand(false) : null;
+  const legacyFightTarget = commandName === "fight" && !fightSubcommand
+    ? (options.getUser("player", false) || options.getUser("user", false) || options.getUser("target", false))
+    : null;
+
   // ── HELP ──────────────────────────────────────────────────────
   if (commandName === "help") {
     return safeReply(interaction, buildStyledCardPayload("LOZ Command Guide", 0x0891b2, [
@@ -1047,8 +1054,8 @@ async function handleCommand(interaction) {
   }
 
   // ── FIGHT ─────────────────────────────────────────────────────
-  if (commandName === "fight" && options.getSubcommand() === "player") {
-    const target=options.getUser("user");
+  if (commandName === "fight" && (fightSubcommand === "player" || legacyFightTarget)) {
+    const target = fightSubcommand === "player" ? options.getUser("user") : legacyFightTarget;
     if (target.id===user.id) return safeReply(interaction,{embeds:[createErrorEmbed("You cannot fight yourself!")],flags:64});
     if (target.bot) return safeReply(interaction,{embeds:[createErrorEmbed("Use `/fight bot` to fight bots!")],flags:64});
     if (!canFight(user.id)) { const cd=_state.fightCooldowns.get(user.id); return safeReply(interaction,{embeds:[createErrorEmbed(cd&&cd>Date.now()?`Wait **${((cd-Date.now())/1000).toFixed(1)}s**!`:"Already in a game!")],flags:64}); }
@@ -1089,7 +1096,7 @@ async function handleCommand(interaction) {
   }
 
   // ── FIGHT: BOT BATTLE ──────────────────────────────────────────
-  if (commandName === "fight" && options.getSubcommand() === "bot") {
+  if (commandName === "fight" && (fightSubcommand === "bot" || (!fightSubcommand && options.getString("difficulty", false)))) {
     const difficulty=options.getString("difficulty");
     if (_state.activeRequests.has(user.id)) return safeReply(interaction,{embeds:[createErrorEmbed("You have a pending player challenge. Accept, decline, or wait for it to expire before starting another fight.")],flags:64});
     if (isPlayerInFight(user.id)||_state.activeBotFights.has(user.id)) return safeReply(interaction,{embeds:[createErrorEmbed("Already in a fight!")],flags:64});
@@ -1114,6 +1121,13 @@ async function handleCommand(interaction) {
     _state.fightMessages.set(fightId,msg);
     fight.timeout=setTimeout(()=>{ if(_state.activeBotFights.has(fightId)) endBotFight(channel,fightId,"bot","player",difficulty); },120000);
     return safeReply(interaction,{embeds:[createSuccessEmbed("Fight started!")],flags:64});
+  }
+
+  if (commandName === "fight" && !fightSubcommand) {
+    return safeReply(interaction, {
+      embeds:[createErrorEmbed("This /fight command is using an outdated layout. Refresh Discord’s command list, then use /fight player user:@player or /fight bot difficulty:<difficulty>.")],
+      flags:64,
+    });
   }
 
   // ── SWITCH ────────────────────────────────────────────────────
