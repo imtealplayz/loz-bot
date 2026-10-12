@@ -1925,7 +1925,8 @@ async function handleButton(interaction) {
 
     if (action==="possessed") {
       playerC.possession=false;
-      const selfHit=Math.floor(Math.random()*(playerC.species.atkMax-playerC.species.atkMin+1))+playerC.species.atkMin;
+      const rawSelfHit=Math.floor(Math.random()*(playerC.species.atkMax-playerC.species.atkMin+1))+playerC.species.atkMin;
+      const selfHit=playerC.species.name==="Chaos Creator"?Math.ceil(rawSelfHit*0.5):rawSelfHit;
       playerC.currentHp=Math.max(0,playerC.currentHp-selfHit);
       log.push(`🎭 **POSSESSION!** You are forced to attack yourself for ${selfHit}!`);
     } else if (action==="heal") {
