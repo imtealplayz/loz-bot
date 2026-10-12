@@ -1,5 +1,14 @@
 const patchNotes = [
   {
+    version: "5.4", date: "2026-10-12",
+    changes: [
+      "Made God obtainable through normal Species Rolls with a 0.2% chance per roll. God is now listed in the species compendium as a Divine-tier roll.",
+      "Balanced God’s Divine Judgment ultimate: it now removes 40% of the opponent’s current HP and restores 40% of God’s current HP, down from 50% for each effect.",
+      "Renamed the privileged slash-command group from /god to /owner. The owner-ID allowlist remains enforced, so obtaining God through a roll does not grant privileged commands.",
+      "Kept the disintegrate prefix command owner-only. Its permission check is independent of the user's species."
+    ],
+  },
+  {
     version: "5.3", date: "2026-10-11",
     changes: [
       "Introduced the new quest board. Use /quest for an introduction and /quests to open your personal board with progress bars and one-click reward claims; the old /quest view and /quest claim subcommands have been removed.",
