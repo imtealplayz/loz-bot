@@ -11,6 +11,7 @@ const { setState: setFightState }   = require("./fights.js");
 const { setState: setCommandState, setClient, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForUpdates, commands } = require("./commands.js");
 const { disintegrationMessages } = require("./constants.js");
 const questSystem = require("./quest-system.js");
+const chaosSystem = require("./chaos.js");
 
 // ==================== CONSTANTS ====================
 const ownerId     = "926063716057894953";
@@ -21,6 +22,7 @@ const prefix      = "'";
 // Attach owner IDs to state so helpers/commands can read them
 state.ownerId     = ownerId;
 state.secondGodId = secondGodId;
+chaosSystem.setState(state);
 
 let databaseReady = false;
 
@@ -405,23 +407,17 @@ Users can use LOZ commands here again.`);
       if (!activeFight) return message.reply("❌ You are not in a fight!");
       const opponentId = activeFight.player1Id === message.author.id ? activeFight.player2Id : activeFight.player1Id;
       if (activeFight.timeout) clearTimeout(activeFight.timeout);
+      const loser = activeFight.player1Id === opponentId ? activeFight.player1 : activeFight.player2;
+      loser.currentHp = 0;
+      // Use the shared end routine: it updates the existing battle embed and records the
+      // normal win, leaderboard points, cooldowns, quests, and any roll reward exactly once.
+      await require("./fights.js").endFight(message.channel, fightId, message.author.id, opponentId, "divine-intervention");
       const shuffled = [...disintegrationMessages].sort(() => 0.5 - Math.random()).slice(0, 8);
       for (const m of shuffled) {
         await message.channel.send(m.replace(/%attacker%/g, message.author.id).replace(/%defender%/g, opponentId));
         await new Promise(r => setTimeout(r, 800));
       }
       await message.channel.send("🏆 **GOD WINS BY DIVINE INTERVENTION!**");
-      const { updateFightStats } = require("./helpers.js");
-      updateFightStats(message.author.id, true, opponentId, { opponentName:activeFight.player1Id===opponentId?activeFight.player1.species.name:activeFight.player2.species.name, hpLeft:999, special:"💀 disintegration" });
-      updateFightStats(opponentId, false, message.author.id, { opponentName:activeFight.player1Id===message.author.id?activeFight.player1.species.name:activeFight.player2.species.name, hpLeft:0, special:"💀 disintegrated" });
-      state.fightCooldowns.set(message.author.id, Date.now()+30000);
-      state.fightCooldowns.set(opponentId, Date.now()+30000);
-      const fightMsg = state.fightMessages.get(fightId);
-      if (fightMsg) await fightMsg.edit({ content:"💀 Fight ended by divine intervention.", components:[] }).catch(() => {});
-      state.activeFights.delete(fightId);
-      state.activeRequests.delete(message.author.id);
-      state.activeRequests.delete(opponentId);
-      state.fightMessages.delete(fightId);
     }
 
   } catch(e) { console.error("messageCreate error:", e); }
@@ -441,6 +437,10 @@ client.on("interactionCreate", async (interaction) => {
         content: "LOZ is loading saved player data after a restart. Please try again in a few seconds.",
         flags: 64,
       }).catch(() => {});
+    }
+
+    if (interaction.isButton() && String(interaction.customId || "").startsWith("chaosreact_")) {
+      if (await chaosSystem.handleReactionButton(interaction)) return;
     }
 
     // Block commands in disabled channels
