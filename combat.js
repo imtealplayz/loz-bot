@@ -52,37 +52,41 @@ function calculateDamage(attacker, defender) {
     return { damage:0, baseDamage:0, specialLines:["🛡️ **SHADOW CLONE!** The clone absorbs the hit!"], attackerMutations };
   }
   // Dodge buff
-  if (defender.ultBuff?.type === "dodge") {
+  if (defender.ultBuff?.type === "dodge" && attacker.species.name !== "Chaos Creator") {
     defender.ultBuff = null;
     const lines=["💨 **NIMBLE ESCAPE!** Attack dodged!"];
     recordSlimeLordMiss(attacker, lines);
     return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
   }
   // Goblin passive dodge
-  if (defender.species.name === "Goblin" && Math.random() < 0.1) {
+  if (defender.species.name === "Goblin" && attacker.species.name !== "Chaos Creator" && Math.random() < 0.1) {
     const lines=["💨 **Speed Dodge!** Too slow!"];
     recordSlimeLordMiss(attacker, lines);
     return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
   }
   // Thunder Dragon paralyze
-  if (defender.species.name === "Thunder Dragon" && Math.random() < 0.1) {
+  if (defender.species.name === "Thunder Dragon" && attacker.species.name !== "Chaos Creator" && Math.random() < 0.1) {
     const lines=["⚡ **Paralyzing Shock!** Attack fails!"];
     recordSlimeLordMiss(attacker, lines);
     return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
   }
   // Bot counter
   if (defender.species.name === "Bot" && Math.random() < 0.1) {
-    const ctr = Math.floor(Math.random()*(defender.species.atkMax-defender.species.atkMin+1))+defender.species.atkMin;
-    attackerMutations.hpDelta -= ctr;
-    const lines=[`🤖 **MACHINE LEARNING!** Bot counters for ${ctr}!`];
-    recordSlimeLordMiss(attacker, lines);
-    return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
+    if (attacker.species.name === "Chaos Creator") {
+      specialLines.push("🌀 The enemy tried to counter, but got counter-countered.");
+    } else {
+      const ctr = Math.floor(Math.random()*(defender.species.atkMax-defender.species.atkMin+1))+defender.species.atkMin;
+      attackerMutations.hpDelta -= ctr;
+      const lines=[`🤖 **MACHINE LEARNING!** Bot counters for ${ctr}!`];
+      recordSlimeLordMiss(attacker, lines);
+      return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
+    }
   }
 
   // ── Miss + Counter chance ────────────────────────────────────────
   const { failChances } = require('./constants.js');
   const missRate = failChances[attacker.species.name] || 0.05;
-  if (Math.random() < missRate) {
+  if (attacker.species.name !== "Chaos Creator" && Math.random() < missRate) {
     // 30% chance defender counter-strikes on miss
     if (Math.random() < 0.3) {
       const avgAtk = Math.floor((defender.species.atkMin + defender.species.atkMax) / 2);
@@ -131,6 +135,14 @@ function calculateDamage(attacker, defender) {
     // ── Reaper instant kill — own branch, NOT inside nextAttack ──────
     if (ub.type==="reaperKill") {
       if (defender.currentHp<defender.maxHp*0.2) {
+        // Chaos Creator's passive prevents instant-kill damage from bypassing its reduction.
+        if (defender.species.name === "Chaos Creator") {
+          const reducedDamage = Math.ceil(defender.currentHp * 0.5);
+          attacker.ultBuff = null;
+          attackerMutations.hpDelta += Math.floor(reducedDamage * 0.5);
+          specialLines.push("🌀 **ABSOLUTE AUTHORITY!** Death's Judgment damage reduced by 50%.");
+          return { damage:reducedDamage, baseDamage, specialLines, attackerMutations, instantKill:false };
+        }
         // Below 20% — instant kill
         const killDmg=defender.currentHp;
         const assimilation=absorbSlimeLordDamage(attacker, defender, killDmg, specialLines);
@@ -210,6 +222,10 @@ function calculateDamage(attacker, defender) {
   }
 
   finalDamage = Math.max(0, Math.floor(finalDamage*multiplier));
+  if (defender.species.name === "Chaos Creator" && finalDamage > 0) {
+    finalDamage = Math.ceil(finalDamage * 0.5);
+    specialLines.push("🌀 **ABSOLUTE AUTHORITY!** Incoming damage reduced by 50%.");
+  }
 
   // Slime Lord converts the fully modified incoming hit into healing and reflects overflow.
   const assimilation=absorbSlimeLordDamage(attacker, defender, finalDamage, specialLines);
@@ -303,7 +319,9 @@ function applyUltEffect(attacker, defender) {
     case "Demon Lord":  attacker.ultBuff={type:"nextAttack",multiplier:2,burn:7,burnRounds:2}; msg="🔥 **HELLFIRE!**\n2× + 7 burn 2 rounds!"; break;
     case "Demi God":    attacker.ultBuff={type:"nextAttack",multiplier:2.5}; msg="✨ **DIVINE WRATH!**\n2.5× next attack!"; break;
     case "God": {
-      const dmg=Math.floor(defender.currentHp*0.4), heal=Math.floor(attacker.currentHp*0.4);
+      const rawDamage=Math.floor(defender.currentHp*0.4);
+      const dmg=defender.species.name==="Chaos Creator" ? Math.ceil(rawDamage*0.5) : rawDamage;
+      const heal=Math.floor(attacker.currentHp*0.4);
       attacker.currentHp=Math.min(attacker.maxHp,attacker.currentHp+heal);
       const assimilationLines=[];
       const assimilation=absorbSlimeLordDamage(attacker,defender,dmg,assimilationLines);
