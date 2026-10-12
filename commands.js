@@ -5,7 +5,8 @@ const {
   SeparatorSpacingSize, MessageFlags, PermissionsBitField,
 } = require("discord.js");
 const {
-  patchNotes, humanSpecies, reaperSpecies, archdemonSpecies,
+  patchNotes, speciesList, dragonSpecies, humanSpecies, godSpecies,
+  reaperSpecies, archdemonSpecies, slimeLordSpecies, eclipsedSovereignSpecies,
   botSpecies, botSpeciesByDifficulty, botPersonalities,
   typeAdvantages, disintegrationMessages,
   getPassiveDescription, getActiveDescription,
@@ -29,7 +30,57 @@ let _client = null;
 function setState(s) { _state = s; }
 function setClient(c) { _client = c; }
 
+function getSpeciesAutocompleteEntries() {
+  const entries = [
+    ...speciesList,
+    ...dragonSpecies.types.map(type => ({
+      name: type.type + " Dragon",
+      emoji: type.emoji + "🐉",
+    })),
+    godSpecies,
+    reaperSpecies,
+    archdemonSpecies,
+    slimeLordSpecies,
+    eclipsedSovereignSpecies,
+  ];
+  const seen = new Set();
+  return entries
+    .filter(species => species?.name && !seen.has(species.name) && seen.add(species.name))
+    .map(species => ({
+      name: (String(species.emoji || "✨") + " " + species.name).slice(0, 100),
+      value: species.name,
+    }));
+}
 
+async function handleAutocomplete(interaction) {
+  try {
+    const focused = interaction.options.getFocused(true);
+    const isSpeciesLookup = interaction.commandName === "species" && focused.name === "species";
+    const isOwnerSpeciesChange = interaction.commandName === "owner"
+      && interaction.options.getSubcommand(false) === "species-change"
+      && focused.name === "species";
+    if (!isSpeciesLookup && !isOwnerSpeciesChange) return interaction.respond([]);
+
+    const query = String(focused.value || "").trim().toLocaleLowerCase();
+    const entries = getSpeciesAutocompleteEntries()
+      .filter(entry => !query || entry.value.toLocaleLowerCase().includes(query)
+        || entry.name.toLocaleLowerCase().includes(query))
+      .sort((a, b) => {
+        const aStarts = a.value.toLocaleLowerCase().startsWith(query);
+        const bStarts = b.value.toLocaleLowerCase().startsWith(query);
+        if (aStarts !== bStarts) return aStarts ? -1 : 1;
+        return a.value.localeCompare(b.value);
+      })
+      .slice(0, 25);
+
+    return await interaction.respond(entries);
+  } catch (error) {
+    if (error?.code !== 10062 && !error?.message?.includes("Unknown interaction")) {
+      console.error("[Species autocomplete] Failed to respond:", error?.stack || error);
+    }
+    return null;
+  }
+}
 
 function buildStyledCardPayload(title, color, sections = [], ephemeral = false) {
   const container = new ContainerBuilder().setAccentColor(color || 0x0891b2);
@@ -2153,7 +2204,7 @@ const commands = [
   new SlashCommandBuilder().setName("help").setDescription("Show all commands"),
   new SlashCommandBuilder().setName("guide").setDescription("New player tutorial"),
   new SlashCommandBuilder().setName("daily").setDescription("Claim your daily species roll"),
-  new SlashCommandBuilder().setName("species").setDescription("View species list or a specific species card").addStringOption(o=>o.setName("species").setDescription("Species name for detailed card (leave blank for full list)").addChoices({name:"Demi God ⚡",value:"Demi God"},{name:"Demon Lord 🔥",value:"Demon Lord"},{name:"Demon King 👑😈",value:"Demon King"},{name:"Chimera 🎭",value:"Chimera"},{name:"Angel 👼",value:"Angel"},{name:"Demon 😈",value:"Demon"},{name:"Oni 👿",value:"Oni"},{name:"Orc Lord 👑",value:"Orc Lord"},{name:"Kijin 🎭",value:"Kijin"},{name:"Cyborg 🤖",value:"Cyborg"},{name:"High Orc ⚔️",value:"High Orc"},{name:"Ogre 👹",value:"Ogre"},{name:"Goblin 👺",value:"Goblin"},{name:"Orc 🟢",value:"Orc"},{name:"Half-Blood 🩸",value:"Half-Blood"},{name:"Fire Dragon 🔥🐉",value:"Fire Dragon"},{name:"Thunder Dragon ⚡🐉",value:"Thunder Dragon"},{name:"Ice Dragon ❄️🐉",value:"Ice Dragon"},{name:"Earth Dragon 🌍🐉",value:"Earth Dragon"},{name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"God 👑✨",value:"God"},{name:"Slime Lord 🫧",value:"Slime Lord"},{name:"Eclipsed Sovereign 🌘",value:"Eclipsed Sovereign"})),
+  new SlashCommandBuilder().setName("species").setDescription("View species list or a specific species card").addStringOption(o=>o.setName("species").setDescription("Species name for detailed card (leave blank for full list)").setAutocomplete(true)),
   new SlashCommandBuilder().setName("profile").setDescription("View a full player profile").addUserOption(o=>o.setName("user").setDescription("User to check")),
   new SlashCommandBuilder().setName("items").setDescription("View and use inventory items")
     .addSubcommand(s=>s.setName("use").setDescription("Use an inventory item")
@@ -2202,7 +2253,7 @@ const commands = [
         .addUserOption(o=>o.setName("user").setDescription("User receiving the item").setRequired(true))
         .addStringOption(o=>o.setName("item").setDescription("Item to give").setRequired(true).addChoices({name:"Species Token",value:"species_token"}))
         .addIntegerOption(o=>o.setName("quantity").setDescription("Quantity to give").setRequired(true).setMinValue(1).setMaxValue(1000000))))
-    .addSubcommand(s=>s.setName("species-change").setDescription("Change a user's species").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Species to set").setRequired(true).addChoices({name:"Demi God ⚡",value:"Demi God"},{name:"Demon Lord 🔥",value:"Demon Lord"},{name:"Demon King 👑😈",value:"Demon King"},{name:"Chimera 🎭",value:"Chimera"},{name:"Angel 👼",value:"Angel"},{name:"Demon 😈",value:"Demon"},{name:"Oni 👿",value:"Oni"},{name:"Orc Lord 👑",value:"Orc Lord"},{name:"Kijin 🎭",value:"Kijin"},{name:"Cyborg 🤖",value:"Cyborg"},{name:"High Orc ⚔️",value:"High Orc"},{name:"Ogre 👹",value:"Ogre"},{name:"Goblin 👺",value:"Goblin"},{name:"Orc 🟢",value:"Orc"},{name:"Half-Blood 🩸",value:"Half-Blood"},{name:"Fire Dragon 🔥🐉",value:"Fire Dragon"},{name:"Thunder Dragon ⚡🐉",value:"Thunder Dragon"},{name:"Ice Dragon ❄️🐉",value:"Ice Dragon"},{name:"Earth Dragon 🌍🐉",value:"Earth Dragon"},{name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"God 👑✨",value:"God"},{name:"Slime Lord 🫧",value:"Slime Lord"},{name:"Eclipsed Sovereign 🌘",value:"Eclipsed Sovereign"})))
+    .addSubcommand(s=>s.setName("species-change").setDescription("Change a user's species").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Species to set").setRequired(true).setAutocomplete(true)))
     .addSubcommand(s=>s.setName("species-reset").setDescription("Reset a user to Human").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)))
     .addSubcommand(s=>s.setName("species-add").setDescription("Give rolls to a user").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)).addIntegerOption(o=>o.setName("amount").setDescription("Amount of rolls").setRequired(true).setMinValue(1).setMaxValue(1000000)))
     .addSubcommand(s=>s.setName("rolls-reset").setDescription("Reset a user's rolls to 0").addUserOption(o=>o.setName("user").setDescription("Target").setRequired(true)))
@@ -2211,4 +2262,4 @@ const commands = [
     .addSubcommand(s=>s.setName("repair-user-db").setDescription("Archive and repair duplicate player records")),
 ].map(c=>c.toJSON());
 
-module.exports = { setState, setClient, handleCommand, handleButton, handleSelectMenu, maybePromptForUpdates, commands };
+module.exports = { setState, setClient, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForUpdates, commands };
