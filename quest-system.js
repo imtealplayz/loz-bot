@@ -4,6 +4,7 @@ const database = require("./database.js");
 const { humanSpecies } = require("./constants.js");
 
 const VOTE_INTERVAL_MS = 12 * 60 * 60 * 1000;
+const VOTE_REMINDER_RETRY_MS = 15 * 60 * 1000;
 const QUEST_INTERVAL_MS = 12 * 60 * 60 * 1000;
 const CLAIMED_VISIBLE_MS = 5 * 60 * 1000;
 const MAX_ROTATING_QUESTS = 3;
@@ -68,7 +69,7 @@ function createQuest(now = Date.now()) {
 
 function createBoard(now = Date.now()) {
   return {
-    vote:{lastVoteAt:0,nextVoteAt:0,totalVotes:0,remindersEnabled:true,lastReminderAt:0},
+    vote:{lastVoteAt:0,nextVoteAt:0,totalVotes:0,remindersEnabled:true,lastReminderAt:0,lastReminderAttemptAt:0},
     quests:[createQuest(now)], nextQuestAt:now+QUEST_INTERVAL_MS, createdAt:now,
   };
 }
@@ -94,7 +95,7 @@ async function ensureBoardLocked(userId) {
     return board;
   }
   if (!board.vote || typeof board.vote !== "object") {
-    board.vote = {lastVoteAt:0,nextVoteAt:0,totalVotes:0,remindersEnabled:true,lastReminderAt:0};
+    board.vote = {lastVoteAt:0,nextVoteAt:0,totalVotes:0,remindersEnabled:true,lastReminderAt:0,lastReminderAttemptAt:0};
     changed = true;
   }
   if (!Array.isArray(board.quests)) { board.quests = []; changed = true; }
@@ -103,6 +104,7 @@ async function ensureBoardLocked(userId) {
   if (!Number.isFinite(Number(board.vote.lastVoteAt))) { board.vote.lastVoteAt=0; changed=true; }
   if (!Number.isFinite(Number(board.vote.nextVoteAt))) { board.vote.nextVoteAt=0; changed=true; }
   if (!Number.isFinite(Number(board.vote.lastReminderAt))) { board.vote.lastReminderAt=0; changed=true; }
+  if (!Number.isFinite(Number(board.vote.lastReminderAttemptAt))) { board.vote.lastReminderAttemptAt=0; changed=true; }
   if (!Number.isFinite(Number(board.vote.totalVotes))) { board.vote.totalVotes=0; changed=true; }
 
   const retained = board.quests.filter(quest => quest.status!=="claimed" || now-(Number(quest.claimedAt)||0)<CLAIMED_VISIBLE_MS);
@@ -226,7 +228,12 @@ async function sendVoteReminder(userId) {
   try {
     const target=await _client.users.fetch(userId);
     await target.send(buildVoteDmPayload("🗳️ LOZ Vote Reminder","Your 12-hour vote cooldown has ended. Vote for LOZ on Top.gg to earn **+2 Species Rolls**. Your reward is added automatically after the vote is verified.\n\nVote reminders repeat every 12 hours until you vote again or turn them off.",userId,true));
-  } catch(e) { console.warn("[Top.gg] Vote reminder could not be delivered to "+userId+": "+e.message); }
+    console.info("[Top.gg] Vote reminder delivered to "+userId+".");
+    return true;
+  } catch(e) {
+    console.warn("[Top.gg] Vote reminder could not be delivered to "+userId+": "+(e?.code||e?.message||String(e))+". Will retry in about 15 minutes if reminders remain enabled.");
+    return false;
+  }
 }
 
 function syncRewardBalance(userId,rolls,speciesTokens) {
@@ -391,11 +398,20 @@ async function tickUser(userId) {
       const nextVoteAt=Number(vote.nextVoteAt)||lastVoteAt+VOTE_INTERVAL_MS;
       const lastReminderAt=Number(vote.lastReminderAt)||lastVoteAt;
       const reminderAt=Math.max(nextVoteAt,lastReminderAt+VOTE_INTERVAL_MS);
-      if (now>=reminderAt) {
-        vote.lastReminderAt=now;
+      const lastReminderAttemptAt=Number(vote.lastReminderAttemptAt)||0;
+      if (now>=reminderAt && now-lastReminderAttemptAt>=VOTE_REMINDER_RETRY_MS) {
+        // Persist the attempt time first so a failed DM cannot trigger a send every 30 seconds.
+        vote.lastReminderAttemptAt=now;
         board.vote=vote;
         await saveBoard(userId,board);
-        await sendVoteReminder(userId);
+        const sent=await sendVoteReminder(userId);
+        if (sent) {
+          // Only advance the reminder schedule after Discord accepts the DM.
+          vote.lastReminderAt=now;
+          vote.lastReminderAttemptAt=0;
+          board.vote=vote;
+          await saveBoard(userId,board);
+        }
       }
     }
   });
