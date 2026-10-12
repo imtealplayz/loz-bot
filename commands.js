@@ -777,6 +777,7 @@ async function handleCommand(interaction) {
     const spName = options.getString("species");
     if (!spName) {
       const ranked = [
+        {name:"God",emoji:"👑✨",chance:"0.2%",tier:"Divine"},
         {name:"Demi God",emoji:"⚡",chance:"0.5%",tier:"Epic"},
         {name:"Demon Lord",emoji:"🔥",chance:"1.0%",tier:"Epic"},
         {name:"Demon King",emoji:"👑😈",chance:"1.5%",tier:"Epic"},
@@ -794,9 +795,9 @@ async function handleCommand(interaction) {
         {name:"Orc",emoji:"🟢",chance:"22.0%",tier:"Common"},
         {name:"Half-Blood",emoji:"🩸",chance:"26.0%",tier:"Common"},
       ];
-      const tierOrder = ["Epic","Rare","Uncommon","Common"];
+      const tierOrder = ["Divine","Epic","Rare","Uncommon","Common"];
       const sections = tierOrder.map(tier => ({
-        heading:`${({Epic:"🟣",Rare:"🔵",Uncommon:"🟡",Common:"⚪"})[tier]} ${tier} Species`,
+        heading:`${({Divine:"👑",Epic:"🟣",Rare:"🔵",Uncommon:"🟡",Common:"⚪"})[tier]} ${tier} Species`,
         body:ranked.filter(sp=>sp.tier===tier).map(sp =>
           `**${sp.emoji} ${sp.name}**  ·  ${sp.chance}${sp.note ? " · Random element" : ""}`
         ).join("\n"),
@@ -1301,14 +1302,14 @@ async function handleCommand(interaction) {
       const ud = _state.userSpecies.get(user.id) || { species:humanSpecies, originalSpecies:humanSpecies, questSpecies:{}, rolls:0, speciesTokens:0, requestsEnabled:true, lastSwitch:0, badges:[] };
       const tokenCount = Number(ud.speciesTokens) || 0;
       if (tokenCount < 1)
-        return safeReply(interaction, asEphemeralSpeciesTokenPayload(buildSpeciesTokenResultPayload("No Species Tokens", `You don't have any ${SPECIES_TOKEN_EMOJI} Species Tokens. A God can grant them to you.`, 0xff0000)));
+        return safeReply(interaction, asEphemeralSpeciesTokenPayload(buildSpeciesTokenResultPayload("No Species Tokens", `You don't have any ${SPECIES_TOKEN_EMOJI} Species Tokens. The bot owner can grant them to you.`, 0xff0000)));
       return safeReply(interaction, asEphemeralSpeciesTokenPayload(buildSpeciesTokenSelectionPayload(user.id, null, tokenCount)));
     }
   }
 
-  // ── GOD COMMANDS ──────────────────────────────────────────────
-  if (commandName === "god") {
-    if (user.id!==_state.ownerId&&user.id!==_state.secondGodId) return safeReply(interaction,{embeds:[createErrorEmbed("Only God can use this!")],flags:64});
+  // ── OWNER COMMANDS ────────────────────────────────────────────
+  if (commandName === "owner") {
+    if (user.id!==_state.ownerId&&user.id!==_state.secondGodId) return safeReply(interaction,{embeds:[createErrorEmbed("Only an authorized LOZ owner can use this command.")],flags:64});
     const sub=options.getSubcommand();
 
     if (sub==="species-unlock") {
@@ -1345,12 +1346,12 @@ async function handleCommand(interaction) {
     }
 
     if (sub==="menu") {
-      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xffd700).setTitle("👑 God Commands")
+      return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0xffd700).setTitle("👑 Owner Commands")
         .addFields(
-          {name:"🧬 Species Management",value:"`/god species-change @user <species>`\n`/god species-unlock @user <species>`\n`/god species-reset @user`\n`/god species-add @user <rolls>`",inline:false},
-          {name:"🎒 Items",value:"`/god add items @user species_token <quantity>`",inline:false},
-          {name:"⚙️ Management",value:"`/god rolls-reset @user`\n`/god quest-reset @user <quest>`\n`/god debug-db`\n`/god repair-user-db`",inline:false}
-        ).setFooter({text:"Use /god menu to see this again"})]});
+          {name:"🧬 Species Management",value:"`/owner species-change @user <species>`\n`/owner species-unlock @user <species>`\n`/owner species-reset @user`\n`/owner species-add @user <rolls>`",inline:false},
+          {name:"🎒 Items",value:"`/owner add items @user species_token <quantity>`",inline:false},
+          {name:"⚙️ Management",value:"`/owner rolls-reset @user`\n`/owner quest-reset @user <quest>`\n`/owner debug-db`\n`/owner repair-user-db`",inline:false}
+        ).setFooter({text:"Use /owner menu to see this again"})]});
     }
 
 
@@ -2191,8 +2192,8 @@ const commands = [
   new SlashCommandBuilder().setName("quest").setDescription("Learn how to open the quest board"),
   new SlashCommandBuilder().setName("quests").setDescription("View quests, track progress, and claim rewards"),
   // default_member_permissions=0 hides these from normal members; handlers still enforce the exact allow-list.
-  new SlashCommandBuilder().setName("god").setDescription("God-only commands")
-    .addSubcommand(s=>s.setName("menu").setDescription("Show god menu"))
+  new SlashCommandBuilder().setName("owner").setDescription("Owner-only commands").setDefaultMemberPermissions(0n)
+    .addSubcommand(s=>s.setName("menu").setDescription("Show owner command menu"))
     .addSubcommand(s=>s.setName("species-unlock").setDescription("Permanently unlock an exclusive species for a user").addUserOption(o=>o.setName("user").setDescription("Target user, including yourself").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Exclusive species to unlock").setRequired(true).addChoices({name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"Slime Lord 🫧",value:"Slime Lord"},{name:"Eclipsed Sovereign 🌘",value:"Eclipsed Sovereign"})))
     .addSubcommandGroup(g=>g.setName("add").setDescription("Give items to a user")
       .addSubcommand(s=>s.setName("items").setDescription("Give inventory items to a user")
