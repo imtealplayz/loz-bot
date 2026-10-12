@@ -168,7 +168,7 @@ const botSpecies = {
     passive:"🤖 Machine Learning - 10% chance to predict and counter attacks", active:"💻 System Overload - 2x damage | 🔥 25% recoil" },
 };
 
-const godSpecies       = { number:0,  name:"God",      emoji:"👑✨", roleName:"God",      color:0xffffff, hp:140, atkMin:25, atkMax:35, healMin:25, healMax:45, ultCooldown:12 };
+const godSpecies       = { number:0,  name:"God",      emoji:"👑✨", roleName:"God",      color:0xffffff, hp:140, atkMin:25, atkMax:35, healMin:25, healMax:45, ultCooldown:12, chance:"0.2%" };
 const humanSpecies     = { number:99, name:"Human",    emoji:"👤",   roleName:null,       color:0x808080, hp:50,  atkMin:5,  atkMax:10, healMin:5,  healMax:10, ultCooldown:0  };
 const reaperSpecies    = { number:18, name:"Reaper",   emoji:"🌑",   roleName:"Reaper",   color:0x2f4f4f, hp:110, atkMin:25, atkMax:38, healMin:8,  healMax:16, ultCooldown:12 };
 const archdemonSpecies = { number:19, name:"Archdemon",emoji:"👿",   roleName:"Archdemon",color:0x4a0404, hp:150, atkMin:28, atkMax:40, healMin:15, healMax:25, ultCooldown:10 };
@@ -347,7 +347,7 @@ function getActiveDescription(name) {
     "Demon King":"**Infernal Domain** — +30% dmg for 3 turns (CD: 15)",
     "Demon Lord":"**Hellfire** — 2× + 7 burn for 2 rounds (CD: 10)",
     "Demi God":"**Divine Wrath** — 2.5× next attack (CD: 12)",
-    God:"**Divine Judgment** — remove 50% enemy HP, heal 50% own HP (CD: 12)",
+    God:"**Divine Judgment** — remove 40% enemy HP, heal 40% own HP (CD: 12)",
     Human:"None",
     Angel:"**Divine Blessing** — choose: 1.5× + 35% heal OR 60% heal (CD: 10)",
     Chimera:"**Mirror Realm** — copy opponent's last ULT (CD: 15)",
