@@ -245,6 +245,100 @@ function buildSpeciesRollAnnouncement(userId, userName, species, rollsRemaining,
 }
 
 
+const HELP_PAGES = [
+  {
+    title:"Getting Started",
+    intro:"Your first commands for getting set up in LOZ.",
+    commands:[
+      {usage:"/guide",name:"Start the tutorial",description:"Walk through the basics and claim a one-time +1 Species Roll reward."},
+      {usage:"/daily",name:"Claim your daily reward",description:"Receive +1 Species Roll every 24 hours, with a bonus roll on a 7-day streak."},
+      {usage:"/species-roll",name:"Roll a species",description:"Spend a roll to receive a species, then choose whether to reroll or keep it."},
+      {usage:"/profile [user]",name:"View a player profile",description:"Check a player's current species, roll balance, and progression."},
+    ],
+  },
+  {
+    title:"Species & Progress",
+    intro:"Browse abilities, manage forms, and track awakenings.",
+    commands:[
+      {usage:"/species [species]",name:"Browse species",description:"Open the species compendium or choose a species to view its stats and abilities."},
+      {usage:"/awakening",name:"Check awakening progress",description:"See your current awakening requirements and which objectives remain."},
+      {usage:"/switch",name:"Switch species forms",description:"Equip an unlocked form. A 3-hour cooldown normally applies."},
+      {usage:"/items use item:Species Token",name:"Use a Species Token",description:"Choose an eligible species and spend one token to change into it."},
+    ],
+  },
+  {
+    title:"Battles",
+    intro:"Challenge other players or train against an LOZ bot.",
+    commands:[
+      {usage:"/fight player user:@player",name:"Challenge a player",description:"Send a player a battle request. They must accept before the fight starts."},
+      {usage:"/fight bot difficulty:Easy",name:"Fight a bot",description:"Start a bot battle. Select Easy, Medium, Hard, Impossible, or Brutal in Discord's options."},
+      {usage:"/togglerequests status:Enable",name:"Manage incoming challenges",description:"Choose Enable or Disable to control whether other players can challenge you."},
+    ],
+  },
+  {
+    title:"Quests & Rewards",
+    intro:"Earn extra rolls and keep track of your goals.",
+    commands:[
+      {usage:"/quest",name:"Learn about quests",description:"Open a quick explanation of the quest board."},
+      {usage:"/quests",name:"View and claim quests",description:"Track quest progress, claim completed rewards, and open the verified Top.gg vote option."},
+      {usage:"/gift user:@player amount:1",name:"Gift Species Rolls",description:"Give another player between 1 and 5 of your rolls."},
+      {usage:"/daily",name:"Build your daily streak",description:"Claim a roll every 24 hours; the 7-day streak grants one extra roll."},
+    ],
+  },
+  {
+    title:"Battle Records & Rankings",
+    intro:"Review past fights and compare player totals.",
+    commands:[
+      {usage:"/fightstats [user]",name:"View player fight stats",description:"Check a player's recorded PvP fight wins and losses."},
+      {usage:"/history [user]",name:"View fight history",description:"Review recent battle results for yourself or another player."},
+      {usage:"/botstats [user]",name:"View bot battle stats",description:"See a player's bot battle wins, losses, and win rates by difficulty."},
+      {usage:"/leaderboard type:Fight Wins",name:"Rank fight wins",description:"Show the leaderboard for recorded player fight wins."},
+      {usage:"/leaderboard type:Species Rolls",name:"Rank Species Rolls",description:"Show players ranked by their current unspent Species Rolls."},
+    ],
+  },
+  {
+    title:"Updates & Support",
+    intro:"Control update DMs and find information about new releases.",
+    commands:[
+      {usage:"/updates subscribe",name:"Subscribe to update DMs",description:"Opt in to receive major LOZ update announcements by direct message."},
+      {usage:"/updates unsubscribe",name:"Unsubscribe from update DMs",description:"Stop receiving major LOZ update announcement DMs."},
+      {usage:"/updates status",name:"Check your preference",description:"See whether major update DMs are currently enabled for you."},
+      {usage:"/patchnotes",name:"Read patch notes",description:"View the latest LOZ changes and fixes."},
+      {usage:"/help",name:"Open this command guide",description:"Browse the command directory one category at a time."},
+    ],
+  },
+];
+
+function buildHelpPayload(pageIndex) {
+  const safePage = Number.isInteger(pageIndex) ? pageIndex : 0;
+  const page = HELP_PAGES[safePage];
+  if (!page) throw new RangeError("Invalid help page");
+  const container = new ContainerBuilder().setAccentColor(0x0891b2);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    "## LOZ Command Directory\n### " + page.title + " · Page " + (safePage + 1) + "/" + HELP_PAGES.length + "\n" + page.intro
+  ));
+  for (const command of page.commands) {
+    container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      "**\x60" + command.usage + "\x60 — " + command.name + "**\n• " + command.description
+    ));
+  }
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  container.addActionRowComponents(new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("help_page_" + Math.max(0,safePage - 1))
+      .setLabel("<")
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(safePage === 0),
+    new ButtonBuilder()
+      .setCustomId("help_page_" + Math.min(HELP_PAGES.length - 1,safePage + 1))
+      .setLabel(">")
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(safePage >= HELP_PAGES.length - 1)
+  ));
+  return {components:[container],flags:MessageFlags.IsComponentsV2,allowedMentions:{parse:[]}};
+}
+
 const GUIDE_PAGES = [
   {
     title:"Step 1: Get Your First Roll",
@@ -267,13 +361,10 @@ const GUIDE_PAGES = [
     body:"Run \x60/quests\x60 to track objectives and claim completed quest rewards. Vote for LOZ on Top.gg through the quest board to earn **+2 Species Rolls** once every 12 hours after your vote is verified.\n\nCyborg, Demon, and Half-Blood have awakening paths. Run \x60/awakening\x60 to check requirements and \x60/switch\x60 to equip forms you've unlocked. A Species Token can be used with \x60/items use item:Species Token\x60. Explore these commands when you're ready, then click **Next Page**.",
   },
   {
-    title:"Step 6: Command Cheat Sheet",
-    body:"**Species & Profile**\n\x60/daily\x60 · daily roll | \x60/species-roll\x60 · reroll species | \x60/species\x60 · species list/details | \x60/profile\x60 · player info\n\n**Battles & Records**\n\x60/fight player user:@player\x60 · challenge | \x60/fight bot difficulty:Easy\x60 · practice | \x60/fightstats\x60 · record | \x60/history\x60 · recent fights | \x60/botstats\x60 · bot results | \x60/leaderboard type:Fight Wins\x60 · fight leaderboard | \x60/leaderboard type:Species Rolls\x60 · roll leaderboard\n\n**Progress & Settings**\n\x60/quests\x60 · quests/votes | \x60/awakening\x60 · awakening progress | \x60/switch\x60 · unlocked forms | \x60/gift user:@player amount:1\x60 · gift rolls | \x60/togglerequests status:Enable\x60 · challenge requests | \x60/updates subscribe\x60 or \x60/updates unsubscribe\x60 · update DMs | \x60/patchnotes\x60 · latest changes | \x60/help\x60 · command guide. Click **Next Page** when you're ready to finish.",
+    title:"Step 6: Find Any Command",
+    body:"The command list is now organized into small, readable categories. Run \x60/help\x60 and use the **<** and **>** buttons to browse one category per page.\n\n**Getting started** — \x60/daily\x60, \x60/species-roll\x60, \x60/profile\x60\n**Species & progress** — \x60/species\x60, \x60/awakening\x60, \x60/switch\x60\n**Battles** — \x60/fight\x60, \x60/togglerequests\x60\n**Quests & rewards** — \x60/quests\x60, \x60/gift\x60\n**Records** — \x60/fightstats\x60, \x60/history\x60, \x60/leaderboard\x60\n\nEach command page explains the correct usage and what the command does. Click **Next Page** when you're ready to finish.",
   },
-  {
-    title:"Ready to Enter the Rift?",
-    body:"You're ready! Start with a daily roll, learn your species, and jump into a battle. You can run \x60/guide\x60 again any time.\n\nPress **Complete Tutorial** below to claim your **one-time +1 Species Roll**. This reward can only be claimed once.",
-  },
+
 ];
 
 function buildGuidePayload(userId, userDisplayName, pageIndex) {
@@ -617,14 +708,7 @@ async function handleCommand(interaction) {
 
   // ── HELP ──────────────────────────────────────────────────────
   if (commandName === "help") {
-    return safeReply(interaction, buildStyledCardPayload("LOZ Command Guide", 0x0891b2, [
-      { heading:"Getting Started", body:"\x60/guide\x60 — Step-by-step tutorial and one-time reward.\n\x60/daily\x60 — Claim +1 Species Roll every 24 hours.\n\x60/species-roll\x60 — Open your species roll with Reroll and Cancel buttons.\n\x60/profile [user]\x60 — View your species, rolls, and progress." },
-      { heading:"Species & Awakening", body:"\x60/species\x60 — Browse species; choose \x60species:<name>\x60 for stats and abilities.\n\x60/awakening\x60 — Check Cyborg, Demon, or Half-Blood awakening progress.\n\x60/switch\x60 — Equip an unlocked form (3-hour cooldown).\n\x60/items use item:Species Token\x60 — Use a Species Token to choose an eligible species." },
-      { heading:"Battles", body:"\x60/fight player user:@player\x60 — Challenge a player.\n\x60/fight bot difficulty:<difficulty>\x60 — Fight a bot; choose difficulty from the options.\n\x60/togglerequests status:Enable|Disable\x60 — Control incoming challenges.\nA bot win has a 7.5% chance to spawn the Slime Lord boss; defeating it gives a separate 9.2% chance to unlock Slime Lord." },
-      { heading:"Quests & Rewards", body:"\x60/quest\x60 — Open a quick explanation of quests.\n\x60/quests\x60 — Track and claim quests; vote for LOZ for +2 Species Rolls every 12 hours after the vote is verified.\n\x60/gift user:@player amount:1\x60 — Gift 1–5 rolls to a player." },
-      { heading:"Stats & Rankings", body:"\x60/fightstats [user]\x60 — View a fight record.\n\x60/history [user]\x60 — View recent fights.\n\x60/botstats [user]\x60 — View bot battle stats.\n\x60/leaderboard type:Fight Wins\x60 — Rank the top players by fight wins.\n\x60/leaderboard type:Species Rolls\x60 — Rank players by current unspent Species Rolls." },
-      { heading:"Updates & Support", body:"\x60/updates subscribe\x60 — Receive major update DMs. \x60/updates unsubscribe\x60 — Stop them. \x60/updates status\x60 — Check your preference.\n\x60/patchnotes\x60 — Read recent changes.\nNeed more help? Join the [LOZ Support Server](https://discord.gg/TKBYpjqnPC)." },
-    ]));
+    return safeReply(interaction, buildHelpPayload(0));
   }
 
   // ── GUIDE ─────────────────────────────────────────────────────
@@ -1702,6 +1786,15 @@ async function handleButton(interaction) {
     }
     await interaction.deferUpdate();
     return interaction.editReply(await buildServersPagePayload(targetPage, user.id));
+  }
+
+  // ── PAGINATED HELP DIRECTORY ───────────────────────────────────
+  if (customId.startsWith("help_page_")) {
+    const pageIndex = Number.parseInt(customId.slice("help_page_".length), 10);
+    if (!Number.isInteger(pageIndex) || pageIndex < 0 || pageIndex >= HELP_PAGES.length) {
+      return safeReply(interaction,{content:"That help page is unavailable. Run /help to reopen the command directory.",flags:64});
+    }
+    return interaction.update(buildHelpPayload(pageIndex));
   }
 
   // ── GUIDE NAVIGATION AND ONE-TIME COMPLETION REWARD ─────────────
