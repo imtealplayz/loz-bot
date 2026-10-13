@@ -367,7 +367,11 @@ function buildHelpPayload(pageIndex) {
       .setCustomId("help_page_" + Math.min(HELP_PAGES.length - 1,safePage + 1))
       .setLabel(">")
       .setStyle(ButtonStyle.Primary)
-      .setDisabled(safePage >= HELP_PAGES.length - 1)
+      .setDisabled(safePage >= HELP_PAGES.length - 1),
+    new ButtonBuilder()
+      .setCustomId("help_close")
+      .setLabel("Close")
+      .setStyle(ButtonStyle.Danger)
   ));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
@@ -2017,6 +2021,12 @@ async function handleButton(interaction) {
     }
     await interaction.deferUpdate();
     return interaction.editReply(await buildServersPagePayload(targetPage, user.id));
+  }
+
+  // ── CLOSE HELP DIRECTORY ───────────────────────────────────────
+  if (customId === "help_close") {
+    await interaction.deferUpdate();
+    return message.delete().catch(() => {});
   }
 
   // ── PAGINATED HELP DIRECTORY ───────────────────────────────────
