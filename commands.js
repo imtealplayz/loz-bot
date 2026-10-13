@@ -1019,16 +1019,12 @@ async function handleCommand(interaction) {
           {heading:"Species",body:"🦊 **Kitsune**"},
           {heading:"Combat Stats",body:"❤️ **HP:** 1,000,000\n⚔️ **ATK:** 500–1,000\n💚 **HEAL:** 200,000–500,000"},
           {heading:"Progression",body:`<:reroll_dice:1558042108965822515> **Rolls:** ∞\n📊 **Total players:** ${_state.userSpecies.size}\n⏱️ **Uptime:** <t:${Math.floor(Date.now()/1000-process.uptime())}:R>`},
-          {heading:"Badges",body:"💪 Omnipotent\n🐛 Bug Creator"},
-          {heading:"Passive",body:botSpecies.kitsune.passive},
-          {heading:"Active",body:botSpecies.kitsune.active},
+          {heading:"Badges",body:"ᯓ★ 💪 Omnipotent\nᯓ★ 🐛 Bug Creator"},
         ]));
       }
       return safeReply(interaction,buildStyledCardPayload(`🤖 ${target.displayName}'s Profile`,botSpecies.bot.color,[
         {heading:"Species",body:"🤖 **Bot**"},
         {heading:"Combat Stats",body:`❤️ **HP:** ${botSpecies.bot.hp}\n⚔️ **ATK:** ${botSpecies.bot.atkMin}–${botSpecies.bot.atkMax}\n💚 **HEAL:** ${botSpecies.bot.healMin}–${botSpecies.bot.healMax}`},
-        {heading:"Passive",body:botSpecies.bot.passive},
-        {heading:"Active",body:botSpecies.bot.active},
       ]));
     }
     const td=_state.userSpecies.get(target.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,speciesTokens:0,requestsEnabled:true,badges:[]};
@@ -1038,19 +1034,18 @@ async function handleCommand(interaction) {
     const wr=totalFights>0?((fd.wins/totalFights)*100).toFixed(1):"0.0";
     const badges=[];
     // Personal and legacy badges appear before leaderboard rank badges.
-    if (td.badges?.includes("OG 50")) badges.push("🎉 OG 50");
-    if (target.id==="926063716057894953") badges.push("👑 Founder","✨ The Creator");
-    if (target.id==="1376978115171192922") badges.push("🤝 Co-Founder","🧪 OG Tester","⭐ Shion's Favourite");
+    if (td.badges?.includes("OG 50")) badges.push("ᯓ★ 🎉 OG 50");
+    if (target.id==="926063716057894953") badges.push("ᯓ★ 👑 Founder","ᯓ★ ✨ The Creator");
+    if (target.id==="1376978115171192922") badges.push("ᯓ★ 🤝 Co-Founder","ᯓ★ 🧪 OG Tester","ᯓ★ ⭐ Shion's Favourite");
     for (const badge of td.badges || []) {
       const badgeLabel = LEADERBOARD_BADGE_LABELS[badge];
-      if (badgeLabel && !badges.includes(badgeLabel)) badges.push(badgeLabel);
+      const displayBadge = badgeLabel ? "ᯓ★ " + badgeLabel : null;
+      if (displayBadge && !badges.includes(displayBadge)) badges.push(displayBadge);
     }
     const sections=[
       {heading:"Current Species",body:`${sp.emoji} **${sp.name}**`},
       {heading:"Inventory & Settings",body:`<:reroll_dice:1558042108965822515> **Species rolls:** ${td.rolls||0}\n${SPECIES_TOKEN_EMOJI} **Species tokens:** ${Number(td.speciesTokens)||0}\n🔘 **Challenge requests:** ${td.requestsEnabled?"Enabled":"Disabled"}`},
       {heading:"Fight Record",body:`🏆 **Wins:** ${fd.wins||0}  ·  💔 **Losses:** ${fd.losses||0}\n📊 **Win rate:** ${wr}%\n🔥 **Win streak:** ${fd.streak||0}`},
-      {heading:"Passive",body:getPassiveDescription(sp.name)},
-      {heading:"Active Ultimate",body:getActiveDescription(sp.name)},
       {heading:"Member Since",body:`<t:${Math.floor((targetMember?.joinedTimestamp||Date.now())/1000)}:R>`},
     ];
     if(badges.length) sections.splice(3,0,{heading:"Badges",body:badges.join("\n")});
@@ -1061,15 +1056,54 @@ async function handleCommand(interaction) {
   if (commandName === "species-roll") {
     if (isPlayerInFight(user.id)||isPlayerInBotFight(user.id))
       return safeReply(interaction,buildStyledCardPayload("Roll Unavailable",0xff0000,[{body:"You can't reroll during an active fight."}],true));
-    if (_state.activeRolls.has(user.id))
-      return safeReply(interaction,{content:"You already have a Species Roll open. Use its Reroll or Cancel button first.",flags:MessageFlags.Ephemeral});
-    const userData=_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:1,speciesTokens:0,requestsEnabled:true,lastSwitch:0,badges:[]};
+
+    const userData=_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:1,speciesTokens:0,requestsEnabled:true,badges:[]};
     if ((userData.rolls||0)<1)
-      return safeReply(interaction,buildStyledCardPayload("No Rolls Left",0xff0000,[{body:"Use `/daily` for a free roll or win fights for a chance to earn rolls."}],true));
+      return safeReply(interaction,buildStyledCardPayload("No Rolls Left",0xff0000,[{body:"Use /daily for a free roll or win fights for a chance to earn rolls."}],true));
+
+    const now=Date.now();
+    const cooldownUntil=_state.rerollCooldowns.get(user.id)||0;
+    if (cooldownUntil>now) {
+      const remaining=Math.max(1,Math.ceil((cooldownUntil-now)/1000));
+      return safeReply(interaction,{content:"Please wait **"+remaining+"s** before opening another Species Roll. Your current roll panel remains usable.",flags:MessageFlags.Ephemeral});
+    }
+
+    const previousRoll=_state.activeRolls.get(user.id)||null;
+    // Reserve cooldown before async work to prevent overlapping /species-roll commands.
+    _state.rerollCooldowns.set(user.id,now+10000);
     const currentSp=userData.species||humanSpecies;
-    const pubMsg=await channel.send(buildSpeciesRollAnnouncement(user.id,user.displayName||user.username,currentSp,userData.rolls,false));
-    _state.activeRolls.set(user.id,{channelId:channel.id,messageId:pubMsg.id,timestamp:Date.now()});
-    return safeReply(interaction,{content:"Use the Reroll or Cancel button on the Species Roll message above.",flags:MessageFlags.Ephemeral});
+    let pubMsg;
+    try {
+      pubMsg=await channel.send(buildSpeciesRollAnnouncement(user.id,user.displayName||user.username,currentSp,userData.rolls,false));
+    } catch(error) {
+      if (_state.rerollCooldowns.get(user.id)===now+10000) _state.rerollCooldowns.delete(user.id);
+      console.error("[Species Roll] Failed to post the roll panel:",error?.stack||error);
+      return safeReply(interaction,buildStyledCardPayload("Roll Unavailable",0xff0000,[{body:"LOZ couldn't post the Species Roll message. Your roll was not used; please try again."}],true));
+    }
+
+    // Opening/replacing a panel does not spend a roll; the Reroll button does that.
+    _state.activeRolls.set(user.id,{channelId:channel.id,messageId:pubMsg.id,timestamp:now});
+
+    // Expire the old panel only once the replacement is posted successfully.
+    if (previousRoll && previousRoll.messageId!==pubMsg.id) {
+      try {
+        const previousChannel=previousRoll.channelId===channel.id
+          ? channel
+          : await _client.channels.fetch(previousRoll.channelId).catch(()=>null);
+        const previousMessage=previousChannel?.messages
+          ? await previousChannel.messages.fetch(previousRoll.messageId).catch(()=>null)
+          : null;
+        if (previousMessage) {
+          await previousMessage.edit(buildStyledCardPayload("Species Roll Replaced",0x808080,[
+            {body:"A newer Species Roll panel was opened. Use the newest panel to reroll. Replacing this panel did not spend a roll."},
+          ],false));
+        }
+      } catch(error) {
+        console.warn("[Species Roll] Could not expire previous panel:",error?.message||error);
+      }
+    }
+
+    return safeReply(interaction,{content:"Use the Reroll or Cancel button on the newest Species Roll message above. You can open another panel after 10 seconds.",flags:MessageFlags.Ephemeral});
   }
 
   // ── AWAKENING ─────────────────────────────────────────────────
