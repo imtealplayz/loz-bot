@@ -1243,9 +1243,17 @@ async function handleCommand(interaction) {
       round:1, difficulty, botPersonality:personality, timeout:null, log:[], playerName:user.displayName||user.username,
     };
     _state.activeBotFights.set(fightId,fight); _state.activeBotFights.set(user.id,fightId);
-    const msg = await channel.send(buildBotFightMessagePayload(fight, ["Fight started. Your turn."], "playing"));
+    let msg;
+    try {
+      msg = await channel.send(buildBotFightMessagePayload(fight, ["Fight started. Your turn."], "playing"));
+    } catch(error) {
+      if (_state.activeBotFights.get(fightId)===fight) _state.activeBotFights.delete(fightId);
+      if (_state.activeBotFights.get(user.id)===fightId) _state.activeBotFights.delete(user.id);
+      console.error("[Bot fight "+fightId+"] Failed to post the initial fight message:",error?.stack||error);
+      return safeReply(interaction,{embeds:[createErrorEmbed("LOZ couldn't post the battle message, so the fight was cancelled. Please try again.")],flags:64});
+    }
     _state.fightMessages.set(fightId,msg);
-    fight.timeout=setTimeout(()=>{ if(_state.activeBotFights.has(fightId)) endBotFight(channel,fightId,"bot","player",difficulty); },120000);
+    fight.timeout=setTimeout(()=>{ if(_state.activeBotFights.get(fightId)===fight) endBotFight(channel,fightId,"bot","player",difficulty,"timeout").catch(error=>console.error("[Bot fight "+fightId+"] Timeout resolution failed:",error?.stack||error)); },120000);
     return safeReply(interaction,{embeds:[createSuccessEmbed("Fight started!")],flags:64});
   }
 
@@ -1580,6 +1588,74 @@ async function handleCommand(interaction) {
       )],flags:64});
     }
 
+    if (sub==="clear-fight") {
+      const target=options.getUser("user");
+      let pvpCleared=0, botCleared=0, challengesCleared=0;
+
+      for (const [fightId,fight] of _state.activeFights.entries()) {
+        if (fight?.player1Id!==target.id && fight?.player2Id!==target.id) continue;
+        if (fight.timeout) clearTimeout(fight.timeout);
+        chaosSystem.cancelChaosReaction(fight);
+        const message=_state.fightMessages.get(fightId);
+        if (message) await message.edit({
+          content:null, embeds:null,
+          ...buildStyledCardPayload("Fight Cleared by Owner",0x808080,[
+            {body:"An owner cleared this stuck battle. No result or rewards were recorded."},
+          ]),
+        }).catch(()=>{});
+        _state.activeFights.delete(fightId);
+        _state.activeRequests.delete(fight.player1Id);
+        _state.activeRequests.delete(fight.player2Id);
+        _state.fightMessages.delete(fightId);
+        pvpCleared++;
+      }
+
+      // This map stores both fightId -> fight and playerId -> fightId.
+      const botFightRecords=new Map();
+      for (const [key,value] of _state.activeBotFights.entries()) {
+        const fight=value && typeof value==="object"
+          ? value
+          : (typeof value==="string" ? _state.activeBotFights.get(value) : null);
+        if (fight?.playerId===target.id && fight.fightId) botFightRecords.set(fight.fightId,fight);
+      }
+      for (const [fightId,fight] of botFightRecords.entries()) {
+        if (fight.timeout) clearTimeout(fight.timeout);
+        chaosSystem.cancelChaosReaction(fight);
+        const message=_state.fightMessages.get(fightId);
+        if (message) await message.edit({
+          content:null, embeds:null,
+          ...buildStyledCardPayload("Fight Cleared by Owner",0x808080,[
+            {body:"An owner cleared this stuck battle. No result or rewards were recorded."},
+          ]),
+        }).catch(()=>{});
+        for (const [key,value] of _state.activeBotFights.entries()) {
+          if (key===fightId || key===target.id || value===fightId || value===fight) {
+            _state.activeBotFights.delete(key);
+          }
+        }
+        _state.fightMessages.delete(fightId);
+        botCleared++;
+      }
+
+      for (const [challengeId] of _state.fightChallenges.entries()) {
+        const [challengerId,opponentId]=challengeId.split("-");
+        if (challengerId!==target.id && opponentId!==target.id) continue;
+        _state.fightChallenges.delete(challengeId);
+        clearFightRequestLocks(challengeId,challengerId,opponentId);
+        _state.activeRequests.delete(challengerId);
+        _state.activeRequests.delete(opponentId);
+        challengesCleared++;
+      }
+      _state.activeRequests.delete(target.id);
+      _state.fightCooldowns.delete(target.id);
+
+      return safeReply(interaction,{embeds:[createSuccessEmbed(
+        "Cleared stuck fight state for <@"+target.id+">.\n**PvP fights cleared:** "+pvpCleared
+        +"\n**Bot fights cleared:** "+botCleared+"\n**Pending challenges cleared:** "+challengesCleared
+        +"\nNo fight wins, losses, or rewards were added."
+      )],flags:64});
+    }
+
     if (sub==="species-unlock") {
       const target=options.getUser("user"), speciesName=options.getString("species");
       const current=_state.userSpecies.get(target.id)||{
@@ -1618,7 +1694,7 @@ async function handleCommand(interaction) {
         .addFields(
           {name:"🧬 Species Management",value:"`/owner species-change @user <species>`\n`/owner species-unlock @user <species>`\n`/owner species-reset @user`\n`/owner species-add @user <rolls>`",inline:false},
           {name:"🎒 Items",value:"`/owner add items @user species_token <quantity>`",inline:false},
-          {name:"🛡️ Access & Management",value:"`/owner ban @user [time]`\n`/owner unban @user`\n`/owner rolls-reset @user`\n`/owner quest-reset @user <quest>`\n`/owner debug-db`\n`/owner repair-user-db`",inline:false}
+          {name:"🛡️ Access & Management",value:"`/owner ban @user [time]`\n`/owner unban @user`\n`/owner clear-fight @user`\n`/owner rolls-reset @user`\n`/owner quest-reset @user <quest>`\n`/owner debug-db`\n`/owner repair-user-db`",inline:false}
         ).setFooter({text:"Use /owner menu to see this again"})]});
     }
 
@@ -2591,6 +2667,7 @@ const commands = [
     .addSubcommand(s=>s.setName("menu").setDescription("Show owner command menu"))
     .addSubcommand(s=>s.setName("ban").setDescription("Ban a user from using LOZ without deleting their data").addUserOption(o=>o.setName("user").setDescription("User to ban").setRequired(true)).addStringOption(o=>o.setName("time").setDescription("Duration: 1s, 1m, 1h, 1d, 1w, or 1y; omit for permanent").setRequired(false).setMaxLength(16)))
     .addSubcommand(s=>s.setName("unban").setDescription("Restore a user's access to LOZ").addUserOption(o=>o.setName("user").setDescription("User to unban").setRequired(true)))
+    .addSubcommand(s=>s.setName("clear-fight").setDescription("Clear stuck fight locks without awarding a result").addUserOption(o=>o.setName("user").setDescription("User whose stuck fight should be cleared").setRequired(true)))
     .addSubcommand(s=>s.setName("species-unlock").setDescription("Permanently unlock an exclusive species for a user").addUserOption(o=>o.setName("user").setDescription("Target user, including yourself").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Exclusive species to unlock").setRequired(true).addChoices({name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"Slime Lord 🫧",value:"Slime Lord"},{name:"Eclipsed Sovereign 🌘",value:"Eclipsed Sovereign"})))
     .addSubcommandGroup(g=>g.setName("add").setDescription("Give items to a user")
       .addSubcommand(s=>s.setName("items").setDescription("Give inventory items to a user")
