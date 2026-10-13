@@ -119,6 +119,14 @@ const duelChannelSchema = new mongoose.Schema({
   channelId: { type:String, required:true },
 });
 
+const guildInviteRewardSchema = new mongoose.Schema({
+  guildId:     { type:String, required:true, unique:true },
+  inviterId:   { type:String, required:true },
+  memberCount: { type:Number, required:true },
+  rollsAwarded:{ type:Number, required:true },
+  awardedAt:   { type:Date, default:Date.now },
+}, { minimize:false });
+
 const fightLeaderboardSchema = new mongoose.Schema({
   userId: { type:String, required:true, unique:true },
   wins:   { type:Number, default:0 },
@@ -135,6 +143,7 @@ const Quest            = mongoose.model("Quest",            questSchema);
 const QuestBoard       = mongoose.model("QuestBoard",       questBoardSchema);
 const DuelChannel      = mongoose.model("DuelChannel",      duelChannelSchema);
 const FightLeaderboard = mongoose.model("FightLeaderboard", fightLeaderboardSchema);
+const GuildInviteReward = mongoose.model("GuildInviteReward", guildInviteRewardSchema);
 
 // ==================== HELPERS ====================
 async function upsert(Model, filter, data) {
@@ -703,6 +712,107 @@ function hasActiveUniqueUserIdIndex(indexes) {
   );
 }
 
+// Award one persistent server-invite reward. The server claim and player balance are
+// committed together, so retries/rejoins cannot double-credit the same guild.
+async function awardGuildInviteReward(guildId, inviterId, memberCount, maxMembers=100, rollReward=5) {
+  const count = Number(memberCount);
+  const cap = Number(maxMembers);
+  const reward = Number(rollReward);
+  if (!/^\d{17,20}$/.test(String(guildId || "")) || !/^\d{17,20}$/.test(String(inviterId || ""))
+    || !Number.isFinite(count) || count < 1 || !Number.isFinite(cap) || cap < 1
+    || !Number.isFinite(reward) || reward < 1) {
+    return { ok:false, error:true, reason:"invalid_arguments" };
+  }
+  if (count > cap) return { ok:false, tooLarge:true, memberCount:count, memberCap:cap };
+  let session;
+  try {
+    if (userRepairPromise) await userRepairPromise;
+    if (!await connect()) return { ok:false, error:true, reason:"database_unavailable" };
+    session = await mongoose.startSession();
+    let outcome = null;
+    await session.withTransaction(async () => {
+      outcome = null;
+      const existingReward = await GuildInviteReward.findOne({ guildId:String(guildId) })
+        .session(session).lean();
+      if (existingReward) {
+        outcome = {
+          ok:true, awarded:false, alreadyAwarded:true,
+          inviterId:existingReward.inviterId,
+          rollsAwarded:Number(existingReward.rollsAwarded)||reward,
+        };
+        return;
+      }
+
+      const existingUsers = await User.find({
+        userId:String(inviterId),
+        archivedForRepair:{ $ne:true },
+      }).select({ rolls:1, speciesTokens:1 }).session(session).lean();
+      const currentRolls = Math.max(0, ...existingUsers.map(record => Number(record.rolls)||0));
+      const rolls = currentRolls + reward;
+
+      if (existingUsers.length) {
+        const updated = await User.updateMany(
+          { userId:String(inviterId), archivedForRepair:{ $ne:true } },
+          { $set:{ userId:String(inviterId), archivedForRepair:false, rolls } },
+          { session }
+        );
+        if (!updated.matchedCount) throw new Error("The inviter's player record changed during the reward transaction.");
+      } else {
+        await User.create([{
+          userId:String(inviterId),
+          archivedForRepair:false,
+          species:humanSpecies,
+          originalSpecies:humanSpecies,
+          questSpecies:{},
+          rolls,
+          speciesTokens:0,
+          guideRewardClaimed:false,
+          requestsEnabled:true,
+          lastSwitch:0,
+          awakening:{},
+          giftSent:{count:0,resetAt:0},
+          giftReceived:{count:0,resetAt:0},
+          badges:[],
+        }], { session });
+      }
+
+      await GuildInviteReward.create([{
+        guildId:String(guildId),
+        inviterId:String(inviterId),
+        memberCount:count,
+        rollsAwarded:reward,
+        awardedAt:new Date(),
+      }], { session });
+
+      outcome = {
+        ok:true, awarded:true, alreadyAwarded:false,
+        guildId:String(guildId), inviterId:String(inviterId),
+        memberCount:count, rollsAwarded:reward, rolls,
+      };
+    });
+    return outcome || { ok:false, error:true, reason:"empty_transaction_result" };
+  } catch(e) {
+    if (e?.code === 11000) {
+      try {
+        const existingReward = await GuildInviteReward.findOne({ guildId:String(guildId) }).lean();
+        if (existingReward) {
+          return {
+            ok:true, awarded:false, alreadyAwarded:true,
+            inviterId:existingReward.inviterId,
+            rollsAwarded:Number(existingReward.rollsAwarded)||reward,
+          };
+        }
+      } catch(readError) {
+        console.error("❌ Invite reward duplicate verification error:", readError.message);
+      }
+    }
+    console.error("❌ Guild invite reward transaction failed:", e?.message || String(e));
+    return { ok:false, error:true, reason:"transaction_failed" };
+  } finally {
+    if (session) await session.endSession().catch(()=>{});
+  }
+}
+
 // ==================== LOAD FUNCTIONS ====================
 async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStats, dailyClaims, botStats) {
   try {
@@ -1123,4 +1233,5 @@ module.exports = {
   listAllKeys, deleteUser,
   setBroadcastOptIn, getBroadcastOptIn, getBroadcastSubscribers,
   claimUpdateSubscriptionPrompt, dismissUpdateSubscriptionPrompt,
+  awardGuildInviteReward,
 };
