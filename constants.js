@@ -1,5 +1,14 @@
 const patchNotes = [
   {
+    version: "5.6.1", date: "2026-10-13",
+    changes: [
+      "Reworked leaderboard award and rank-change DMs into styled Components V2 containers with native dividers and a proper /profile prompt.",
+      "Reordered /profile badges so Founder, Creator, Co-Founder, and legacy badges appear before leaderboard badges.",
+      "Confirmed distinct #1, #2, and #3 badges for both Fight Wins and Species Rolls leaderboards.",
+      "Re-issued the corrected first-start leaderboard announcement once, including an apology explaining the previous message was an accidental test.",
+    ],
+  },
+  {
     version: "5.6", date: "2026-10-13",
     changes: [
       "Added live leaderboard badges: rank-specific badges for the top 3 and Top 10 badges for ranks 4–10 on both Fight Wins and Species Rolls leaderboards.",
