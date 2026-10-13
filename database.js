@@ -132,6 +132,11 @@ const fightLeaderboardSchema = new mongoose.Schema({
   wins:   { type:Number, default:0 },
 });
 
+const leaderboardBadgeStateSchema = new mongoose.Schema({
+  key:  { type:String, required:true, unique:true },
+  data: { type:Object, default:{} },
+}, { minimize:false });
+
 // ==================== MODELS ====================
 const User             = mongoose.model("User",             userSchema);
 const NotificationPreference = mongoose.model("NotificationPreference", notificationPreferenceSchema);
@@ -144,6 +149,7 @@ const QuestBoard       = mongoose.model("QuestBoard",       questBoardSchema);
 const DuelChannel      = mongoose.model("DuelChannel",      duelChannelSchema);
 const FightLeaderboard = mongoose.model("FightLeaderboard", fightLeaderboardSchema);
 const GuildInviteReward = mongoose.model("GuildInviteReward", guildInviteRewardSchema);
+const LeaderboardBadgeState = mongoose.model("LeaderboardBadgeState", leaderboardBadgeStateSchema);
 
 // ==================== HELPERS ====================
 async function upsert(Model, filter, data) {
@@ -814,6 +820,32 @@ async function awardGuildInviteReward(guildId, inviterId, memberCount, maxMember
 }
 
 // ==================== LOAD FUNCTIONS ====================
+async function getLeaderboardBadgeSnapshot() {
+  try {
+    if (!await connect()) return { ok:false, data:null };
+    const record = await LeaderboardBadgeState.findOne({ key:"global" }).lean();
+    return { ok:true, data:record?.data || null };
+  } catch(e) {
+    console.error("❌ Leaderboard badge snapshot read error:", e.message);
+    return { ok:false, data:null };
+  }
+}
+
+async function saveLeaderboardBadgeSnapshot(data) {
+  try {
+    if (!await connect()) return false;
+    await LeaderboardBadgeState.findOneAndUpdate(
+      { key:"global" },
+      { $set:{ key:"global", data } },
+      { upsert:true, new:true, setDefaultsOnInsert:true }
+    );
+    return true;
+  } catch(e) {
+    console.error("❌ Leaderboard badge snapshot write error:", e.message);
+    return false;
+  }
+}
+
 async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStats, dailyClaims, botStats) {
   try {
     if (!await connect()) {
@@ -1234,4 +1266,5 @@ module.exports = {
   setBroadcastOptIn, getBroadcastOptIn, getBroadcastSubscribers,
   claimUpdateSubscriptionPrompt, dismissUpdateSubscriptionPrompt,
   awardGuildInviteReward,
+  getLeaderboardBadgeSnapshot, saveLeaderboardBadgeSnapshot,
 };
