@@ -5,6 +5,7 @@ const patchNotes = [
       "Added Chaos Creator, a primary-owner-exclusive species with 50% incoming damage reduction, attacks that cannot miss, counter-countering, and Disintegrate (2-round cooldown).",
       "Chaos Creator can publicly nullify enemy ultimates, undo enemy healing, or reverse incoming attack damage after a primary-owner confirmation. Prompts expire after 15 seconds and resolved messages are cleaned up.",
       "Fixed the owner-only 'disintegrate command so the existing battle message updates to the final result and the normal victory rewards and statistics are recorded.",
+      "Rebuilt /help into six categorized command pages with < and > navigation, command usage, and brief descriptions. Simplified the /guide command directory so it points to the readable help pages.",
       "Hardened Top.gg vote reminders: failed DMs retry after 15 minutes, and the 12-hour reminder schedule advances only after a successful delivery."
     ],
   },
