@@ -422,30 +422,20 @@ client.on("messageCreate", async (message) => {
     ) {
       const mentionCard = new ContainerBuilder().setAccentColor(0x0891b2);
       mentionCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-        `## Legends of the Rift | LOZ
-I'm here! LOZ is a turn-based RPG where you collect species, learn their abilities, and challenge players or battle bots.`
+        "## Welcome to LOZ\nLegends of the Rift is a turn-based RPG where you roll species, grow stronger, complete quests, and battle players or bots."
       ));
       mentionCard.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
       mentionCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-        `### Start Your Journey
-**\`/guide\`** — Learn how LOZ works and claim your one-time tutorial roll.
-**\`/species-roll\`** — Roll for a species.
-**\`/daily\`** — Claim your daily reward.`
+        "**Start here:** Run `/guide` to learn the basics and earn your one-time tutorial roll.\n**Full guide:** [lozbot.vercel.app](https://lozbot.vercel.app/)\n**Commands:** Run `/help` to browse everything LOZ offers."
       ));
-      mentionCard.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-      mentionCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-        `### Explore & Get Help
-**\`/species\`** — Browse species, stats, passives, and ultimates.
-**\`/profile\`** — View your current species and progress.
-**\`/help\`** — Browse LOZ's commands.
-
-**New here?** Start with \`/guide\`.`
-      ));
-      return message.reply({
+      const mentionReply = await message.reply({
         components: [mentionCard],
         flags: MessageFlags.IsComponentsV2,
         allowedMentions: { parse: [] },
       });
+      const mentionTimer = setTimeout(() => mentionReply.delete().catch(() => {}), 10_000);
+      if (typeof mentionTimer.unref === "function") mentionTimer.unref();
+      return;
     }
 
     if (!message.content.startsWith(prefix)) return;
