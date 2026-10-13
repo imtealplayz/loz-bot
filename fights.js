@@ -144,7 +144,9 @@ async function startFight(channel, player1Id, player2Id) {
 // ==================== END PVP FIGHT ====================
 async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
   const fight = _state.activeFights.get(fightId);
-  if (!fight) return;
+  if (!fight || fight.ending) return;
+  fight.ending = true;
+  try {
   if (fight.timeout) clearTimeout(fight.timeout);
   chaosSystem.cancelChaosReaction(fight);
   const winner=fight.player1Id===winnerId?fight.player1:fight.player2;
@@ -191,6 +193,16 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
   _state.activeRequests.delete(fight.player1Id);
   _state.activeRequests.delete(fight.player2Id);
   _state.fightMessages.delete(fightId);
+  } catch (error) {
+    console.error("[PvP fight " + fightId + "] Fight resolution failed; releasing the fight lock:", error?.stack || error);
+  } finally {
+    if (fight.timeout) clearTimeout(fight.timeout);
+    chaosSystem.cancelChaosReaction(fight);
+    if (_state.activeFights.get(fightId) === fight) _state.activeFights.delete(fightId);
+    _state.activeRequests.delete(fight.player1Id);
+    _state.activeRequests.delete(fight.player2Id);
+    _state.fightMessages.delete(fightId);
+  }
 }
 
 // ==================== BOT AI TURN ====================
@@ -510,7 +522,9 @@ async function finishSlimeLordBoss(channel, fight, winner, reason) {
 // ==================== END BOT FIGHT ====================
 async function endBotFight(channel, fightId, winner, loser, difficulty, reason='normal') {
   const fight = _state.activeBotFights.get(fightId);
-  if (!fight) return;
+  if (!fight || fight.ending) return;
+  fight.ending = true;
+  try {
   if (fight.timeout) clearTimeout(fight.timeout);
   chaosSystem.cancelChaosReaction(fight);
   // Count every completed Half-Blood bot fight, including losses and Slime Lord boss attempts.
@@ -569,6 +583,16 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
   // Only genuine wins against regular bots can trigger the rare boss encounter.
   if (won && !fight.isSlimeBoss && reason!=="timeout" && Math.random()<0.075) {
     await startSlimeLordBoss(channel,fight);
+  }
+  } catch (error) {
+    console.error("[Bot fight " + fightId + "] Fight resolution failed; releasing the fight lock:", error?.stack || error);
+  } finally {
+    if (fight.timeout) clearTimeout(fight.timeout);
+    chaosSystem.cancelChaosReaction(fight);
+    if (_state.activeBotFights.get(fightId) === fight) _state.activeBotFights.delete(fightId);
+    // Preserve a new boss encounter that may have replaced the player's lock.
+    if (_state.activeBotFights.get(fight.playerId) === fightId) _state.activeBotFights.delete(fight.playerId);
+    _state.fightMessages.delete(fightId);
   }
 }
 
