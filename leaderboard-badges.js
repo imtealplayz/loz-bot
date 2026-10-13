@@ -1,10 +1,19 @@
 "use strict";
 
+const {
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  MessageFlags,
+} = require("discord.js");
 const database = require("./database.js");
 
 const TOP_LIMIT = 10;
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const BADGE_PREFIX = "LB_";
+// Bump only when the official award announcement needs a one-time resend.
+const ANNOUNCEMENT_REVISION = "5.6.1";
 
 const BADGE_LABELS = {
   LB_FIGHTS_1: "🥇 Fight Wins Leaderboard #1",
@@ -71,6 +80,7 @@ function getRankings(state) {
 function createSnapshot(rankings) {
   return {
     initialized: true,
+    announcementRevision: ANNOUNCEMENT_REVISION,
     updatedAt: Date.now(),
     boards: {
       fights: rankings.fights.top,
@@ -198,73 +208,138 @@ function rankText(rank) {
   return "#" + rank + (rank > TOP_LIMIT ? " (outside the Top 10)" : "");
 }
 
-function eventText(event) {
+function buildEventSection(event) {
   const title = boardName(event.board);
   const countName = scoreLabel(event.board);
-  const badge = event.rank && event.rank <= TOP_LIMIT
-    ? BADGE_LABELS[badgeToken(event.board, event.rank)]
-    : null;
+  const eligibleRank = event.rank && event.rank <= TOP_LIMIT ? event.rank : null;
+  const badge = eligibleRank ? BADGE_LABELS[badgeToken(event.board, eligibleRank)] : null;
 
   let status;
   if (event.kind === "initial") {
-    status = "Badge unlocked: " + badge + ".";
+    status = "🎉 **Badge unlocked:** " + badge;
   } else if (event.kind === "entered") {
-    status = "You entered the Top 10 and unlocked a leaderboard badge.";
+    status = "🎉 **You entered the Top 10 and earned:** " + badge;
   } else if (event.kind === "up") {
-    status = "Rank up: #" + event.oldRank + " → #" + event.rank + ".";
+    status = "📈 **Rank up:** #" + event.oldRank + " → #" + event.rank;
   } else if (event.kind === "down" && event.rank) {
-    status = "Rank down: #" + event.oldRank + " → #" + event.rank + ".";
+    status = "📉 **Rank down:** #" + event.oldRank + " → #" + event.rank;
   } else {
-    status = "You dropped out of the Top 10. Your previous leaderboard badge has been removed.";
+    status = "↘️ **You moved outside the Top 10.** Your previous badge has been removed.";
   }
 
-  let badgeUpdate;
-  if (!badge) {
-    badgeUpdate = "No active Top 10 badge";
-  } else if (event.kind === "initial" || event.kind === "entered") {
-    badgeUpdate = "Badge unlocked: " + badge;
-  } else {
-    badgeUpdate = "Current badge: " + badge;
-  }
+  const badgeLine = badge
+    ? ((event.kind === "initial" || event.kind === "entered")
+      ? "**Badge unlocked:** " + badge
+      : "**Current badge:** " + badge)
+    : "**Current badge:** No active Top 10 badge";
 
   let why;
   if (event.kind === "out") {
     why = "Your current standing is no longer within the Top 10.";
   } else if (event.rank && event.rank <= 3) {
-    why = "You are currently ranked #" + event.rank + " worldwide for " + title.toLowerCase() + ".";
+    why = "You are ranked #" + event.rank + " worldwide for " + title.toLowerCase() + ".";
   } else if (event.rank && event.rank <= TOP_LIMIT) {
-    why = "You are currently among the world's Top 10 for " + title.toLowerCase() + ".";
+    why = "You are among the world's Top 10 for " + title.toLowerCase() + ".";
   } else if (event.rank) {
     why = "Your current standing is #" + event.rank + " worldwide, outside the Top 10.";
   } else {
     why = "You currently have no eligible standing on this leaderboard.";
   }
 
-  let currentRank = rankText(event.rank);
+  let currentRankLabel = rankText(event.rank);
   if (event.board === "rolls" && !event.rank && event.score === 0) {
-    currentRank = "Unranked (0 unspent Species Rolls)";
+    currentRankLabel = "Unranked (0 unspent Species Rolls)";
   }
 
-  return "**" + title + "**\n"
-    + status + "\n"
-    + "• **Current rank:** " + currentRank + "\n"
-    + "• **Badge update:** " + badgeUpdate + "\n"
-    + "• **Why:** " + why + "\n"
-    + "• **Current total:** " + event.score + " " + countName;
+  return {
+    board: event.board,
+    title,
+    content: status + "\n\n"
+      + "**Current rank:** " + currentRankLabel + "\n"
+      + badgeLine + "\n"
+      + "**Why you received it:** " + why + "\n"
+      + "**Current total:** " + event.score + " " + countName,
+  };
+}
+
+function addNativeDivider(container) {
+  container.addSeparatorComponents(
+    new SeparatorBuilder()
+      .setDivider(true)
+      .setSpacing(SeparatorSpacingSize.Small)
+  );
 }
 
 function buildDM(events, isInitial) {
-  const sections = events.map(eventText);
-  const heading = isInitial
-    ? "## 🏅 LOZ Leaderboard Badges Unlocked"
-    : "## 🏆 LOZ Leaderboard Rank Update";
+  const container = new ContainerBuilder()
+    .setAccentColor(isInitial ? 0xE9A23B : 0x7562D9);
 
-  return heading + "\n\n"
-    + (isInitial
-      ? "The leaderboard badge system is live, and you have earned the following badge(s):\n\n"
-      : "Your leaderboard standing changed. Here is your latest rank and badge status:\n\n")
-    + sections.join("\n\n")
-    + "\n\nUse the /profile command to view your badges.";
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    isInitial
+      ? "## 🏆 LOZ · LEADERBOARD BADGE AWARDS\n### Your achievements have been recorded"
+      : "## 📊 LOZ · LEADERBOARD RANK UPDATE\n### Your latest standing is in"
+  ));
+
+  addNativeDivider(container);
+
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    isInitial
+      ? "The badge system is now live. These badges reflect your current position on the global LOZ leaderboards."
+      : "Your position changed on a global LOZ leaderboard. Here is your updated rank and badge status."
+  ));
+
+  for (const event of events) {
+    const section = buildEventSection(event);
+    addNativeDivider(container);
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      (section.board === "fights" ? "### ⚔️ " : "### 🎲 ")
+      + section.title + "\n\n" + section.content
+    ));
+  }
+
+  addNativeDivider(container);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    "### 👤 View Your Badges\nUse `/profile` to view your current badges and player profile."
+  ));
+
+  if (isInitial) {
+    addNativeDivider(container);
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      "### 🙏 A quick apology\nSorry for sending this announcement again. The previous message was a test and was sent accidentally. This is the corrected version with the proper badge layout. Thanks for understanding!"
+    ));
+  }
+
+  return {
+    components: [container],
+    flags: MessageFlags.IsComponentsV2,
+    allowedMentions: { parse: [] },
+  };
+}
+
+async function sendNotifications(client, eventsByUser, isInitial) {
+  let delivered = 0;
+  let failed = 0;
+
+  for (const [userId, events] of eventsByUser.entries()) {
+    try {
+      const user = await client.users.fetch(userId);
+      if (user.bot) continue;
+      await user.send(buildDM(events, isInitial));
+      delivered++;
+    } catch (error) {
+      failed++;
+      console.warn(
+        "[Leaderboard Badges] Could not DM " + userId + ": "
+        + String(error?.message || error)
+      );
+    }
+    await sleep(350);
+  }
+
+  console.log(
+    "[Leaderboard Badges] Notification pass complete: "
+    + delivered + " sent, " + failed + " failed."
+  );
 }
 
 function sleep(ms) {
@@ -314,7 +389,8 @@ async function runCycle(client, state) {
 
     const rankings = getRankings(state);
     const nextSnapshot = createSnapshot(rankings);
-    const isInitial = !previousSnapshot?.initialized;
+    const isInitial = !previousSnapshot?.initialized
+      || previousSnapshot?.announcementRevision !== ANNOUNCEMENT_REVISION;
     const eventsByUser = collectEvents(previousSnapshot, nextSnapshot, rankings, state, isInitial);
 
     await syncProfileBadges(state, nextSnapshot, previousSnapshot);
