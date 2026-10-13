@@ -31,6 +31,27 @@ let _client = null;
 function setState(s) { _state = s; }
 function setClient(c) { _client = c; }
 
+const SUPPORT_SERVER_INVITE = "https://discord.gg/TKBYpjqnPC";
+
+function parseAccessBanDuration(rawValue) {
+  const raw = String(rawValue || "").trim().toLowerCase();
+  if (!raw) return { ok:true, expiresAt:null, label:"Permanent" };
+  const match = raw.match(/^([1-9]\d*)(s|m|h|d|w|y)$/);
+  if (!match) {
+    return { ok:false, error:"Invalid duration. Use \`1s\`, \`1m\`, \`1h\`, \`1d\`, \`1w\`, or \`1y\` (for example \`12h\`). Leave the time empty for a permanent ban." };
+  }
+  const amount=Number(match[1]), unit=match[2];
+  const unitMs={s:1000,m:60000,h:3600000,d:86400000,w:604800000,y:31536000000}[unit];
+  const durationMs=amount*unitMs;
+  const expiresAtMs=Date.now()+durationMs;
+  if (!Number.isSafeInteger(amount)||!Number.isFinite(durationMs)||durationMs<=0
+    ||!Number.isFinite(expiresAtMs)||expiresAtMs>8640000000000000) {
+    return { ok:false, error:"That ban duration is too large to represent safely. Use a smaller value." };
+  }
+  const unitName={s:"second",m:"minute",h:"hour",d:"day",w:"week",y:"year"}[unit];
+  return { ok:true, expiresAt:new Date(expiresAtMs), label:amount+" "+unitName+(amount===1?"":"s") };
+}
+
 const LEADERBOARD_BADGE_LABELS = {
   LB_FIGHTS_1: "🥇 Fight Wins Leaderboard #1",
   LB_FIGHTS_2: "🥈 Fight Wins Leaderboard #2",
@@ -1490,6 +1511,75 @@ async function handleCommand(interaction) {
     if (user.id!==_state.ownerId&&user.id!==_state.secondGodId) return safeReply(interaction,{embeds:[createErrorEmbed("Only an authorized LOZ owner can use this command.")],flags:64});
     const sub=options.getSubcommand();
 
+    if (sub==="ban") {
+      const target=options.getUser("user");
+      const duration=parseAccessBanDuration(options.getString("time"));
+      if (!duration.ok) return safeReply(interaction,{embeds:[createErrorEmbed(duration.error)],flags:64});
+      if (target.id===_state.ownerId || target.id===_state.secondGodId || target.id===_client.user.id) {
+        return safeReply(interaction,{embeds:[createErrorEmbed("Owner accounts and LOZ itself are protected from access bans.")],flags:64});
+      }
+      const result=await database.setAccessBan(target.id,{bannedBy:user.id,expiresAt:duration.expiresAt});
+      if (!result?.ok) {
+        return safeReply(interaction,{embeds:[createErrorEmbed("MongoDB could not confirm this access ban. No success is being reported; check the database before retrying.")],flags:64});
+      }
+      let dmDelivered=true;
+      try {
+        const banCard=new ContainerBuilder().setAccentColor(0xdc2626);
+        banCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+          "## ⛔ LOZ Access Ban\nYou have been banned from using **Legends of the Rift (LOZ)**."
+        ));
+        banCard.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+        const expiryText=duration.expiresAt
+          ? "**Duration:** "+duration.label+"\n**Expires:** <t:"+Math.floor(duration.expiresAt.getTime()/1000)+":F> (<t:"+Math.floor(duration.expiresAt.getTime()/1000)+":R>)"
+          : "**Duration:** Permanent";
+        banCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+          expiryText+"\n\nYour saved player data has **not** been deleted.\n\n**Want to appeal?** Join the [LOZ Support Server]("+SUPPORT_SERVER_INVITE+") and submit an appeal."
+        ));
+        await target.send({components:[banCard],flags:MessageFlags.IsComponentsV2,allowedMentions:{parse:[]}});
+      } catch(error) {
+        dmDelivered=false;
+        console.warn("[LOZ Access Bans] Could not DM banned user "+target.id+": "+String(error?.message||error));
+      }
+      const expiryResult=duration.expiresAt
+        ? "\n**Expires:** <t:"+Math.floor(duration.expiresAt.getTime()/1000)+":F>"
+        : "\n**Expires:** Never (permanent)";
+      const dmResult=dmDelivered ? "The user was notified by DM." : "The ban is active, but Discord did not allow the DM to be delivered.";
+      return safeReply(interaction,{embeds:[createSuccessEmbed(
+        "Banned <@"+target.id+"> from using LOZ.\n**Duration:** "+duration.label+expiryResult+"\n"+dmResult+"\nTheir player data remains untouched."
+      )],flags:64});
+    }
+
+    if (sub==="unban") {
+      const target=options.getUser("user");
+      const result=await database.removeAccessBan(target.id,user.id);
+      if (!result?.ok) {
+        return safeReply(interaction,{embeds:[createErrorEmbed("MongoDB could not confirm this unban. Please check the database before retrying.")],flags:64});
+      }
+      if (!result.found) {
+        return safeReply(interaction,{embeds:[createErrorEmbed(result.expired
+          ? "<@"+target.id+">'s ban has already expired."
+          : "<@"+target.id+"> does not currently have an active LOZ access ban.")],flags:64});
+      }
+      let dmDelivered=true;
+      try {
+        const unbanCard=new ContainerBuilder().setAccentColor(0x16a34a);
+        unbanCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+          "## ✅ LOZ Access Restored\nYour ban from using **Legends of the Rift (LOZ)** has been lifted. You can use LOZ commands again."
+        ));
+        unbanCard.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+        unbanCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+          "Your player data was kept intact. Welcome back!\n\n[LOZ Support Server]("+SUPPORT_SERVER_INVITE+")"
+        ));
+        await target.send({components:[unbanCard],flags:MessageFlags.IsComponentsV2,allowedMentions:{parse:[]}});
+      } catch(error) {
+        dmDelivered=false;
+        console.warn("[LOZ Access Bans] Could not DM unbanned user "+target.id+": "+String(error?.message||error));
+      }
+      return safeReply(interaction,{embeds:[createSuccessEmbed(
+        "Unbanned <@"+target.id+"> from LOZ. Their saved data is untouched."+ (dmDelivered ? " They were notified by DM." : " The unban succeeded, but Discord did not allow the DM to be delivered.")
+      )],flags:64});
+    }
+
     if (sub==="species-unlock") {
       const target=options.getUser("user"), speciesName=options.getString("species");
       const current=_state.userSpecies.get(target.id)||{
@@ -1528,7 +1618,7 @@ async function handleCommand(interaction) {
         .addFields(
           {name:"🧬 Species Management",value:"`/owner species-change @user <species>`\n`/owner species-unlock @user <species>`\n`/owner species-reset @user`\n`/owner species-add @user <rolls>`",inline:false},
           {name:"🎒 Items",value:"`/owner add items @user species_token <quantity>`",inline:false},
-          {name:"⚙️ Management",value:"`/owner rolls-reset @user`\n`/owner quest-reset @user <quest>`\n`/owner debug-db`\n`/owner repair-user-db`",inline:false}
+          {name:"🛡️ Access & Management",value:"`/owner ban @user [time]`\n`/owner unban @user`\n`/owner rolls-reset @user`\n`/owner quest-reset @user <quest>`\n`/owner debug-db`\n`/owner repair-user-db`",inline:false}
         ).setFooter({text:"Use /owner menu to see this again"})]});
     }
 
@@ -2499,6 +2589,8 @@ const commands = [
   // Keep /owner visible in every server; the handler below enforces the exact owner-ID allow-list.
   new SlashCommandBuilder().setName("owner").setDescription("Owner-only commands")
     .addSubcommand(s=>s.setName("menu").setDescription("Show owner command menu"))
+    .addSubcommand(s=>s.setName("ban").setDescription("Ban a user from using LOZ without deleting their data").addUserOption(o=>o.setName("user").setDescription("User to ban").setRequired(true)).addStringOption(o=>o.setName("time").setDescription("Duration: 1s, 1m, 1h, 1d, 1w, or 1y; omit for permanent").setRequired(false).setMaxLength(16)))
+    .addSubcommand(s=>s.setName("unban").setDescription("Restore a user's access to LOZ").addUserOption(o=>o.setName("user").setDescription("User to unban").setRequired(true)))
     .addSubcommand(s=>s.setName("species-unlock").setDescription("Permanently unlock an exclusive species for a user").addUserOption(o=>o.setName("user").setDescription("Target user, including yourself").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Exclusive species to unlock").setRequired(true).addChoices({name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"Slime Lord 🫧",value:"Slime Lord"},{name:"Eclipsed Sovereign 🌘",value:"Eclipsed Sovereign"})))
     .addSubcommandGroup(g=>g.setName("add").setDescription("Give items to a user")
       .addSubcommand(s=>s.setName("items").setDescription("Give inventory items to a user")
