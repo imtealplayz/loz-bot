@@ -365,6 +365,10 @@ const GUIDE_PAGES = [
     body:"The command list is now organized into small, readable categories. Run \x60/help\x60 and use the **<** and **>** buttons to browse one category per page.\n\n**Getting started** — \x60/daily\x60, \x60/species-roll\x60, \x60/profile\x60\n**Species & progress** — \x60/species\x60, \x60/awakening\x60, \x60/switch\x60\n**Battles** — \x60/fight\x60, \x60/togglerequests\x60\n**Quests & rewards** — \x60/quests\x60, \x60/gift\x60\n**Records** — \x60/fightstats\x60, \x60/history\x60, \x60/leaderboard\x60\n\nEach command page explains the correct usage and what the command does. Click **Next Page** when you're ready to finish.",
   },
 
+  {
+    title:"Ready to Enter the Rift?",
+    body:"You're ready! Start with a daily roll, learn your species, and jump into a battle. You can run \x60/guide\x60 again any time.\n\nPress **Complete Tutorial** below to claim your **one-time +1 Species Roll**. This reward can only be claimed once.",
+  },
 ];
 
 function buildGuidePayload(userId, userDisplayName, pageIndex) {
