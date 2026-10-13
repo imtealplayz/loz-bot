@@ -137,6 +137,17 @@ const leaderboardBadgeStateSchema = new mongoose.Schema({
   data: { type:Object, default:{} },
 }, { minimize:false });
 
+const accessBanSchema = new mongoose.Schema({
+  userId:     { type:String, required:true, unique:true },
+  active:     { type:Boolean, default:true },
+  bannedBy:   { type:String, required:true },
+  createdAt:  { type:Date, default:Date.now },
+  expiresAt:  { type:Date, default:null },
+  unbannedBy: { type:String, default:null },
+  unbannedAt: { type:Date, default:null },
+  expiredAt:  { type:Date, default:null },
+}, { minimize:false });
+
 // ==================== MODELS ====================
 const User             = mongoose.model("User",             userSchema);
 const NotificationPreference = mongoose.model("NotificationPreference", notificationPreferenceSchema);
@@ -150,6 +161,7 @@ const DuelChannel      = mongoose.model("DuelChannel",      duelChannelSchema);
 const FightLeaderboard = mongoose.model("FightLeaderboard", fightLeaderboardSchema);
 const GuildInviteReward = mongoose.model("GuildInviteReward", guildInviteRewardSchema);
 const LeaderboardBadgeState = mongoose.model("LeaderboardBadgeState", leaderboardBadgeStateSchema);
+const AccessBan = mongoose.model("AccessBan", accessBanSchema);
 
 // ==================== HELPERS ====================
 async function upsert(Model, filter, data) {
@@ -820,6 +832,68 @@ async function awardGuildInviteReward(guildId, inviterId, memberCount, maxMember
 }
 
 // ==================== LOAD FUNCTIONS ====================
+async function setAccessBan(userId, details) {
+  try {
+    if (!await connect()) return { ok:false, error:"Database unavailable" };
+    const ban = await AccessBan.findOneAndUpdate(
+      { userId:String(userId) },
+      { $set:{
+        userId:String(userId), active:true, bannedBy:String(details.bannedBy),
+        createdAt:new Date(), expiresAt:details.expiresAt || null,
+        unbannedBy:null, unbannedAt:null, expiredAt:null,
+      } },
+      { upsert:true, new:true, setDefaultsOnInsert:true, runValidators:true }
+    ).lean();
+    return { ok:true, ban };
+  } catch(e) {
+    console.error("❌ Access ban save error:", e.message);
+    return { ok:false, error:e.message };
+  }
+}
+
+async function getActiveAccessBan(userId) {
+  try {
+    if (!await connect()) return { ok:false, ban:null };
+    const ban = await AccessBan.findOne({ userId:String(userId), active:true }).lean();
+    if (!ban) return { ok:true, ban:null };
+    if (ban.expiresAt && new Date(ban.expiresAt).getTime() <= Date.now()) {
+      await AccessBan.updateOne(
+        { userId:String(userId), active:true },
+        { $set:{ active:false, expiredAt:new Date() } }
+      );
+      return { ok:true, ban:null, expired:true };
+    }
+    return { ok:true, ban };
+  } catch(e) {
+    console.error("❌ Access ban lookup error:", e.message);
+    return { ok:false, ban:null, error:e.message };
+  }
+}
+
+async function removeAccessBan(userId, moderatorId) {
+  try {
+    if (!await connect()) return { ok:false, found:false, error:"Database unavailable" };
+    const current = await AccessBan.findOne({ userId:String(userId), active:true }).lean();
+    if (!current) return { ok:true, found:false };
+    if (current.expiresAt && new Date(current.expiresAt).getTime() <= Date.now()) {
+      await AccessBan.updateOne(
+        { userId:String(userId), active:true },
+        { $set:{ active:false, expiredAt:new Date() } }
+      );
+      return { ok:true, found:false, expired:true };
+    }
+    const updated = await AccessBan.findOneAndUpdate(
+      { userId:String(userId), active:true },
+      { $set:{ active:false, unbannedBy:String(moderatorId), unbannedAt:new Date() } },
+      { new:true }
+    ).lean();
+    return { ok:true, found:Boolean(updated), ban:updated || current };
+  } catch(e) {
+    console.error("❌ Access unban error:", e.message);
+    return { ok:false, found:false, error:e.message };
+  }
+}
+
 async function getLeaderboardBadgeSnapshot() {
   try {
     if (!await connect()) return { ok:false, data:null };
@@ -1267,4 +1341,5 @@ module.exports = {
   claimUpdateSubscriptionPrompt, dismissUpdateSubscriptionPrompt,
   awardGuildInviteReward,
   getLeaderboardBadgeSnapshot, saveLeaderboardBadgeSnapshot,
+  setAccessBan, getActiveAccessBan, removeAccessBan,
 };
