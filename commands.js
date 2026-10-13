@@ -1084,6 +1084,12 @@ async function handleCommand(interaction) {
     // Opening/replacing a panel does not spend a roll; the Reroll button does that.
     _state.activeRolls.set(user.id,{channelId:channel.id,messageId:pubMsg.id,timestamp:now});
 
+    // Acknowledge before fetching/editing the older message, which may exceed Discord's interaction window.
+    const panelResponse=await safeReply(interaction,{
+      content:"Use the Reroll or Cancel button on the newest Species Roll message above. You can open another panel after 10 seconds.",
+      flags:MessageFlags.Ephemeral,
+    });
+
     // Expire the old panel only once the replacement is posted successfully.
     if (previousRoll && previousRoll.messageId!==pubMsg.id) {
       try {
@@ -1103,7 +1109,7 @@ async function handleCommand(interaction) {
       }
     }
 
-    return safeReply(interaction,{content:"Use the Reroll or Cancel button on the newest Species Roll message above. You can open another panel after 10 seconds.",flags:MessageFlags.Ephemeral});
+    return panelResponse;
   }
 
   // ── AWAKENING ─────────────────────────────────────────────────
