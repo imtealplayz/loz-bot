@@ -1,5 +1,13 @@
 const patchNotes = [
   {
+    version: "5.9", date: "2026-10-14",
+    changes: [
+      "Removed passive and ultimate ability descriptions from /profile so profiles focus on species, inventory, fight record, badges, and membership.",
+      "Added the ᯓ★ marker to every displayed profile badge, including Founder, Creator, legacy, and leaderboard badges.",
+      "Added a 10-second /species-roll command cooldown and allowed opening a fresh roll panel without cancelling an older one. The old panel is invalidated only after the new panel posts successfully, and opening or replacing a panel does not spend a roll.",
+    ],
+  },
+  {
     version: "5.8", date: "2026-10-13",
     changes: [
       "Fixed a fight-lock failure where a thrown error during battle resolution could leave players marked as fighting.",
