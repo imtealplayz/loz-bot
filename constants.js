@@ -1,5 +1,13 @@
 const patchNotes = [
   {
+    version: "5.8", date: "2026-10-13",
+    changes: [
+      "Fixed a fight-lock failure where a thrown error during battle resolution could leave players marked as fighting.",
+      "Added /owner clear-fight to clear stuck PvP or bot fights and pending challenges without awarding wins, losses, or rewards.",
+      "Added rollback when an initial bot-fight message cannot be posted, preventing an orphaned active-fight lock.",
+    ],
+  },
+  {
     version: "5.7", date: "2026-10-13",
     changes: [
       "Added persistent LOZ access bans with /owner ban and /owner unban, without deleting player data.",
