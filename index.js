@@ -12,6 +12,7 @@ const { setState: setCommandState, setClient, handleCommand, handleAutocomplete,
 const { disintegrationMessages } = require("./constants.js");
 const questSystem = require("./quest-system.js");
 const chaosSystem = require("./chaos.js");
+const leaderboardBadgeSystem = require("./leaderboard-badges.js");
 
 // ==================== CONSTANTS ====================
 const ownerId     = "926063716057894953";
@@ -334,6 +335,9 @@ client.once("clientReady", async () => {
 
   console.log("✅ Database loaded");
   updatePresence();
+  leaderboardBadgeSystem.startScheduler(client, state).catch(error => {
+    console.error("[Leaderboard Badges] Could not start rank tracking:", error);
+  });
   console.log(`🎉 Bot ready with ${state.userSpecies.size} users!`);
 });
 
