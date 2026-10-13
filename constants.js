@@ -1,5 +1,13 @@
 const patchNotes = [
   {
+    version: "5.6", date: "2026-10-13",
+    changes: [
+      "Added live leaderboard badges: rank-specific badges for the top 3 and Top 10 badges for ranks 4–10 on both Fight Wins and Species Rolls leaderboards.",
+      "Added launch DMs for current top-10 players and automatic rank-up/rank-down notifications with current standing, badge status, and current wins or Species Rolls.",
+      "Leaderboard badges now appear in /profile, update as rankings change, and are removed when a player falls outside the Top 10.",
+    ],
+  },
+  {
     version: "5.5", date: "2026-10-13",
     changes: [
       "Added Chaos Creator, a primary-owner-exclusive species with 50% incoming damage reduction, attacks that cannot miss, counter-countering, and Disintegrate (2-round cooldown).",
