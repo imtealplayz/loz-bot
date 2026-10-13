@@ -369,6 +369,10 @@ function buildHelpPayload(pageIndex) {
       .setStyle(ButtonStyle.Primary)
       .setDisabled(safePage >= HELP_PAGES.length - 1)
   ));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    "**Need help?** Join the [LOZ Support Server](https://discord.gg/TKBYpjqnPC) for support, questions, and community updates."
+  ));
   return {components:[container],flags:MessageFlags.IsComponentsV2,allowedMentions:{parse:[]}};
 }
 
