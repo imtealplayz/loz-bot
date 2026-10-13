@@ -1533,7 +1533,7 @@ async function handleCommand(interaction) {
           ? "**Duration:** "+duration.label+"\n**Expires:** <t:"+Math.floor(duration.expiresAt.getTime()/1000)+":F> (<t:"+Math.floor(duration.expiresAt.getTime()/1000)+":R>)"
           : "**Duration:** Permanent";
         banCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-          expiryText+"\n\nYour saved player data has **not** been deleted.\n\n**Want to appeal?** Join the [LOZ Support Server]("+SUPPORT_SERVER_INVITE+") and submit an appeal."
+          expiryText+"\n\n**Want to appeal?** Join the [LOZ Support Server]("+SUPPORT_SERVER_INVITE+") and submit an appeal."
         ));
         await target.send({components:[banCard],flags:MessageFlags.IsComponentsV2,allowedMentions:{parse:[]}});
       } catch(error) {
@@ -1545,7 +1545,7 @@ async function handleCommand(interaction) {
         : "\n**Expires:** Never (permanent)";
       const dmResult=dmDelivered ? "The user was notified by DM." : "The ban is active, but Discord did not allow the DM to be delivered.";
       return safeReply(interaction,{embeds:[createSuccessEmbed(
-        "Banned <@"+target.id+"> from using LOZ.\n**Duration:** "+duration.label+expiryResult+"\n"+dmResult+"\nTheir player data remains untouched."
+        "Banned <@"+target.id+"> from using LOZ.\n**Duration:** "+duration.label+expiryResult+"\n"+dmResult
       )],flags:64});
     }
 
@@ -1568,7 +1568,7 @@ async function handleCommand(interaction) {
         ));
         unbanCard.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
         unbanCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-          "Your player data was kept intact. Welcome back!\n\n[LOZ Support Server]("+SUPPORT_SERVER_INVITE+")"
+          "Your LOZ access has been restored. Welcome back!\n\n[LOZ Support Server]("+SUPPORT_SERVER_INVITE+")"
         ));
         await target.send({components:[unbanCard],flags:MessageFlags.IsComponentsV2,allowedMentions:{parse:[]}});
       } catch(error) {
@@ -1576,7 +1576,7 @@ async function handleCommand(interaction) {
         console.warn("[LOZ Access Bans] Could not DM unbanned user "+target.id+": "+String(error?.message||error));
       }
       return safeReply(interaction,{embeds:[createSuccessEmbed(
-        "Unbanned <@"+target.id+"> from LOZ. Their saved data is untouched."+ (dmDelivered ? " They were notified by DM." : " The unban succeeded, but Discord did not allow the DM to be delivered.")
+        "Unbanned <@"+target.id+"> from LOZ."+ (dmDelivered ? " They were notified by DM." : " The unban succeeded, but Discord did not allow the DM to be delivered.")
       )],flags:64});
     }
 
