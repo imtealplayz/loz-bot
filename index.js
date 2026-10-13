@@ -20,6 +20,59 @@ const secondGodId = "1445387368830992455";
 const TOKEN = (process.env.TOKEN || process.env.DISCORD_TOKEN || "").trim();
 const prefix      = "'";
 
+const SUPPORT_SERVER_INVITE = "https://discord.gg/TKBYpjqnPC";
+
+function buildAccessNoticePayload({ unavailable=false, ephemeral=false }={}) {
+  const card=new ContainerBuilder().setAccentColor(unavailable ? 0xe0a020 : 0xdc2626);
+  card.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    unavailable ? "## ⚠️ LOZ Access Check Unavailable" : "## ⛔ Banned from LOZ"
+  ));
+  card.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  card.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    unavailable
+      ? "LOZ cannot verify your access right now. Please try again shortly."
+      : "You're banned from using LOZ.\n\nJoin the [LOZ Support Server]("+SUPPORT_SERVER_INVITE+") and submit an appeal.\n\nThis notice will disappear in 7 seconds."
+  ));
+  return {
+    components:[card],
+    flags:MessageFlags.IsComponentsV2 | (ephemeral ? MessageFlags.Ephemeral : 0),
+    allowedMentions:{parse:[]},
+  };
+}
+
+function scheduleAccessNoticeDeletion(callback) {
+  const timer=setTimeout(callback,7000);
+  if (typeof timer.unref==="function") timer.unref();
+}
+
+async function denyBannedInteraction(interaction, unavailable=false) {
+  if (interaction.isAutocomplete()) {
+    await interaction.respond([]).catch(()=>{});
+    return;
+  }
+  try {
+    await interaction.reply(buildAccessNoticePayload({unavailable,ephemeral:true}));
+    scheduleAccessNoticeDeletion(()=>interaction.deleteReply().catch(()=>{}));
+  } catch(error) {
+    if (error?.code!==10062 && !error?.message?.includes("Unknown interaction")) {
+      console.warn("[LOZ Access Bans] Could not show access notice:", error?.message||error);
+    }
+  }
+}
+
+async function denyBannedMessage(message, unavailable=false) {
+  try {
+    const notice=await message.reply(buildAccessNoticePayload({unavailable,ephemeral:false}));
+    scheduleAccessNoticeDeletion(()=>notice.delete().catch(()=>{}));
+  } catch(error) {
+    console.warn("[LOZ Access Bans] Could not show message access notice:", error?.message||error);
+  }
+}
+
+function isAuthorizedLozOwner(userId) {
+  return userId===ownerId || userId===secondGodId;
+}
+
 // Attach owner IDs to state so helpers/commands can read them
 state.ownerId     = ownerId;
 state.secondGodId = secondGodId;
@@ -346,6 +399,22 @@ client.on("messageCreate", async (message) => {
   try {
     if (message.author.bot) return;
 
+    const pingsLoz = message.mentions.users.has(client.user.id)
+      || message.content.startsWith("<@"+client.user.id+">")
+      || message.content.startsWith("<@!"+client.user.id+">");
+    const usesLozPrefix = message.content.startsWith(prefix);
+    if ((pingsLoz || usesLozPrefix) && !isAuthorizedLozOwner(message.author.id)) {
+      const access = await database.getActiveAccessBan(message.author.id);
+      if (!access?.ok) {
+        await denyBannedMessage(message, true);
+        return;
+      }
+      if (access.ban) {
+        await denyBannedMessage(message, false);
+        return;
+      }
+    }
+
     // Bot mention response
     if (
       message.content.startsWith(`<@${client.user.id}>`) ||
@@ -431,6 +500,13 @@ Users can use LOZ commands here again.`);
 client.on("interactionCreate", async (interaction) => {
   try {
     if (interaction.isAutocomplete()) {
+      if (interaction.user && !isAuthorizedLozOwner(interaction.user.id)) {
+        const access = await database.getActiveAccessBan(interaction.user.id);
+        if (!access?.ok || access.ban) {
+          await interaction.respond([]).catch(()=>{});
+          return;
+        }
+      }
       await handleAutocomplete(interaction);
       return;
     }
@@ -441,6 +517,19 @@ client.on("interactionCreate", async (interaction) => {
         content: "LOZ is loading saved player data after a restart. Please try again in a few seconds.",
         flags: 64,
       }).catch(() => {});
+    }
+
+    if ((interaction.isCommand() || interaction.isButton() || interaction.isStringSelectMenu())
+      && interaction.user && !isAuthorizedLozOwner(interaction.user.id)) {
+      const access = await database.getActiveAccessBan(interaction.user.id);
+      if (!access?.ok) {
+        await denyBannedInteraction(interaction, true);
+        return;
+      }
+      if (access.ban) {
+        await denyBannedInteraction(interaction, false);
+        return;
+      }
     }
 
     if (interaction.isButton() && String(interaction.customId || "").startsWith("chaosreact_")) {
