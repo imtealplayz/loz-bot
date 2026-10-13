@@ -31,6 +31,18 @@ let _client = null;
 function setState(s) { _state = s; }
 function setClient(c) { _client = c; }
 
+const LEADERBOARD_BADGE_LABELS = {
+  LB_FIGHTS_1: "🥇 Fight Wins Leaderboard #1",
+  LB_FIGHTS_2: "🥈 Fight Wins Leaderboard #2",
+  LB_FIGHTS_3: "🥉 Fight Wins Leaderboard #3",
+  LB_FIGHTS_TOP10: "🏅 Top 10 Fight Wins in the World",
+  LB_ROLLS_1: "🥇 Species Rolls Leaderboard #1",
+  LB_ROLLS_2: "🥈 Species Rolls Leaderboard #2",
+  LB_ROLLS_3: "🥉 Species Rolls Leaderboard #3",
+  LB_ROLLS_TOP10: "🏅 Top 10 Species Rolls in the World",
+};
+
+
 function getSpeciesAutocompleteEntries(includeChaosCreator = false) {
   const entries = [
     ...speciesList,
@@ -1005,6 +1017,10 @@ async function handleCommand(interaction) {
     const wr=totalFights>0?((fd.wins/totalFights)*100).toFixed(1):"0.0";
     const badges=[];
     if (td.badges?.includes("OG 50")) badges.push("🎉 OG 50");
+    for (const badge of td.badges || []) {
+      const badgeLabel = LEADERBOARD_BADGE_LABELS[badge];
+      if (badgeLabel && !badges.includes(badgeLabel)) badges.push(badgeLabel);
+    }
     if (target.id==="926063716057894953") badges.push("👑 Founder","✨ The Creator");
     if (target.id==="1376978115171192922") badges.push("🤝 Co-Founder","🧪 OG Tester","⭐ Shion's Favourite");
     const sections=[
@@ -1273,7 +1289,7 @@ async function handleCommand(interaction) {
 
     if (leaderboardType === "fights") {
       const sorted=Array.from(_state.fightLeaderboard.entries())
-        .sort((a,b)=>(Number(b[1]?.wins)||0)-(Number(a[1]?.wins)||0))
+        .sort((a,b)=>((Number(b[1]?.wins)||0)-(Number(a[1]?.wins)||0))||String(a[0]).localeCompare(String(b[0])))
         .slice(0,10);
       const rows=[];
       for(let n=0;n<sorted.length;n++) {
@@ -1297,7 +1313,7 @@ async function handleCommand(interaction) {
       const sorted=Array.from(_state.userSpecies.entries())
         .map(([uid,data])=>({uid,data,rolls:Math.max(0,Number(data?.rolls)||0)}))
         .filter(entry=>entry.rolls>0)
-        .sort((a,b)=>b.rolls-a.rolls)
+        .sort((a,b)=>(b.rolls-a.rolls)||a.uid.localeCompare(b.uid))
         .slice(0,10);
       const rows=[];
       for(let n=0;n<sorted.length;n++) {
