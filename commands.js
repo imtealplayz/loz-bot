@@ -1016,13 +1016,14 @@ async function handleCommand(interaction) {
     const totalFights=(fd.wins||0)+(fd.losses||0);
     const wr=totalFights>0?((fd.wins/totalFights)*100).toFixed(1):"0.0";
     const badges=[];
+    // Personal and legacy badges appear before leaderboard rank badges.
     if (td.badges?.includes("OG 50")) badges.push("🎉 OG 50");
+    if (target.id==="926063716057894953") badges.push("👑 Founder","✨ The Creator");
+    if (target.id==="1376978115171192922") badges.push("🤝 Co-Founder","🧪 OG Tester","⭐ Shion's Favourite");
     for (const badge of td.badges || []) {
       const badgeLabel = LEADERBOARD_BADGE_LABELS[badge];
       if (badgeLabel && !badges.includes(badgeLabel)) badges.push(badgeLabel);
     }
-    if (target.id==="926063716057894953") badges.push("👑 Founder","✨ The Creator");
-    if (target.id==="1376978115171192922") badges.push("🤝 Co-Founder","🧪 OG Tester","⭐ Shion's Favourite");
     const sections=[
       {heading:"Current Species",body:`${sp.emoji} **${sp.name}**`},
       {heading:"Inventory & Settings",body:`<:reroll_dice:1558042108965822515> **Species rolls:** ${td.rolls||0}\n${SPECIES_TOKEN_EMOJI} **Species tokens:** ${Number(td.speciesTokens)||0}\n🔘 **Challenge requests:** ${td.requestsEnabled?"Enabled":"Disabled"}`},
