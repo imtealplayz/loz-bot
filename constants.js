@@ -1,5 +1,14 @@
 const patchNotes = [
   {
+    version: "5.7", date: "2026-10-13",
+    changes: [
+      "Added persistent LOZ access bans with /owner ban and /owner unban, without deleting player data.",
+      "Timed bans accept seconds, minutes, hours, days, weeks, or years; omitting the duration creates a permanent ban and timed bans expire automatically.",
+      "Banned users are blocked from slash commands, components, prefix commands, and bot mentions. Access denial notices disappear after 7 seconds.",
+      "Ban and unban actions send direct-message notices with the LOZ Support Server appeal link.",
+    ],
+  },
+  {
     version: "5.6.1", date: "2026-10-13",
     changes: [
       "Reworked leaderboard award and rank-change DMs into styled Components V2 containers with native dividers and a proper /profile prompt.",
