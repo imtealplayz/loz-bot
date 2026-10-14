@@ -867,18 +867,30 @@ async function handleCommand(interaction) {
       });
     }
 
+    const registeredUserIds = await database.getLoz60EventRegisteredUserIds();
+    if (registeredUserIds === null) {
+      return interaction.editReply({
+        content:"Couldn't load the LOZ 6.0 event registration count from MongoDB. Please try again later.",
+        allowedMentions:{ parse:[] },
+      });
+    }
+
     const subscriberCount = new Set(
       subscribers.filter(id => id !== _client?.user?.id)
+    ).size;
+    const eventRegistrationCount = new Set(
+      registeredUserIds.filter(id => id !== _client?.user?.id)
     ).size;
     const embed = new EmbedBuilder()
       .setColor(0x0891b2)
       .setTitle("LOZ Update Subscribers")
-      .setDescription("Current users who have opted in to receive major LOZ update announcements by DM.")
+      .setDescription("Current major-update DM subscribers and LOZ 6.0 event registrations.")
       .addFields(
-        { name:"Active subscribers", value:"🔔 **" + subscriberCount.toLocaleString() + "**", inline:true },
-        { name:"Counting rule", value:"Only unique Discord users whose update subscription is currently enabled are counted. Users who unsubscribe are excluded.", inline:false },
+        { name:"Active update subscribers", value:"🔔 **" + subscriberCount.toLocaleString() + "**", inline:true },
+        { name:"LOZ 6.0 interested", value:"🌘 **" + eventRegistrationCount.toLocaleString() + "**", inline:true },
+        { name:"Counting rule", value:"Each number counts unique Discord users separately. Event registrations include users who clicked Interested for LOZ 6.0, even if they aren't subscribed to general update DMs.", inline:false },
       )
-      .setFooter({ text:"Live count · Read from MongoDB" });
+      .setFooter({ text:"Live counts · Read from MongoDB" });
 
     return interaction.editReply({ embeds:[embed], allowedMentions:{ parse:[] } });
   }
