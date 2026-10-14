@@ -673,9 +673,9 @@ function buildMajorUpdatePayload() {
 // each person's confirmation is private and can disappear without deleting it.
 function buildLoz60EventPayload(mentionUserId = null) {
   const container = new ContainerBuilder().setAccentColor(0x6f2da8);
-  const mentionPrefix = mentionUserId ? "<@" + mentionUserId + ">\\n\\n" : "";
+  const mentionPrefix = mentionUserId ? "<@" + mentionUserId + ">\n\n" : "";
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    mentionPrefix + "## 🌘 LOZ 6.0v Is Almost Here\\nThe new update drops on **15 October 2026 at around 10 PM IST**.\\n\\nRegister to qualify for **free launch rewards** when the update goes live.\\n\\nDiscover the [Rift Lore on the LOZ website](https://lozbot.vercel.app/)."
+    mentionPrefix + "## 🌘 LOZ 6.0v Is Almost Here\nThe new update drops on **15 October 2026 at around 10 PM IST**.\n\nRegister to qualify for **free launch rewards** when the update goes live.\n\nDiscover the [Rift Lore on the LOZ website](https://lozbot.vercel.app/)."
   ));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
   container.addActionRowComponents(new ActionRowBuilder().addComponents(
@@ -998,7 +998,7 @@ async function handleCommand(interaction) {
 
     if (!recipientIds.length) {
       return interaction.editReply({
-        content:"✅ **LOZ 6.0 subscriber DM check completed**\\n\\n**Subscribed users awaiting a response:** 0\\n**DMs sent:** 0\\n**DMs failed:** 0",
+        content:"✅ **LOZ 6.0 subscriber DM check completed**\n\n**Subscribed users awaiting a response:** 0\n**DMs sent:** 0\n**DMs failed:** 0",
       });
     }
 
@@ -1036,7 +1036,7 @@ async function handleCommand(interaction) {
     );
 
     return interaction.editReply({
-      content:`✅ **LOZ 6.0 subscriber DM check finished**\\n\\n**Subscribed users awaiting a response:** ${recipientIds.length}\\n**DMs sent:** ${sent}\\n**DMs failed:** ${failed}\\n\\nPublic event prompts are posted automatically when users run their first slash command after restart.`,
+      content:`✅ **LOZ 6.0 subscriber DM check finished**\n\n**Subscribed users awaiting a response:** ${recipientIds.length}\n**DMs sent:** ${sent}\n**DMs failed:** ${failed}\n\nPublic event prompts are posted automatically when users run their first slash command after restart.`,
     });
   }
 
