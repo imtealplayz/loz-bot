@@ -671,17 +671,21 @@ function buildMajorUpdatePayload() {
 
 // LOZ 6.0 event announcement. The public copy remains available to other users;
 // each person's confirmation is private and can disappear without deleting it.
-function buildLoz60EventPayload(mentionUserId = null) {
+function buildLoz60EventPayload(targetUserId, pingUser = false) {
+  if (!/^\\d{17,20}$/.test(String(targetUserId || ""))) {
+    throw new Error("A valid target user ID is required for the LOZ 6.0 event prompt.");
+  }
+
   const embed = new EmbedBuilder()
     .setColor(0x8b5cf6)
     .setTitle("🌘 LOZ 6.0v — The Rift Awakens")
     .setDescription(
-      "Something new is stirring beyond the Rift.\n\n" +
-      "LOZ 6.0v drops on **15 October 2026 at around 10 PM IST**.\n\n" +
+      "Something new is stirring beyond the Rift.\\n\\n" +
+      "LOZ 6.0v drops on **15 October 2026 at around 10 PM IST**.\\n\\n" +
       "Register now to qualify for **free launch rewards** when the update arrives."
     )
     .addFields(
-      { name:"📅 Launch Window", value:"**15 October 2026**\nAround **10 PM IST**", inline:true },
+      { name:"📅 Launch Window", value:"**15 October 2026**\\nAround **10 PM IST**", inline:true },
       { name:"🎁 Event Reward", value:"Register to qualify for launch rewards.", inline:true },
       { name:"📜 Explore the Rift Lore", value:"[Read the lore on the LOZ website](https://lozbot.vercel.app/)", inline:false },
     )
@@ -692,41 +696,40 @@ function buildLoz60EventPayload(mentionUserId = null) {
     components:[
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId("loz60_event_interested")
+          .setCustomId("loz60_event_interested_" + targetUserId)
           .setLabel("Register for LOZ 6.0")
           .setEmoji("🌘")
           .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
-          .setCustomId("loz60_event_not_interested")
+          .setCustomId("loz60_event_not_interested_" + targetUserId)
           .setLabel("Not Interested")
           .setEmoji("✖️")
           .setStyle(ButtonStyle.Secondary)
       )
     ],
-    allowedMentions:{ parse:[], users:mentionUserId ? [mentionUserId] : [] },
+    allowedMentions:{ parse:[], users:pingUser ? [targetUserId] : [] },
   };
-  // The first-command announcement pings the user in message content, outside the embed.
-  if (mentionUserId) payload.content = "<@" + mentionUserId + ">";
+
+  // Public first-command prompt: ping is message content, outside the embed.
+  if (pingUser) payload.content = "<@" + targetUserId + ">";
   return payload;
 }
 
-// Post a private event announcement once per user per running process.
+// Post a public, user-bound event announcement once per user per running process.
 async function maybePromptForLoz60Event(interaction) {
   const userId = interaction?.user?.id;
   if (!userId || !interaction.isCommand?.() || loz60PromptedThisRestart.has(userId)) return false;
-  if (!interaction.replied && !interaction.deferred) return false;
+  const channel = interaction.channel;
+  if (!channel || typeof channel.send !== "function") return false;
 
   // Mark before awaiting to prevent duplicates from rapid, concurrent commands.
   loz60PromptedThisRestart.add(userId);
   try {
-    await interaction.followUp({
-      ...buildLoz60EventPayload(userId),
-      flags:MessageFlags.Ephemeral,
-    });
+    await channel.send(buildLoz60EventPayload(userId, true));
     return true;
   } catch(error) {
     loz60PromptedThisRestart.delete(userId);
-    console.warn("LOZ 6.0 private first-command prompt failed:", error?.code || error?.message || error);
+    console.warn("LOZ 6.0 public first-command prompt failed:", error?.code || error?.message || error);
     return false;
   }
 }
@@ -989,7 +992,7 @@ async function handleCommand(interaction) {
 
     await interaction.deferReply({ flags:64 });
     try {
-      await user.send(buildLoz60EventPayload());
+      await user.send(buildLoz60EventPayload(user.id));
       return interaction.editReply({ content:"✅ The LOZ 6.0 event-registration preview was sent to your DMs." });
     } catch(e) {
       console.error("broadtest DM failed:", e?.code || e?.message || e);
@@ -1043,7 +1046,7 @@ async function handleCommand(interaction) {
 
         try {
           const target = await _client.users.fetch(targetId);
-          await target.send(buildLoz60EventPayload());
+          await target.send(buildLoz60EventPayload(targetId));
           sent++;
         } catch(e) {
           failed++;
@@ -2024,8 +2027,24 @@ async function handleButton(interaction) {
   }
 
   // ── LOZ 6.0 EVENT REGISTRATION ─────────────────────────────────
-  if (customId === "loz60_event_interested" || customId === "loz60_event_not_interested") {
-    const interested = customId === "loz60_event_interested";
+  if (customId.startsWith("loz60_event_interested_") || customId.startsWith("loz60_event_not_interested_")) {
+    const interested = customId.startsWith("loz60_event_interested_");
+    const customIdPrefix = interested ? "loz60_event_interested_" : "loz60_event_not_interested_";
+    const expectedUserId = customId.slice(customIdPrefix.length);
+
+    // Discord cannot hide a public button from other viewers, so enforce ownership
+    // server-side before the click can change the message or save any response.
+    if (!/^\\d{17,20}$/.test(expectedUserId)) {
+      return safeReply(interaction, { content:"This LOZ 6.0 event button is invalid.", flags:64 });
+    }
+    if (user.id !== expectedUserId) {
+      return safeReply(interaction, {
+        content:"This LOZ 6.0 event prompt belongs to another user. Only the mentioned user can respond.",
+        flags:64,
+        allowedMentions:{ parse:[] },
+      });
+    }
+
     const saved = await database.recordLoz60EventResponse(user.id, interested);
     if (!saved) {
       return safeReply(interaction, { content:"Couldn't save your LOZ 6.0 event response. Please try again.", flags:64 });
@@ -2044,11 +2063,11 @@ async function handleButton(interaction) {
       : "Not Interested";
     const color = interested ? 0x00aa66 : 0x64748b;
 
-    // Replace the prompt with a confirmation, then remove it after 10 seconds.
-    // In servers the source message is ephemeral/private; in DMs it is personal.
+    // Remove the public @ping and replace the card with the user's confirmation.
+    // Delete the entire prompt after 10 seconds. In DMs, that DM prompt is deleted.
     await interaction.update(buildLoz60EventResultPayload(title, statusText, color));
     if (guild) {
-      scheduleLoz60PromptDeletion(() => interaction.deleteReply().catch(() => {}));
+      scheduleLoz60PromptDeletion(() => message.delete().catch(() => {}));
     } else {
       scheduleLoz60PromptDeletion(() => message.delete().catch(() => {}));
     }
