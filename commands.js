@@ -672,7 +672,7 @@ function buildMajorUpdatePayload() {
 // LOZ 6.0 event announcement. The public copy remains available to other users;
 // each person's confirmation is private and can disappear without deleting it.
 function buildLoz60EventPayload(targetUserId, pingUser = false) {
-  if (!/^\\d{17,20}$/.test(String(targetUserId || ""))) {
+  if (!/^\d{17,20}$/.test(String(targetUserId || ""))) {
     throw new Error("A valid target user ID is required for the LOZ 6.0 event prompt.");
   }
 
@@ -680,12 +680,12 @@ function buildLoz60EventPayload(targetUserId, pingUser = false) {
     .setColor(0x8b5cf6)
     .setTitle("🌘 LOZ 6.0v — The Rift Awakens")
     .setDescription(
-      "Something new is stirring beyond the Rift.\\n\\n" +
-      "LOZ 6.0v drops on **15 October 2026 at around 10 PM IST**.\\n\\n" +
+      "Something new is stirring beyond the Rift.\n\n" +
+      "LOZ 6.0v drops on **15 October 2026 at around 10 PM IST**.\n\n" +
       "Register now to qualify for **free launch rewards** when the update arrives."
     )
     .addFields(
-      { name:"📅 Launch Window", value:"**15 October 2026**\\nAround **10 PM IST**", inline:true },
+      { name:"📅 Launch Window", value:"**15 October 2026**\nAround **10 PM IST**", inline:true },
       { name:"🎁 Event Reward", value:"Register to qualify for launch rewards.", inline:true },
       { name:"📜 Explore the Rift Lore", value:"[Read the lore on the LOZ website](https://lozbot.vercel.app/)", inline:false },
     )
@@ -2034,7 +2034,7 @@ async function handleButton(interaction) {
 
     // Discord cannot hide a public button from other viewers, so enforce ownership
     // server-side before the click can change the message or save any response.
-    if (!/^\\d{17,20}$/.test(expectedUserId)) {
+    if (!/^\d{17,20}$/.test(expectedUserId)) {
       return safeReply(interaction, { content:"This LOZ 6.0 event button is invalid.", flags:64 });
     }
     if (user.id !== expectedUserId) {
