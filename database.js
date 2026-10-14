@@ -70,6 +70,9 @@ const notificationPreferenceSchema = new mongoose.Schema({
   promptSuppressed:{ type:Boolean, default:false },
   promptCount:     { type:Number, default:0 },
   lastPromptedAt:  { type:Date, default:null },
+  loz60EventResponse: { type:String, enum:["registered","not_interested"], default:null },
+  loz60EventRespondedAt: { type:Date, default:null },
+  loz60EventRegisteredAt: { type:Date, default:null },
   updatedAt:       { type:Date, default:Date.now },
 }, { minimize:false });
 
@@ -429,6 +432,65 @@ async function getBroadcastSubscribers() {
     return userIds.filter(userId => typeof userId === "string" && /^\d{17,20}$/.test(userId));
   } catch(e) {
     console.error("❌ Broadcast subscriber lookup error:", e.message);
+    return null;
+  }
+}
+
+
+// Save LOZ 6.0 event responses separately from player progression.
+// Registered users can receive launch rewards later; users who decline are
+// not DM-prompted repeatedly if /broadcast is run again.
+async function recordLoz60EventResponse(userId, interested) {
+  try {
+    if (!await connect()) return null;
+    const status = interested ? "registered" : "not_interested";
+    const now = new Date();
+    const existing = await NotificationPreference.findOne({ userId })
+      .select({ loz60EventResponse:1, loz60EventRegisteredAt:1 }).lean();
+    const alreadySelected = existing?.loz60EventResponse === status;
+    const registeredAt = interested
+      ? (existing?.loz60EventResponse === "registered" && existing?.loz60EventRegisteredAt
+          ? existing.loz60EventRegisteredAt : now)
+      : null;
+
+    await NotificationPreference.findOneAndUpdate(
+      { userId },
+      { $set:{
+        userId,
+        loz60EventResponse:status,
+        loz60EventRespondedAt:now,
+        loz60EventRegisteredAt:registeredAt,
+        updatedAt:now,
+      } },
+      { upsert:true, new:true, runValidators:true }
+    );
+    return { status, alreadySelected };
+  } catch(e) {
+    console.error("❌ LOZ 6.0 event response save error:", e.message);
+    return null;
+  }
+}
+
+async function getLoz60EventRegisteredUserIds() {
+  try {
+    if (!await connect()) return null;
+    const userIds = await NotificationPreference.distinct("userId", { loz60EventResponse:"registered" });
+    return userIds.filter(userId => typeof userId === "string" && /^\d{17,20}$/.test(userId));
+  } catch(e) {
+    console.error("❌ LOZ 6.0 registration lookup error:", e.message);
+    return null;
+  }
+}
+
+async function getLoz60EventRespondedUserIds() {
+  try {
+    if (!await connect()) return null;
+    const userIds = await NotificationPreference.distinct("userId", {
+      loz60EventResponse:{ $in:["registered","not_interested"] },
+    });
+    return userIds.filter(userId => typeof userId === "string" && /^\d{17,20}$/.test(userId));
+  } catch(e) {
+    console.error("❌ LOZ 6.0 event response lookup error:", e.message);
     return null;
   }
 }
@@ -1338,6 +1400,7 @@ module.exports = {
   loadAllData, loadAllQuestProgress, loadDuelChannel,
   listAllKeys, deleteUser,
   setBroadcastOptIn, getBroadcastOptIn, getBroadcastSubscribers,
+  recordLoz60EventResponse, getLoz60EventRegisteredUserIds, getLoz60EventRespondedUserIds,
   claimUpdateSubscriptionPrompt, dismissUpdateSubscriptionPrompt,
   awardGuildInviteReward,
   getLeaderboardBadgeSnapshot, saveLeaderboardBadgeSnapshot,
