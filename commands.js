@@ -28,6 +28,7 @@ const questSystem = require("./quest-system.js");
 
 let _state = null;
 let _client = null;
+const loz60PromptedThisRestart = new Set();
 function setState(s) { _state = s; }
 function setClient(c) { _client = c; }
 
@@ -670,17 +671,42 @@ function buildMajorUpdatePayload() {
 
 // LOZ 6.0 event announcement. The public copy remains available to other users;
 // each person's confirmation is private and can disappear without deleting it.
-function buildLoz60EventPayload() {
+function buildLoz60EventPayload(mentionUserId = null) {
   const container = new ContainerBuilder().setAccentColor(0x6f2da8);
+  const mentionPrefix = mentionUserId ? "<@" + mentionUserId + ">\\n\\n" : "";
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "## 🌘 LOZ 6.0v Is Almost Here\nThe new update drops on **15 October 2026 at around 10 PM IST**.\n\nRegister to qualify for **free launch rewards** when the update goes live.\n\nDiscover the [Rift Lore on the LOZ website](https://lozbot.vercel.app/)."
+    mentionPrefix + "## 🌘 LOZ 6.0v Is Almost Here\\nThe new update drops on **15 October 2026 at around 10 PM IST**.\\n\\nRegister to qualify for **free launch rewards** when the update goes live.\\n\\nDiscover the [Rift Lore on the LOZ website](https://lozbot.vercel.app/)."
   ));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
   container.addActionRowComponents(new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId("loz60_event_interested").setLabel("Interested").setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId("loz60_event_not_interested").setLabel("Not Interested").setStyle(ButtonStyle.Secondary)
   ));
-  return { components:[container], flags:MessageFlags.IsComponentsV2, allowedMentions:{ parse:[] } };
+  return {
+    components:[container],
+    flags:MessageFlags.IsComponentsV2,
+    allowedMentions:{ parse:[], users:mentionUserId ? [mentionUserId] : [] },
+  };
+}
+
+// Post one public event announcement to the channel of each user's first slash
+// command per running process. This set resets naturally on a bot restart.
+async function maybePromptForLoz60Event(interaction) {
+  const userId = interaction?.user?.id;
+  if (!userId || !interaction.isCommand?.() || loz60PromptedThisRestart.has(userId)) return false;
+  const channel = interaction.channel;
+  if (!channel || typeof channel.send !== "function") return false;
+
+  // Mark before awaiting to prevent duplicates from rapid, concurrent commands.
+  loz60PromptedThisRestart.add(userId);
+  try {
+    await channel.send(buildLoz60EventPayload(userId));
+    return true;
+  } catch(error) {
+    loz60PromptedThisRestart.delete(userId);
+    console.warn("LOZ 6.0 first-command prompt failed:", error?.code || error?.message || error);
+    return false;
+  }
 }
 
 function buildLoz60EventResultPayload(title, description, color=0x0891b2, ephemeral=false) {
@@ -966,30 +992,13 @@ async function handleCommand(interaction) {
       });
     }
 
-    // Post one shared card where /broadcast was run so non-subscribers can
-    // register too. Keep this shared message so one response won't hide it
-    // from everyone else in the channel.
-    let publicPromptPosted = false;
-    let publicPromptFailed = false;
-    if (guild && channel && typeof channel.send === "function") {
-      try {
-        await channel.send(buildLoz60EventPayload());
-        publicPromptPosted = true;
-      } catch(e) {
-        publicPromptFailed = true;
-        console.warn("LOZ 6.0 public event prompt failed:", e?.code || e?.message || e);
-      }
-    }
-
-    const respondedSet = new Set(respondedIds);
+    // Public prompts now appear automatically on each user's first slash command after restart.\n\n    const respondedSet = new Set(respondedIds);
     const recipientIds = [...new Set(subscribers)]
       .filter(id => id !== _client.user.id && !respondedSet.has(id));
 
     if (!recipientIds.length) {
       return interaction.editReply({
-        content:"✅ **LOZ 6.0 event announcement processed**\n\n" +
-          "**Public prompt:** " + (publicPromptPosted ? "posted in this channel" : (publicPromptFailed ? "failed to post; check channel permissions" : "not posted (run /broadcast in a server text channel to publish it)")) +
-          "\n**Subscribed users still awaiting a response:** 0\n**DMs sent:** 0\n**DMs failed:** 0",
+        content:"✅ **LOZ 6.0 subscriber DM check completed**\\n\\n**Subscribed users awaiting a response:** 0\\n**DMs sent:** 0\\n**DMs failed:** 0",
       });
     }
 
@@ -1027,7 +1036,7 @@ async function handleCommand(interaction) {
     );
 
     return interaction.editReply({
-      content:`✅ **LOZ 6.0 event announcement finished**\n\n**Public prompt:** ${publicPromptPosted ? "posted in this channel" : (publicPromptFailed ? "failed to post; check channel permissions" : "not posted (run /broadcast in a server text channel)") }\n**Subscribed users awaiting a response:** ${recipientIds.length}\n**DMs sent:** ${sent}\n**DMs failed:** ${failed}\n\nRegistered users and users who chose “Not Interested” are skipped in future event DMs.`,
+      content:`✅ **LOZ 6.0 subscriber DM check finished**\\n\\n**Subscribed users awaiting a response:** ${recipientIds.length}\\n**DMs sent:** ${sent}\\n**DMs failed:** ${failed}\\n\\nPublic event prompts are posted automatically when users run their first slash command after restart.`,
     });
   }
 
@@ -2843,4 +2852,4 @@ const commands = [
     .addSubcommand(s=>s.setName("repair-user-db").setDescription("Archive and repair duplicate player records")),
 ].map(c=>c.toJSON());
 
-module.exports = { setState, setClient, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForUpdates, commands };
+module.exports = { setState, setClient, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForUpdates, maybePromptForLoz60Event, commands };
