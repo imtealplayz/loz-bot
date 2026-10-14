@@ -981,18 +981,20 @@ async function handleCommand(interaction) {
     const subscribers = await database.getBroadcastSubscribers();
     if (subscribers === null) {
       return interaction.editReply({
-        content:"❌ Couldn't load the update subscription list from MongoDB. No DMs or public prompt were attempted.\n\n**DMs sent:** 0\n**DMs failed:** 0",
+        content:"❌ Couldn't load the update subscription list from MongoDB. No subscriber DMs were attempted.\n\n**DMs sent:** 0\n**DMs failed:** 0",
       });
     }
 
     const respondedIds = await database.getLoz60EventRespondedUserIds();
     if (respondedIds === null) {
       return interaction.editReply({
-        content:"❌ Couldn't load LOZ 6.0 registration responses from MongoDB. No DMs or public prompt were attempted.\n\n**DMs sent:** 0\n**DMs failed:** 0",
+        content:"❌ Couldn't load LOZ 6.0 registration responses from MongoDB. No subscriber DMs were attempted.\n\n**DMs sent:** 0\n**DMs failed:** 0",
       });
     }
 
-    // Public prompts now appear automatically on each user's first slash command after restart.\n\n    const respondedSet = new Set(respondedIds);
+    // Public prompts now appear automatically on each user's first slash command after restart.
+
+    const respondedSet = new Set(respondedIds);
     const recipientIds = [...new Set(subscribers)]
       .filter(id => id !== _client.user.id && !respondedSet.has(id));
 
