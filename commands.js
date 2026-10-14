@@ -731,7 +731,7 @@ async function maybePromptForLoz60Event(interaction) {
   }
 }
 
-function buildLoz60EventResultPayload(title, description, color=0x0891b2, ephemeral=false) {
+function buildLoz60EventResultPayload(title, description, color=0x0891b2) {
   const embed = new EmbedBuilder()
     .setColor(color)
     .setTitle(title)
@@ -741,7 +741,6 @@ function buildLoz60EventResultPayload(title, description, color=0x0891b2, epheme
     content:"",
     embeds:[embed],
     components:[],
-    flags:ephemeral ? MessageFlags.Ephemeral : 0,
     allowedMentions:{ parse:[] },
   };
 }
@@ -2047,7 +2046,7 @@ async function handleButton(interaction) {
 
     // Replace the prompt with a confirmation, then remove it after 10 seconds.
     // In servers the source message is ephemeral/private; in DMs it is personal.
-    await interaction.update(buildLoz60EventResultPayload(title, statusText, color, Boolean(guild)));
+    await interaction.update(buildLoz60EventResultPayload(title, statusText, color));
     if (guild) {
       scheduleLoz60PromptDeletion(() => interaction.deleteReply().catch(() => {}));
     } else {
