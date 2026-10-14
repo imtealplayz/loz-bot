@@ -667,6 +667,37 @@ function buildMajorUpdatePayload() {
   };
 }
 
+
+// LOZ 6.0 event announcement. The public copy remains available to other users;
+// each person's confirmation is private and can disappear without deleting it.
+function buildLoz60EventPayload() {
+  const container = new ContainerBuilder().setAccentColor(0x6f2da8);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    "## 🌘 LOZ 6.0v Is Almost Here\nThe new update drops on **15 October 2026 at around 10 PM IST**.\n\nRegister to qualify for **free launch rewards** when the update goes live.\n\nDiscover the [Rift Lore on the LOZ website](https://lozbot.vercel.app/)."
+  ));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  container.addActionRowComponents(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("loz60_event_interested").setLabel("Interested").setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId("loz60_event_not_interested").setLabel("Not Interested").setStyle(ButtonStyle.Secondary)
+  ));
+  return { components:[container], flags:MessageFlags.IsComponentsV2, allowedMentions:{ parse:[] } };
+}
+
+function buildLoz60EventResultPayload(title, description, color=0x0891b2, ephemeral=false) {
+  const container = new ContainerBuilder().setAccentColor(color);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## " + title + "\n" + description));
+  return {
+    components:[container],
+    flags:MessageFlags.IsComponentsV2 | (ephemeral ? MessageFlags.Ephemeral : 0),
+    allowedMentions:{ parse:[] },
+  };
+}
+
+function scheduleLoz60PromptDeletion(callback) {
+  const timer = setTimeout(callback, 10_000);
+  if (typeof timer.unref === "function") timer.unref();
+}
+
 // Find a server invite LOZ can share with its owner.
 async function getServerInvite(guild) {
   if (guild.vanityURLCode) return "https://discord.gg/" + guild.vanityURLCode;
@@ -894,15 +925,15 @@ async function handleCommand(interaction) {
 
     await interaction.deferReply({ flags:64 });
     try {
-      await user.send(buildMajorUpdatePayload());
-      return interaction.editReply({ content:"✅ The current Components V2 update preview was sent to your DMs." });
+      await user.send(buildLoz60EventPayload());
+      return interaction.editReply({ content:"✅ The LOZ 6.0 event-registration preview was sent to your DMs." });
     } catch(e) {
       console.error("broadtest DM failed:", e?.code || e?.message || e);
       return interaction.editReply({ content:"❌ Couldn't DM you the preview. Check that your DMs from LOZ are open, then try again." });
     }
   }
 
-  // ── BROADCAST: OWNER-ONLY, OPTED-IN USERS ONLY ──────────────────
+  // ── BROADCAST: LOZ 6.0 EVENT REGISTRATION ───────────────────────
   if (commandName === "broadcast") {
     if (user.id !== _state.ownerId) {
       return safeReply(interaction, { content:"Only the LOZ owner can use this command.", flags:64 });
@@ -912,14 +943,41 @@ async function handleCommand(interaction) {
     const subscribers = await database.getBroadcastSubscribers();
     if (subscribers === null) {
       return interaction.editReply({
-        content:"❌ Couldn't load the opt-in list from MongoDB. No DMs were attempted.\\n\\n**DMs sent:** 0\\n**DMs failed:** 0",
+        content:"❌ Couldn't load the update subscription list from MongoDB. No DMs or public prompt were attempted.\n\n**DMs sent:** 0\n**DMs failed:** 0",
       });
     }
 
-    const recipientIds = [...new Set(subscribers)].filter(id => id !== _client.user.id);
+    const respondedIds = await database.getLoz60EventRespondedUserIds();
+    if (respondedIds === null) {
+      return interaction.editReply({
+        content:"❌ Couldn't load LOZ 6.0 registration responses from MongoDB. No DMs or public prompt were attempted.\n\n**DMs sent:** 0\n**DMs failed:** 0",
+      });
+    }
+
+    // Post one shared card where /broadcast was run so non-subscribers can
+    // register too. Keep this shared message so one response won't hide it
+    // from everyone else in the channel.
+    let publicPromptPosted = false;
+    let publicPromptFailed = false;
+    if (guild && channel && typeof channel.send === "function") {
+      try {
+        await channel.send(buildLoz60EventPayload());
+        publicPromptPosted = true;
+      } catch(e) {
+        publicPromptFailed = true;
+        console.warn("LOZ 6.0 public event prompt failed:", e?.code || e?.message || e);
+      }
+    }
+
+    const respondedSet = new Set(respondedIds);
+    const recipientIds = [...new Set(subscribers)]
+      .filter(id => id !== _client.user.id && !respondedSet.has(id));
+
     if (!recipientIds.length) {
       return interaction.editReply({
-        content:"No users have opted into update DMs yet. Users can subscribe with \`/updates subscribe\`. No DMs were sent.\\n\\n**DMs sent:** 0\\n**DMs failed:** 0",
+        content:"✅ **LOZ 6.0 event announcement processed**\n\n" +
+          "**Public prompt:** " + (publicPromptPosted ? "posted in this channel" : (publicPromptFailed ? "failed to post; check channel permissions" : "not posted (run /broadcast in a server text channel to publish it)")) +
+          "\n**Subscribed users still awaiting a response:** 0\n**DMs sent:** 0\n**DMs failed:** 0",
       });
     }
 
@@ -936,17 +994,17 @@ async function handleCommand(interaction) {
 
         try {
           const target = await _client.users.fetch(targetId);
-          await target.send(buildMajorUpdatePayload());
+          await target.send(buildLoz60EventPayload());
           sent++;
         } catch(e) {
           failed++;
-          console.warn(`Update broadcast DM failed (code ${e?.code || "unknown"}).`);
+          console.warn(`LOZ 6.0 event DM failed (code ${e?.code || "unknown"}).`);
         }
 
         completed++;
         if (completed % 25 === 0) {
           await interaction.editReply({
-            content:`📤 Broadcast in progress: ${completed}/${recipientIds.length} attempted · ${sent} sent · ${failed} failed.`,
+            content:`📤 LOZ 6.0 event prompt in progress: ${completed}/${recipientIds.length} attempted · ${sent} sent · ${failed} failed.`,
           }).catch(() => {});
         }
       }
@@ -957,7 +1015,7 @@ async function handleCommand(interaction) {
     );
 
     return interaction.editReply({
-      content:`✅ **LOZ update broadcast finished**\n\n**Opted-in recipients:** ${recipientIds.length}\n**DMs sent:** ${sent}\n**DMs failed:** ${failed}\n\nOnly users who opted in with \`/updates subscribe\` were contacted.`,
+      content:`✅ **LOZ 6.0 event announcement finished**\n\n**Public prompt:** ${publicPromptPosted ? "posted in this channel" : (publicPromptFailed ? "failed to post; check channel permissions" : "not posted (run /broadcast in a server text channel)") }\n**Subscribed users awaiting a response:** ${recipientIds.length}\n**DMs sent:** ${sent}\n**DMs failed:** ${failed}\n\nRegistered users and users who chose “Not Interested” are skipped in future event DMs.`,
     });
   }
 
@@ -1914,6 +1972,42 @@ async function handleButton(interaction) {
       return interaction.update(buildStyledCardPayload("Species Data Unavailable",0xff0000,[{body:"No species data was found. Use /species-roll to begin."}]));
     const page=Number(customId.slice("switch_page_".length));
     return interaction.update(buildSpeciesSwitchPayload(ud,Number.isInteger(page)?page:0));
+  }
+
+  // ── LOZ 6.0 EVENT REGISTRATION ─────────────────────────────────
+  if (customId === "loz60_event_interested" || customId === "loz60_event_not_interested") {
+    const interested = customId === "loz60_event_interested";
+    const saved = await database.recordLoz60EventResponse(user.id, interested);
+    if (!saved) {
+      return safeReply(interaction, { content:"Couldn't save your LOZ 6.0 event response. Please try again.", flags:64 });
+    }
+
+    const statusText = interested
+      ? (saved.alreadySelected
+          ? "You're already registered for LOZ 6.0. Your launch-reward eligibility is saved."
+          : "You've registered for the LOZ 6.0 update. Your launch rewards will be available when the update drops.")
+      : (saved.alreadySelected
+          ? "Your choice is already saved. You're not registered for LOZ 6.0 launch rewards."
+          : "No problem. You're not registered for LOZ 6.0 launch rewards. You can still read the Rift Lore on the website.");
+
+    const title = interested
+      ? (saved.alreadySelected ? "Already Registered" : "You're Registered!")
+      : "Not Interested";
+    const color = interested ? 0x00aa66 : 0x64748b;
+
+    if (guild) {
+      // The public event post stays up for other members; only this user's
+      // ephemeral acknowledgement is removed after 10 seconds.
+      await interaction.reply(buildLoz60EventResultPayload(title, statusText, color, true));
+      scheduleLoz60PromptDeletion(() => interaction.deleteReply().catch(() => {}));
+      return;
+    }
+
+    // DMs are personal: replace the prompt with the user's result, then remove
+    // that DM message after 10 seconds.
+    await interaction.update(buildLoz60EventResultPayload(title, statusText, color, false));
+    scheduleLoz60PromptDeletion(() => message.delete().catch(() => {}));
+    return;
   }
 
   // ── UPDATE SUBSCRIPTION PROMPT ─────────────────────────────────
