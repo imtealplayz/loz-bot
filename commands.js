@@ -672,49 +672,76 @@ function buildMajorUpdatePayload() {
 // LOZ 6.0 event announcement. The public copy remains available to other users;
 // each person's confirmation is private and can disappear without deleting it.
 function buildLoz60EventPayload(mentionUserId = null) {
-  const container = new ContainerBuilder().setAccentColor(0x6f2da8);
-  const mentionPrefix = mentionUserId ? "<@" + mentionUserId + ">\n\n" : "";
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    mentionPrefix + "## 🌘 LOZ 6.0v Is Almost Here\nThe new update drops on **15 October 2026 at around 10 PM IST**.\n\nRegister to qualify for **free launch rewards** when the update goes live.\n\nDiscover the [Rift Lore on the LOZ website](https://lozbot.vercel.app/)."
-  ));
-  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-  container.addActionRowComponents(new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("loz60_event_interested").setLabel("Interested").setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId("loz60_event_not_interested").setLabel("Not Interested").setStyle(ButtonStyle.Secondary)
-  ));
-  return {
-    components:[container],
-    flags:MessageFlags.IsComponentsV2,
+  const embed = new EmbedBuilder()
+    .setColor(0x8b5cf6)
+    .setTitle("🌘 LOZ 6.0v — The Rift Awakens")
+    .setDescription(
+      "Something new is stirring beyond the Rift.\n\n" +
+      "LOZ 6.0v drops on **15 October 2026 at around 10 PM IST**.\n\n" +
+      "Register now to qualify for **free launch rewards** when the update arrives."
+    )
+    .addFields(
+      { name:"📅 Launch Window", value:"**15 October 2026**\nAround **10 PM IST**", inline:true },
+      { name:"🎁 Event Reward", value:"Register to qualify for launch rewards.", inline:true },
+      { name:"📜 Explore the Rift Lore", value:"[Read the lore on the LOZ website](https://lozbot.vercel.app/)", inline:false },
+    )
+    .setFooter({ text:"Use /updates subscribe to stay updated." });
+
+  const payload = {
+    embeds:[embed],
+    components:[
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("loz60_event_interested")
+          .setLabel("Register for LOZ 6.0")
+          .setEmoji("🌘")
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId("loz60_event_not_interested")
+          .setLabel("Not Interested")
+          .setEmoji("✖️")
+          .setStyle(ButtonStyle.Secondary)
+      )
+    ],
     allowedMentions:{ parse:[], users:mentionUserId ? [mentionUserId] : [] },
   };
+  // The first-command announcement pings the user in message content, outside the embed.
+  if (mentionUserId) payload.content = "<@" + mentionUserId + ">";
+  return payload;
 }
 
-// Post one public event announcement to the channel of each user's first slash
-// command per running process. This set resets naturally on a bot restart.
+// Post a private event announcement once per user per running process.
 async function maybePromptForLoz60Event(interaction) {
   const userId = interaction?.user?.id;
   if (!userId || !interaction.isCommand?.() || loz60PromptedThisRestart.has(userId)) return false;
-  const channel = interaction.channel;
-  if (!channel || typeof channel.send !== "function") return false;
+  if (!interaction.replied && !interaction.deferred) return false;
 
   // Mark before awaiting to prevent duplicates from rapid, concurrent commands.
   loz60PromptedThisRestart.add(userId);
   try {
-    await channel.send(buildLoz60EventPayload(userId));
+    await interaction.followUp({
+      ...buildLoz60EventPayload(userId),
+      flags:MessageFlags.Ephemeral,
+    });
     return true;
   } catch(error) {
     loz60PromptedThisRestart.delete(userId);
-    console.warn("LOZ 6.0 first-command prompt failed:", error?.code || error?.message || error);
+    console.warn("LOZ 6.0 private first-command prompt failed:", error?.code || error?.message || error);
     return false;
   }
 }
 
 function buildLoz60EventResultPayload(title, description, color=0x0891b2, ephemeral=false) {
-  const container = new ContainerBuilder().setAccentColor(color);
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## " + title + "\n" + description));
+  const embed = new EmbedBuilder()
+    .setColor(color)
+    .setTitle(title)
+    .setDescription(description)
+    .setFooter({ text:"LOZ 6.0v · Legends of the Rift" });
   return {
-    components:[container],
-    flags:MessageFlags.IsComponentsV2 | (ephemeral ? MessageFlags.Ephemeral : 0),
+    content:"",
+    embeds:[embed],
+    components:[],
+    flags:ephemeral ? MessageFlags.Ephemeral : 0,
     allowedMentions:{ parse:[] },
   };
 }
@@ -2018,18 +2045,14 @@ async function handleButton(interaction) {
       : "Not Interested";
     const color = interested ? 0x00aa66 : 0x64748b;
 
+    // Replace the prompt with a confirmation, then remove it after 10 seconds.
+    // In servers the source message is ephemeral/private; in DMs it is personal.
+    await interaction.update(buildLoz60EventResultPayload(title, statusText, color, Boolean(guild)));
     if (guild) {
-      // The public event post stays up for other members; only this user's
-      // ephemeral acknowledgement is removed after 10 seconds.
-      await interaction.reply(buildLoz60EventResultPayload(title, statusText, color, true));
       scheduleLoz60PromptDeletion(() => interaction.deleteReply().catch(() => {}));
-      return;
+    } else {
+      scheduleLoz60PromptDeletion(() => message.delete().catch(() => {}));
     }
-
-    // DMs are personal: replace the prompt with the user's result, then remove
-    // that DM message after 10 seconds.
-    await interaction.update(buildLoz60EventResultPayload(title, statusText, color, false));
-    scheduleLoz60PromptDeletion(() => message.delete().catch(() => {}));
     return;
   }
 
