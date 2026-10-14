@@ -8,7 +8,7 @@ const database = require("./database.js"); // MongoDB
 const state    = require("./state.js");
 const { setState: setHelperState } = require("./helpers.js");
 const { setState: setFightState }   = require("./fights.js");
-const { setState: setCommandState, setClient, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForUpdates, commands } = require("./commands.js");
+const { setState: setCommandState, setClient, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForUpdates, maybePromptForLoz60Event, commands } = require("./commands.js");
 const { disintegrationMessages } = require("./constants.js");
 const questSystem = require("./quest-system.js");
 const chaosSystem = require("./chaos.js");
@@ -538,8 +538,11 @@ client.on("interactionCreate", async (interaction) => {
     }
     if (interaction.isCommand()) {
       await handleCommand(interaction);
-      // The command's main response is sent first; subscription prompt is a separate ephemeral follow-up.
-      await maybePromptForUpdates(interaction);
+      // Post the public LOZ 6.0 event card with a targeted ping after this user's
+      // first slash command in the current process. Avoid stacking the regular
+      // subscription prompt on top of the event announcement at the same time.
+      const loz60PromptShown = await maybePromptForLoz60Event(interaction);
+      if (!loz60PromptShown) await maybePromptForUpdates(interaction);
     } else if (interaction.isButton()) {
       const questHandled = await questSystem.handleButton(interaction);
       if (!questHandled) await handleButton(interaction);
