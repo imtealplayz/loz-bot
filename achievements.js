@@ -98,11 +98,10 @@ function getSpeciesRoster() {
     seen.add(species.name);
     result.push({name:species.name,emoji:species.emoji||"✨",rarity:Number(species.rarity)||0,category:category,species:species});
   }
-  add(humanSpecies,"Common");
   normal.forEach(function(s){add(s,"Rarity");});
   dragons.forEach(function(s){add(s,"Dragon Awakening");});
   awakeningForms.forEach(function(s){add(s,"Awakening Form");});
-  secret.forEach(function(s){add(s,s.name==="Human"?"Common":s.name==="True Dragon"?"Secret Awakening":"Quest / Secret");});
+  secret.forEach(function(s){add(s,s.name==="True Dragon"?"Secret Awakening":"Quest / Secret");});
   return result;
 }
 const SPECIES_ROSTER=getSpeciesRoster();

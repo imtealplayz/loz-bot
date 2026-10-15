@@ -506,3 +506,12 @@ test("/disintegrate stays restricted to the primary owner and handles missing fi
   assert.match(response.content, /not in an active player fight/);
   assert.equal(response.flags, 64);
 });
+
+
+test("Human remains playable but is excluded from Species Achievements", () => {
+  const achievementRoster = achievements.getSpeciesRoster();
+  assert.ok(constants.humanSpecies, "Human must remain defined as the default playable species");
+  assert.ok(!achievementRoster.some((entry) => entry.name === "Human"), "Human should not have a Species Achievement entry");
+  assert.ok(achievementRoster.some((entry) => entry.name === "Slime"), "normal species achievements should remain available");
+  assert.ok(achievementRoster.some((entry) => entry.name === "True Dragon"), "secret and awakening species achievements should remain available");
+});
