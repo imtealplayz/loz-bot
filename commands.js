@@ -834,6 +834,25 @@ async function buildServersPagePayload(page, ownerId) {
 }
 
 // ==================== SLASH COMMAND HANDLER ====================
+function buildLoz60AnnouncementPayload() {
+  const container=new ContainerBuilder().setAccentColor(0x7562d9);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    "## 🌘 LOZ 6.0v — THE RIFT AWAKENS\nLegends of the Rift enters its next era. Earn Glory through achievements, master individual species, awaken the four elemental dragons, and work toward the True Dragon."
+  ));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    "### What’s new\n- A Glory achievement system and global Top 25 leaderboard\n- Individual species mastery trials and dragon awakenings\n- True Dragon, a secret awakening born from Fire, Thunder, Ice, and Earth\n- A 6-hour rotating quest interval and combined battle statistics"
+  ));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    "### 🎃 Next week: Halloween\nThe Halloween update drops next week, so be prepared with your tricks or treats. More details will follow."
+  ));
+  container.addActionRowComponents(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setLabel("Open LOZ Website").setStyle(ButtonStyle.Link).setURL("https://lozbot.vercel.app/")
+  ));
+  return {components:[container],flags:MessageFlags.IsComponentsV2,allowedMentions:{parse:[]}};
+}
+
 async function handleCommand(interaction) {
   const { commandName, options, user, guild, channel } = interaction;
 
@@ -990,6 +1009,39 @@ async function handleCommand(interaction) {
   if (commandName === "updates") {
     const sub = options.getSubcommand();
 
+    if(sub==="reward") {
+      if(user.id!==_state.ownerId) return safeReply(interaction,{content:"Only the LOZ owner can use this command.",flags:64});
+      await interaction.deferReply({flags:64});
+      const registered=await database.getLoz60EventRegisteredUserIds();
+      if(registered===null) return interaction.editReply({content:"MongoDB could not load LOZ 6.0 registrations. No rewards were attempted."});
+      let awarded=0,skipped=0,failed=0,dmSent=0,dmFailed=0;
+      for(const targetId of [...new Set(registered)].filter(function(id){return id!==_client.user.id;})) {
+        const result=await database.claimLoz60RegistrationReward(targetId);
+        if(!result||!result.ok) {failed++;continue;}
+        if(!result.awarded) {skipped++;continue;}
+        awarded++;
+        const existing=_state.userSpecies.get(targetId);
+        const targetData=existing||{
+          species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,speciesTokens:0,
+          requestsEnabled:true,lastSwitch:0,awakening:{},badges:[],
+        };
+        targetData.rolls=result.rolls;
+        targetData.speciesTokens=result.speciesTokens;
+        _state.userSpecies.set(targetId,targetData);
+        try {
+          const target=await _client.users.fetch(targetId);
+          await target.send({embeds:[new EmbedBuilder().setColor(0x7562d9).setTitle("🌘 LOZ 6.0 Registration Rewards")
+            .setDescription("Thank you for registering for LOZ 6.0v! Your one-time registration rewards have been delivered.\n\n<:reroll_dice:1558042108965822515> **+25 Species Rolls**\n🔑 **+1 Species Token**\n\nUse /quests to earn more rolls and track quests.")],allowedMentions:{parse:[]}});
+          dmSent++;
+        } catch(error) {
+          dmFailed++;
+          console.warn("[LOZ 6.0 rewards] DM failed for "+targetId+": "+(error.code||error.message||error));
+        }
+      }
+      return interaction.editReply({content:"✅ **LOZ 6.0 registration reward pass complete**\n\n**Rewards granted:** "+awarded+"\n**Already claimed or not eligible:** "+skipped+"\n**Reward failures:** "+failed+"\n**DMs sent:** "+dmSent+"\n**DMs failed:** "+dmFailed+"\n\nEach registered user can receive these rewards only once."});
+    }
+
+
     if (sub === "subscribe") {
       const saved = await database.setBroadcastOptIn(user.id, true);
       if (!saved) return safeReply(interaction, { embeds:[createErrorEmbed("Couldn't save your notification preference. Please try again later.")], flags:64 });
@@ -1029,83 +1081,35 @@ async function handleCommand(interaction) {
 
     await interaction.deferReply({ flags:64 });
     try {
-      await user.send(buildLoz60EventPayload(user.id));
-      return interaction.editReply({ content:"✅ The LOZ 6.0 event-registration preview was sent to your DMs." });
+      await user.send(buildLoz60AnnouncementPayload());
+      return interaction.editReply({ content:"✅ The LOZ 6.0 announcement preview was sent to your DMs." });
     } catch(e) {
       console.error("broadtest DM failed:", e?.code || e?.message || e);
       return interaction.editReply({ content:"❌ Couldn't DM you the preview. Check that your DMs from LOZ are open, then try again." });
     }
   }
 
-  // ── BROADCAST: LOZ 6.0 EVENT REGISTRATION ───────────────────────
-  if (commandName === "broadcast") {
-    if (user.id !== _state.ownerId) {
-      return safeReply(interaction, { content:"Only the LOZ owner can use this command.", flags:64 });
-    }
-
-    await interaction.deferReply({ flags:64 });
-    const subscribers = await database.getBroadcastSubscribers();
-    if (subscribers === null) {
-      return interaction.editReply({
-        content:"❌ Couldn't load the update subscription list from MongoDB. No subscriber DMs were attempted.\n\n**DMs sent:** 0\n**DMs failed:** 0",
-      });
-    }
-
-    const respondedIds = await database.getLoz60EventRespondedUserIds();
-    if (respondedIds === null) {
-      return interaction.editReply({
-        content:"❌ Couldn't load LOZ 6.0 registration responses from MongoDB. No subscriber DMs were attempted.\n\n**DMs sent:** 0\n**DMs failed:** 0",
-      });
-    }
-
-    // Public prompts now appear automatically on each user's first slash command after restart.
-
-    const respondedSet = new Set(respondedIds);
-    const recipientIds = [...new Set(subscribers)]
-      .filter(id => id !== _client.user.id && !respondedSet.has(id));
-
-    if (!recipientIds.length) {
-      return interaction.editReply({
-        content:"✅ **LOZ 6.0 subscriber DM check completed**\n\n**Subscribed users awaiting a response:** 0\n**DMs sent:** 0\n**DMs failed:** 0",
-      });
-    }
-
-    let nextIndex = 0;
-    let sent = 0;
-    let failed = 0;
-    let completed = 0;
-
-    const sendWorker = async () => {
-      while (true) {
-        const index = nextIndex++;
-        if (index >= recipientIds.length) return;
-        const targetId = recipientIds[index];
-
-        try {
-          const target = await _client.users.fetch(targetId);
-          await target.send(buildLoz60EventPayload(targetId));
-          sent++;
-        } catch(e) {
-          failed++;
-          console.warn(`LOZ 6.0 event DM failed (code ${e?.code || "unknown"}).`);
-        }
-
-        completed++;
-        if (completed % 25 === 0) {
-          await interaction.editReply({
-            content:`📤 LOZ 6.0 event prompt in progress: ${completed}/${recipientIds.length} attempted · ${sent} sent · ${failed} failed.`,
-          }).catch(() => {});
-        }
+  // ── BROADCAST: LOZ 6.0 PUBLIC RELEASE ANNOUNCEMENT ────────────
+  if(commandName==="broadcast") {
+    if(user.id!==_state.ownerId) return safeReply(interaction,{content:"Only the LOZ owner can use this command.",flags:64});
+    await interaction.deferReply({flags:64});
+    const subscribers=await database.getBroadcastSubscribers();
+    if(subscribers===null) return interaction.editReply({content:"Could not load the update subscriber list from MongoDB. No DMs were attempted."});
+    const targets=[...new Set(subscribers)].filter(function(id){return id!==_client.user.id;});
+    let sent=0,failed=0,completed=0;
+    for(const targetId of targets) {
+      try {
+        const target=await _client.users.fetch(targetId);
+        await target.send(buildLoz60AnnouncementPayload());
+        sent++;
+      } catch(error) {
+        failed++;
+        console.warn("[LOZ 6.0 broadcast] DM failed: "+(error.code||error.message||error));
       }
-    };
-
-    await Promise.all(
-      Array.from({ length:Math.min(4, recipientIds.length) }, () => sendWorker())
-    );
-
-    return interaction.editReply({
-      content:`✅ **LOZ 6.0 subscriber DM check finished**\n\n**Subscribed users awaiting a response:** ${recipientIds.length}\n**DMs sent:** ${sent}\n**DMs failed:** ${failed}\n\nPublic event prompts are posted automatically when users run their first slash command after restart.`,
-    });
+      completed++;
+      if(completed%25===0) await interaction.editReply({content:"📤 LOZ 6.0 broadcast in progress: "+completed+"/"+targets.length+" attempted · "+sent+" sent · "+failed+" failed."}).catch(function(){});
+    }
+    return interaction.editReply({content:"✅ **LOZ 6.0 announcement broadcast finished**\n\n**Subscribers:** "+targets.length+"\n**DMs sent:** "+sent+"\n**DMs failed:** "+failed+"\n\nThe announcement includes True Dragon, the Glory system, and the Halloween update dropping next week."});
   }
 
 
@@ -2025,6 +2029,7 @@ async function handleCommand(interaction) {
 // ==================== BUTTON HANDLER ====================
 async function handleButton(interaction) {
   const { customId, user, guild, channel, message } = interaction;
+  if(customId && customId.startsWith("ach:")) return achievementSystem.handleButton(interaction,_state,_client);
 
   if (customId.startsWith("switch_page_")) {
     const ud=_state.userSpecies.get(user.id);
@@ -2873,8 +2878,8 @@ new SlashCommandBuilder().setName("leaderboard").setDescription("View a player l
     .addSubcommand(s=>s.setName("unsubscribe").setDescription("Opt out of major LOZ update DMs"))
     .addSubcommand(s=>s.setName("status").setDescription("Check your update DM preference"))
      .addSubcommand(s=>s.setName("reward").setDescription("Owner-only: reward registered LOZ 6.0 users")),
-  new SlashCommandBuilder().setName("broadcast").setDescription("DM the major update to users who opted in").setDefaultMemberPermissions(0n),
-  new SlashCommandBuilder().setName("broadtest").setDescription("Send the update DM preview to yourself").setDefaultMemberPermissions(0n),
+  new SlashCommandBuilder().setName("broadcast").setDescription("Send the LOZ update announcement to subscribers").setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
+  new SlashCommandBuilder().setName("broadtest").setDescription("Preview the LOZ update announcement by DM").setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
   new SlashCommandBuilder().setName("servers").setDescription("List LOZ servers with invite links").setDefaultMemberPermissions(0n),
   new SlashCommandBuilder().setName("view").setDescription("View restricted LOZ information")
     .addSubcommand(s=>s.setName("subscribers").setDescription("View the number of active update subscribers"))
