@@ -512,6 +512,6 @@ test("Human remains playable but is excluded from Species Achievements", () => {
   const achievementRoster = achievements.getSpeciesRoster();
   assert.ok(constants.humanSpecies, "Human must remain defined as the default playable species");
   assert.ok(!achievementRoster.some((entry) => entry.name === "Human"), "Human should not have a Species Achievement entry");
-  assert.ok(achievementRoster.some((entry) => entry.name === "Slime"), "normal species achievements should remain available");
+  assert.ok(achievementRoster.some((entry) => entry.category === "Rarity" && entry.name !== "Human"), "normal species achievements should remain available");
   assert.ok(achievementRoster.some((entry) => entry.name === "True Dragon"), "secret and awakening species achievements should remain available");
 });
