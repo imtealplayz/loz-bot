@@ -431,4 +431,4 @@ function startScheduler() {
   if (_scheduler.unref) _scheduler.unref();
 }
 
-module.exports={setState,setClient,setVoteWebhookEnabled,openBoard,handleTopggVote,trackProgress,claimQuest,handleButton,startScheduler};
+module.exports={setState,setClient,setVoteWebhookEnabled,openBoard,handleTopggVote,trackProgress,claimQuest,handleButton,startScheduler,QUEST_INTERVAL_MS,VOTE_INTERVAL_MS};
