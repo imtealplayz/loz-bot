@@ -156,6 +156,22 @@ test("Fourfold Cataclysm empowers one 2x strike and suppresses the opponent's ne
   }
 });
 
+test("Fourfold Cataclysm bypasses 10 percent of the target's damage reduction", () => {
+  const originalRandom = Math.random;
+  Math.random = () => 0.999999;
+  try {
+    const dragon = combat.makeCombatant("dragon", constants.trueDragonSpecies);
+    const earthDragon = combat.makeCombatant("earth", helpers.getSpeciesByName("Earth Dragon"));
+    combat.applyUltEffect(dragon, earthDragon);
+    const outcome = combat.calculateDamage(dragon, earthDragon);
+    assert.equal(outcome.damage, 72,
+      "42 max ATK × 2 damage × (1 - 15% Stone Skin × 90% after bypass) should floor to 72");
+    assert.ok(outcome.specialLines.some((line) => /Stone Skin -15%/i.test(line)));
+  } finally {
+    Math.random = originalRandom;
+  }
+});
+
 test("Mechangel cooldown and rotating-quest interval match 6.0, without changing vote cadence", () => {
   assert.equal(helpers.getSpeciesByName("Mechangel").ultCooldown, 9);
   assert.equal(questSystem.QUEST_INTERVAL_MS, 6 * 60 * 60 * 1000);
