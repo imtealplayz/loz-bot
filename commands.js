@@ -1018,21 +1018,33 @@ async function handleCommand(interaction) {
       for(const targetId of [...new Set(registered)].filter(function(id){return id!==_client.user.id;})) {
         const result=await database.claimLoz60RegistrationReward(targetId);
         if(!result||!result.ok) {failed++;continue;}
-        if(!result.awarded) {skipped++;continue;}
-        awarded++;
-        const existing=_state.userSpecies.get(targetId);
-        const targetData=existing||{
-          species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,speciesTokens:0,
-          requestsEnabled:true,lastSwitch:0,awakening:{},badges:[],
-        };
-        targetData.rolls=result.rolls;
-        targetData.speciesTokens=result.speciesTokens;
-        _state.userSpecies.set(targetId,targetData);
+        if(result.awarded) {
+          awarded++;
+          const existing=_state.userSpecies.get(targetId);
+          const targetData=existing||{
+            species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,speciesTokens:0,
+            requestsEnabled:true,lastSwitch:0,awakening:{},badges:[],
+          };
+          targetData.rolls=result.rolls;
+          targetData.speciesTokens=result.speciesTokens;
+          _state.userSpecies.set(targetId,targetData);
+        } else if(result.reason==="already_claimed") {
+          skipped++;
+        } else {
+          skipped++;
+          continue;
+        }
+        // If a prior run credited the rewards but its DM failed, this pass retries
+        // the message without crediting the rewards a second time.
+        const delivery=await database.getLoz60RewardDeliveryStatus(targetId);
+        if(delivery&&delivery.ok&&(!delivery.registered||!delivery.claimed||delivery.dmSent)) continue;
         try {
           const target=await _client.users.fetch(targetId);
           await target.send({embeds:[new EmbedBuilder().setColor(0x7562d9).setTitle("🌘 LOZ 6.0 Registration Rewards")
             .setDescription("Thank you for registering for LOZ 6.0v! Your one-time registration rewards have been delivered.\n\n<:reroll_dice:1558042108965822515> **+25 Species Rolls**\n🔑 **+1 Species Token**\n\nUse /quests to earn more rolls and track quests.")],allowedMentions:{parse:[]}});
           dmSent++;
+          const marked=await database.markLoz60RewardDmSent(targetId);
+          if(!marked) console.warn("[LOZ 6.0 rewards] DM sent but delivery marker was not saved for "+targetId);
         } catch(error) {
           dmFailed++;
           console.warn("[LOZ 6.0 rewards] DM failed for "+targetId+": "+(error.code||error.message||error));
