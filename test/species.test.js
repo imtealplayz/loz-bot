@@ -212,6 +212,22 @@ test("player ultimates feed Glory counters in PvP and bot fights", () => {
     "player ultimate in PvP must update the achievement profile");
 });
 
+
+test("Glory leaderboard rows use proper Discord mentions and explicitly label the Glory total", () => {
+  const row = achievements.formatLeaderboardRow({
+    userId: "123456789012345678",
+    glory: 1234,
+  }, 4);
+  assert.equal(
+    row,
+    "**#04** 🏅 **<@123456789012345678>** · <:Glory:1559650326011711579> **1,234 Glory**"
+  );
+
+  const invalidIdRow = achievements.formatLeaderboardRow({ userId: "not-a-discord-id", glory: 7 }, 11);
+  assert.match(invalidIdRow, /Unknown Player/);
+  assert.match(invalidIdRow, /7 Glory/);
+});
+
 test("Glory leaderboard never creates or assigns Discord roles and cleans up legacy roles", () => {
   const source = fs.readFileSync(path.join(__dirname, "..", "achievements.js"), "utf8");
   assert.ok(!source.includes("guild.roles.create"), "the leaderboard must not create Discord roles");

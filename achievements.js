@@ -334,20 +334,25 @@ function buildSpeciesDetailPage(userId,state,profile,speciesSlug,page,notice) {
   container.addActionRowComponents(new ActionRowBuilder().addComponents(nav));
   return {components:[container],flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral,allowedMentions:{parse:[]}};
 }
+function formatLeaderboardRow(entry, rank) {
+  const userId=String(entry && entry.userId || "");
+  // A Discord mention renders the user's current display name in this server and
+  // avoids stale/incorrect username strings. allowedMentions below prevents pings.
+  const player=/^\\d{17,20}$/.test(userId) ? "<@"+userId+">" : "Unknown Player";
+  const prefix=rank===1?"🥇":rank===2?"🥈":rank===3?"🥉":"**#"+String(rank).padStart(2,"0")+"**";
+  const glory=Math.max(0,Number(entry && entry.glory)||0).toLocaleString();
+  return prefix+" "+(rank<=10?"🏅 ":"")+"**"+player+"** · "+GLORY+" **"+glory+" Glory**";
+}
 async function buildLeaderboardPayload(client) {
   const entries=await database.getGloryLeaderboardTop(25),container=new ContainerBuilder().setAccentColor(0xe0b64c);
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🏆 "+GLORY+" GLORY LEADERBOARD\nWorldwide Top 25. Top 10 ranks receive in-profile rank badges. Only the Top 10 receive rank-change DMs."));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🏆 "+GLORY+" GLOBAL GLORY LEADERBOARD\nTop 25 players ranked by total Glory. Top 10 players receive in-profile rank badges and rank-update DMs."));
   divider(container);
   if(entries===null) container.addTextDisplayComponents(new TextDisplayBuilder().setContent("MongoDB could not load the Glory leaderboard. Please try again later."));
   else if(!entries.length) container.addTextDisplayComponents(new TextDisplayBuilder().setContent("No Glory has been earned yet. Open /achievements to begin."));
   else {
     const rows=[];
     for(let index=0;index<entries.length;index++) {
-      const entry=entries[index],rank=index+1;
-      let name="Unknown Player";
-      try {const fetched=await client.users.fetch(String(entry.userId));name=String(fetched.username||"Unknown Player").replace(/[\\r\\n]/g," ");} catch(_){}
-      const prefix=rank===1?"🥇":rank===2?"🥈":rank===3?"🥉":"**#"+rank+"**";
-      rows.push(prefix+" "+(rank<=10?"🏅 ":"")+"**"+name+"** · "+GLORY+" **"+Math.max(0,Number(entry.glory)||0).toLocaleString()+"**");
+      rows.push(formatLeaderboardRow(entries[index],index+1));
     }
     container.addTextDisplayComponents(new TextDisplayBuilder().setContent(rows.join("\n")));
   }
@@ -702,5 +707,5 @@ async function startLeaderboardScheduler(client,state) {
 }
 module.exports = {
   open,handleButton,recordBattle,recordUltimate,recordDailyClaim,recordRollUsed,
-  buildLeaderboardPayload,startLeaderboardScheduler,getSpeciesRoster,removeLegacyGloryRoles,formatClaimSummary,makeClaimButton,
+  buildLeaderboardPayload,formatLeaderboardRow,startLeaderboardScheduler,getSpeciesRoster,removeLegacyGloryRoles,formatClaimSummary,makeClaimButton,
 };
