@@ -6,7 +6,7 @@ const {
 } = require("discord.js");
 const {
   patchNotes, speciesList, dragonSpecies, humanSpecies, godSpecies,
-  reaperSpecies, archdemonSpecies, slimeLordSpecies, eclipsedSovereignSpecies, chaosCreatorSpecies,
+  reaperSpecies, archdemonSpecies, slimeLordSpecies, eclipsedSovereignSpecies, chaosCreatorSpecies, trueDragonSpecies,
   botSpecies, botSpeciesByDifficulty, botPersonalities,
   typeAdvantages, disintegrationMessages,
   getPassiveDescription, getActiveDescription,
@@ -25,6 +25,7 @@ const { buildFightMessagePayload, buildBotFightMessagePayload, makeCombatant, ca
 const chaosSystem = require("./chaos.js");
 const { startFight, endFight, doBotTurn, endBotFight } = require("./fights.js");
 const questSystem = require("./quest-system.js");
+const achievementSystem = require("./achievements.js");
 
 let _state = null;
 let _client = null;
@@ -62,6 +63,10 @@ const LEADERBOARD_BADGE_LABELS = {
   LB_ROLLS_2: "🥈 Species Rolls Leaderboard #2",
   LB_ROLLS_3: "🥉 Species Rolls Leaderboard #3",
   LB_ROLLS_TOP10: "🏅 Top 10 Species Rolls in the World",
+  GLORY_1:"🏆 Glory Leaderboard #1", GLORY_2:"🏆 Glory Leaderboard #2", GLORY_3:"🏆 Glory Leaderboard #3",
+  GLORY_4:"🏆 Glory Leaderboard #4", GLORY_5:"🏆 Glory Leaderboard #5", GLORY_6:"🏆 Glory Leaderboard #6",
+  GLORY_7:"🏆 Glory Leaderboard #7", GLORY_8:"🏆 Glory Leaderboard #8", GLORY_9:"🏆 Glory Leaderboard #9",
+  GLORY_10:"🏆 Glory Leaderboard #10", GLORY_TOP25:"🏅 Glory Leaderboard Top 25",
 };
 
 
@@ -77,6 +82,7 @@ function getSpeciesAutocompleteEntries(includeChaosCreator = false) {
     archdemonSpecies,
     slimeLordSpecies,
     eclipsedSovereignSpecies,
+    trueDragonSpecies,
     ...(includeChaosCreator ? [chaosCreatorSpecies] : []),
   ];
   const seen = new Set();
@@ -142,6 +148,7 @@ function buildSpeciesSwitchPayload(userData, requestedPage=0) {
     {id:"switch_mechangel",name:"Mechangel",emoji:"⚡🤖",unlocked:userData.awakening?.cyborg?.awakened===true,style:ButtonStyle.Primary},
     {id:"switch_slime_lord",name:"Slime Lord",emoji:"🫧",unlocked:userData.questSpecies?.slimeLord?.unlocked===true,style:ButtonStyle.Success},
     {id:"switch_eclipsed_sovereign",name:"Eclipsed Sovereign",emoji:"🌘",unlocked:userData.awakening?.halfBlood?.awakened===true,style:ButtonStyle.Primary},
+    {id:"switch_true_dragon",name:"True Dragon",emoji:"🐉✨",unlocked:userData.awakening?.trueDragon?.unlocked===true||userData.awakening?.trueDragon?.awakened===true||userData.originalSpecies?.name==="True Dragon",style:ButtonStyle.Danger},
   ];
   const specialNames=new Set(specialForms.map(form=>form.name));
   const forms=[];
@@ -270,6 +277,7 @@ function buildSpeciesRollAnnouncement(userId, userName, species, rollsRemaining,
       new ButtonBuilder().setCustomId(`cancel_${userId}`).setLabel("Cancel").setStyle(ButtonStyle.Secondary)
     ));
   }
+  components.push(new TextDisplayBuilder().setContent("### Need more rolls?\nRun /quests to earn Species Rolls and track quest rewards."));
 
   return {
     ...payload,
@@ -857,6 +865,7 @@ async function handleCommand(interaction) {
     const existingUser = _state.userSpecies.get(user.id);
     let userData = existingUser || {species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,requestsEnabled:true,lastSwitch:0};
     const streak=ud?(ud.streak||0)+1:1;
+    void achievementSystem.recordDailyClaim(user.id);
     _state.dailyClaims.set(user.id,{lastClaim:now,streak});
     database.saveDailyClaim(user.id,{lastClaim:now,streak});
     userData.rolls=(userData.rolls||0)+1;
@@ -1838,6 +1847,9 @@ async function handleCommand(interaction) {
       } else if (speciesName==="Eclipsed Sovereign") {
         ud.awakening.halfBlood={...(ud.awakening.halfBlood||{}),awakened:true};
         unlockLabel="Eclipsed Sovereign";
+      } else if (speciesName==="True Dragon") {
+        ud.awakening.trueDragon={...(ud.awakening.trueDragon||{}),awakened:true,unlocked:true};
+        unlockLabel="True Dragon";
       } else {
         return safeReply(interaction,{embeds:[createErrorEmbed("That exclusive species cannot be unlocked with this command.")],flags:64});
       }
@@ -1895,10 +1907,11 @@ async function handleCommand(interaction) {
       else if (spname==="Mechangel") ud.awakening.cyborg={...(ud.awakening.cyborg||{}),awakened:true};
       else if (spname==="Slime Lord") ud.questSpecies.slimeLord={...(ud.questSpecies.slimeLord||{}),unlocked:true,equipped:false,godGranted:true};
       else if (spname==="Eclipsed Sovereign") ud.awakening.halfBlood={...(ud.awakening.halfBlood||{}),awakened:true};
+       else if (spname==="True Dragon") ud.awakening.trueDragon={...(ud.awakening.trueDragon||{}),awakened:true,unlocked:true};
       // God-given species becomes the new original species.
       ud.originalSpecies=newSp;
       ud.species=newSp;
-      const isExclusive=["Reaper","Archdemon","Mechangel","Slime Lord","Eclipsed Sovereign","Chaos Creator"].includes(spname);
+      const isExclusive=["Reaper","Archdemon","Mechangel","Slime Lord","Eclipsed Sovereign","Chaos Creator","True Dragon"].includes(spname);
       const saved=isExclusive
         ? await database.saveUserSpecies(target.id,ud)
         : await database.saveUserSpeciesFields(target.id,ud.species,ud.originalSpecies);
@@ -2255,6 +2268,7 @@ async function handleButton(interaction) {
     }
     const rollResult=getRandomSpecies();
     const newSpecies=rollResult.isDragon?getDragonSubtype():rollResult;
+     void achievementSystem.recordRollUsed(user.id);
     userData.species=newSpecies;
     userData.originalSpecies=newSpecies;
     userData.rolls=(userData.rolls||0)-1;
@@ -2265,7 +2279,7 @@ async function handleButton(interaction) {
   }
 
   // ── SWITCH ────────────────────────────────────────────────────
-  if (customId==="switch_original"||customId==="switch_reaper"||customId==="switch_archdemon"||customId==="switch_mechangel"||customId==="switch_slime_lord"||customId==="switch_eclipsed_sovereign") {
+  if (customId==="switch_original"||customId==="switch_reaper"||customId==="switch_archdemon"||customId==="switch_mechangel"||customId==="switch_slime_lord"||customId==="switch_eclipsed_sovereign"||customId==="switch_true_dragon") {
     const ud=_state.userSpecies.get(user.id);
     if (!ud) return interaction.update(buildStyledCardPayload("Switch Failed",0xff0000,[{body:"No species data was found."}]));
     const now=Date.now(), th=3*60*60*1000;
@@ -2279,6 +2293,7 @@ async function handleButton(interaction) {
     else if (customId==="switch_archdemon") { if(ud.awakening?.demon?.awakened!==true && ud.originalSpecies?.name!=="Archdemon") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Complete the Demon awakening before equipping Archdemon."}])); newSp=archdemonSpecies; }
     else if (customId==="switch_slime_lord") { if(ud.questSpecies?.slimeLord?.unlocked!==true && ud.originalSpecies?.name!=="Slime Lord") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Defeat the rare Slime Lord boss or ask God to permanently unlock this species."}])); newSp=getSpeciesByName("Slime Lord"); }
     else if (customId==="switch_eclipsed_sovereign") { if(ud.awakening?.halfBlood?.awakened!==true && ud.originalSpecies?.name!=="Eclipsed Sovereign") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Complete the Half-Blood awakening or ask God to permanently unlock this species."}])); newSp=getSpeciesByName("Eclipsed Sovereign"); }
+    else if (customId==="switch_true_dragon") { if(ud.awakening?.trueDragon?.unlocked!==true && ud.awakening?.trueDragon?.awakened!==true && ud.originalSpecies?.name!=="True Dragon") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Awaken Fire, Thunder, Ice, and Earth Dragons independently to unlock True Dragon."}])); newSp=trueDragonSpecies; }
     else {
       if (ud.awakening?.cyborg?.awakened!==true && ud.originalSpecies?.name!=="Mechangel") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Complete the Cyborg awakening before equipping Mechangel."}]));
       newSp=getSpeciesByName("Mechangel");
@@ -2880,7 +2895,7 @@ const commands = [
     .addSubcommand(s=>s.setName("ban").setDescription("Ban a user from using LOZ without deleting their data").addUserOption(o=>o.setName("user").setDescription("User to ban").setRequired(true)).addStringOption(o=>o.setName("time").setDescription("Duration: 1s, 1m, 1h, 1d, 1w, or 1y; omit for permanent").setRequired(false).setMaxLength(16)))
     .addSubcommand(s=>s.setName("unban").setDescription("Restore a user's access to LOZ").addUserOption(o=>o.setName("user").setDescription("User to unban").setRequired(true)))
     .addSubcommand(s=>s.setName("clear-fight").setDescription("Clear stuck fight locks without awarding a result").addUserOption(o=>o.setName("user").setDescription("User whose stuck fight should be cleared").setRequired(true)))
-    .addSubcommand(s=>s.setName("species-unlock").setDescription("Permanently unlock an exclusive species for a user").addUserOption(o=>o.setName("user").setDescription("Target user, including yourself").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Exclusive species to unlock").setRequired(true).addChoices({name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"Slime Lord 🫧",value:"Slime Lord"},{name:"Eclipsed Sovereign 🌘",value:"Eclipsed Sovereign"})))
+    .addSubcommand(s=>s.setName("species-unlock").setDescription("Permanently unlock an exclusive species for a user").addUserOption(o=>o.setName("user").setDescription("Target user, including yourself").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Exclusive species to unlock").setRequired(true).addChoices({name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"Slime Lord 🫧",value:"Slime Lord"},{name:"Eclipsed Sovereign 🌘",value:"Eclipsed Sovereign"},{name:"True Dragon 🐉",value:"True Dragon"})))
     .addSubcommandGroup(g=>g.setName("add").setDescription("Give items to a user")
       .addSubcommand(s=>s.setName("items").setDescription("Give inventory items to a user")
         .addUserOption(o=>o.setName("user").setDescription("User receiving the item").setRequired(true))
