@@ -74,6 +74,7 @@ const notificationPreferenceSchema = new mongoose.Schema({
   loz60EventRespondedAt: { type:Date, default:null },
   loz60EventRegisteredAt: { type:Date, default:null },
   loz60RewardsClaimed: { type:Boolean, default:false },
+  loz60RewardDmSent: { type:Boolean, default:false },
   updatedAt:       { type:Date, default:Date.now },
 }, { minimize:false });
 
@@ -1482,6 +1483,36 @@ async function claimLoz60RegistrationReward(userId) {
   }
 }
 
+async function getLoz60RewardDeliveryStatus(userId) {
+  try {
+    if(!await connect()) return {ok:false};
+    const record=await NotificationPreference.findOne({userId:String(userId)})
+      .select({loz60EventResponse:1,loz60RewardsClaimed:1,loz60RewardDmSent:1}).lean();
+    return {
+      ok:true,
+      registered:Boolean(record&&record.loz60EventResponse==="registered"),
+      claimed:Boolean(record&&record.loz60RewardsClaimed===true),
+      dmSent:Boolean(record&&record.loz60RewardDmSent===true),
+    };
+  } catch(error) {
+    console.error("❌ LOZ 6.0 reward delivery status error:",error.message);
+    return {ok:false};
+  }
+}
+async function markLoz60RewardDmSent(userId) {
+  try {
+    if(!await connect()) return false;
+    const result=await NotificationPreference.updateOne(
+      {userId:String(userId),loz60EventResponse:"registered",loz60RewardsClaimed:true},
+      {$set:{loz60RewardDmSent:true,updatedAt:new Date()}}
+    );
+    return Number(result.matchedCount||result.n||0)>0;
+  } catch(error) {
+    console.error("❌ LOZ 6.0 reward DM marker error:",error.message);
+    return false;
+  }
+}
+
 // ==================== EXPORTS ====================
 module.exports = {
   saveUserSpecies, saveUserRolls, saveUserSpeciesFields, addSpeciesTokens, redeemSpeciesToken, awardGuideCompletionRoll, repairUserRecords,
@@ -1497,5 +1528,6 @@ module.exports = {
   getLeaderboardBadgeSnapshot, saveLeaderboardBadgeSnapshot,
   getAchievementProfile, saveAchievementProfile, getGloryLeaderboardTop,
   getGloryLeaderboardSnapshot, saveGloryLeaderboardSnapshot, claimLoz60RegistrationReward,
+  getLoz60RewardDeliveryStatus, markLoz60RewardDmSent,
   setAccessBan, getActiveAccessBan, removeAccessBan,
 };
