@@ -282,7 +282,7 @@ function buildSpeciesDetailPage(userId,state,profile,speciesSlug,page,notice) {
 }
 async function buildLeaderboardPayload(client) {
   const entries=await database.getGloryLeaderboardTop(25),container=new ContainerBuilder().setAccentColor(0xe0b64c);
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🏆 "+GLORY+" GLORY LEADERBOARD\nWorldwide Top 25. Rank-specific roles go to the Top 10; ranks 11–25 receive the Top 25 role. Only the Top 10 receive rank-change DMs."));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🏆 "+GLORY+" GLORY LEADERBOARD\nWorldwide Top 25. Top 10 ranks receive in-profile rank badges. Only the Top 10 receive rank-change DMs."));
   divider(container);
   if(entries===null) container.addTextDisplayComponents(new TextDisplayBuilder().setContent("MongoDB could not load the Glory leaderboard. Please try again later."));
   else if(!entries.length) container.addTextDisplayComponents(new TextDisplayBuilder().setContent("No Glory has been earned yet. Open /achievements to begin."));
@@ -489,37 +489,28 @@ async function handleButton(interaction,state,client) {
   }
   return true;
 }
-let schedulerStarted=false,schedulerRunning=false,lastRoleSnapshot="";
-async function syncGloryRoles(client,topEntries,previousEntries) {
-  const affected=Array.from(new Set(topEntries.map(function(e){return String(e.userId);}).concat(previousEntries.map(function(e){return String(e.userId);}))));
+let schedulerStarted=false,schedulerRunning=false;
+
+// One-time migration cleanup for Discord roles created by the retired Glory leaderboard feature.
+// The leaderboard will never create, assign, or synchronize Discord roles again.
+async function removeLegacyGloryRoles(client) {
+  const managedRoleName=/^LOZ Glory (#(?:[1-9]|10)|Top 25)$/;
   for(const guild of client.guilds.cache.values()) {
+    let roles;
     try {
-      const present=[];
-      for(const userId of affected) {
-        const member=await guild.members.fetch(userId).catch(function(){return null;});
-        if(member) present.push({userId:userId,member:member});
-      }
-      if(!present.length) continue;
-      const wantedByUser=new Map();
-      for(const row of present) {
-        const entry=topEntries.find(function(item){return String(item.userId)===row.userId;});
-        if(entry) wantedByUser.set(row.userId,entry.rank<=10?"LOZ Glory #"+entry.rank:"LOZ Glory Top 25");
-      }
-      const names=Array.from(new Set(Array.from(wantedByUser.values())));
-      const roleMap=new Map();
-      for(const name of names) {
-        let role=guild.roles.cache.find(function(item){return item.name===name;});
-        if(!role) role=await guild.roles.create({name:name,mentionable:false,hoist:false,reason:"LOZ Glory leaderboard role sync"});
-        roleMap.set(name,role);
-      }
-      for(const row of present) {
-        const wanted=wantedByUser.get(row.userId)||null;
-        const old=row.member.roles.cache.filter(function(role){return /^LOZ Glory (#\d+|Top 25)$/.test(role.name);});
-        if(old.size) await row.member.roles.remove(old).catch(function(){});
-        if(wanted&&roleMap.get(wanted)) await row.member.roles.add(roleMap.get(wanted)).catch(function(){});
-      }
+      roles=await guild.roles.fetch();
     } catch(error) {
-      console.warn("[Glory] Could not sync roles in "+guild.id+": "+(error.message||error));
+      console.warn("[Glory] Could not fetch roles for cleanup in "+guild.id+": "+(error.message||error));
+      continue;
+    }
+    const legacyRoles=Array.from(roles.values()).filter(function(role){return managedRoleName.test(role.name);});
+    for(const role of legacyRoles) {
+      try {
+        await role.delete("LOZ no longer uses Discord roles for the Glory leaderboard");
+        console.log("[Glory] Deleted retired leaderboard role "+role.name+" in guild "+guild.id);
+      } catch(error) {
+        console.warn("[Glory] Could not delete retired role "+role.name+" in guild "+guild.id+": "+(error.message||error));
+      }
     }
   }
 }
@@ -550,11 +541,6 @@ async function syncLeaderboardCycle(client,state) {
     const previous=Array.isArray(snapshot.data)?snapshot.data:[];
     const current=entries.map(function(e,index){return {userId:String(e.userId),glory:Number(e.glory)||0,rank:index+1};});
     await syncGloryBadges(state,current,previous);
-    const serial=JSON.stringify(current.map(function(entry){return {userId:entry.userId,rank:entry.rank};}));
-    if(serial!==lastRoleSnapshot) {
-      await syncGloryRoles(client,current,previous);
-      lastRoleSnapshot=serial;
-    }
     const oldRanks=new Map(previous.map(function(e){return [String(e.userId),Number(e.rank)||0];}));
     for(const entry of current.filter(function(e){return e.rank<=10;})) {
       if(oldRanks.has(entry.userId)&&oldRanks.get(entry.userId)===entry.rank) continue;
@@ -571,13 +557,15 @@ async function syncLeaderboardCycle(client,state) {
   } catch(error) {console.error("[Glory] Leaderboard cycle failed:",error);}
   finally {schedulerRunning=false;}
 }
-function startLeaderboardScheduler(client,state) {
-  if(schedulerStarted) return Promise.resolve(false);
+async function startLeaderboardScheduler(client,state) {
+  if(schedulerStarted) return false;
   schedulerStarted=true;
+  // Clean up roles from the old system before the first leaderboard refresh.
+  await removeLegacyGloryRoles(client);
   void syncLeaderboardCycle(client,state);
   const timer=setInterval(function(){void syncLeaderboardCycle(client,state);},CHECK_INTERVAL_MS);
   if(typeof timer.unref==="function") timer.unref();
-  return Promise.resolve(true);
+  return true;
 }
 module.exports = {
   open,handleButton,recordBattle,recordUltimate,recordDailyClaim,recordRollUsed,
