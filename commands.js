@@ -857,14 +857,14 @@ async function handleCommand(interaction) {
     if (commandName === "disable-all") {
       _state.disabledChannels.add(channel.id);
       return safeReply(interaction, {
-        content: "🔒 **LOZ disabled in <#" + channel.id + ">.**\\nUsers can no longer use LOZ commands here. Run `/enable-all` in this channel to re-enable them.",
+        content: "🔒 **LOZ disabled in <#" + channel.id + ">.**\nUsers can no longer use LOZ commands here. Run `/enable-all` in this channel to re-enable them.",
         allowedMentions: { parse: [] },
       });
     }
 
     _state.disabledChannels.delete(channel.id);
     return safeReply(interaction, {
-      content: "🔓 **LOZ enabled in <#" + channel.id + ">.**\\nUsers can use LOZ commands here again.",
+      content: "🔓 **LOZ enabled in <#" + channel.id + ">.**\nUsers can use LOZ commands here again.",
       allowedMentions: { parse: [] },
     });
   }

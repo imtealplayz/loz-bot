@@ -414,15 +414,15 @@ client.on("messageCreate", async (message) => {
 
     const mentionCard = new ContainerBuilder().setAccentColor(0x0891b2);
     mentionCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      "## Welcome to LOZ\\nLegends of the Rift is a turn-based RPG where you roll species, complete quests, and battle players or bots."
+      "## Welcome to LOZ\nLegends of the Rift is a turn-based RPG where you roll species, complete quests, and battle players or bots."
     ));
     mentionCard.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
     mentionCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      "### Get Started\\nRun **`/guide`** to learn the basics and earn your one-time tutorial roll."
+      "### Get Started\nRun **`/guide`** to learn the basics and earn your one-time tutorial roll."
     ));
     mentionCard.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
     mentionCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      "### Need More?\\n[Open the full website guide](https://lozbot.vercel.app/)\\nRun **`/help`** to browse all commands."
+      "### Need More?\n[Open the full website guide](https://lozbot.vercel.app/)\nRun **`/help`** to browse all commands."
     ));
     const mentionReply = await message.reply({
       components: [mentionCard],

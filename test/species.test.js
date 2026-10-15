@@ -426,9 +426,9 @@ test("legacy prefix commands have slash replacements and LOZ no longer requests 
 
   const indexSource = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
   const commandSource = fs.readFileSync(path.join(__dirname, "..", "commands.js"), "utf8");
-  assert.doesNotMatch(indexSource, /GatewayIntentBits\\.(?:MessageContent|GuildMembers)/, "Message Content and Guild Members intents should no longer be requested");
-  assert.doesNotMatch(indexSource, /message\\.content/, "message handlers must not read incoming message text");
-  assert.match(indexSource, /message\\.mentions\\.users\\.has\\(client\\.user\\.id\\)/, "mention-based help should still work without Message Content");
+  assert.doesNotMatch(indexSource, /GatewayIntentBits\.(?:MessageContent|GuildMembers)/, "Message Content and Guild Members intents should no longer be requested");
+  assert.doesNotMatch(indexSource, /message\.content/, "message handlers must not read incoming message text");
+  assert.match(indexSource, /message\.mentions\.users\.has\(client\.user\.id\)/, "mention-based help should still work without Message Content");
   assert.match(indexSource, /channelToggleCommand/, "disabled channels must allow /enable-all recovery");
   assert.match(commandSource, /title:"Server & Owner Tools"/, "the replacement commands should appear in /help");
 });
