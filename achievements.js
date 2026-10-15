@@ -149,11 +149,11 @@ function makeClaimButton(customId,ready,claimed,reward) {
   if(ready) return new ButtonBuilder().setCustomId(customId).setLabel("Claim "+reward+" Glory").setStyle(ButtonStyle.Primary);
   return new ButtonBuilder().setCustomId("ach:locked").setLabel("In Progress").setStyle(ButtonStyle.Secondary).setDisabled(true);
 }
-function addTask(container,task) {
+function addTask(container,task,dividerAfter=true) {
   const status=task.claimed?"\n**Status:** Claimed":task.ready?"\n**Status:** Ready to claim":"";
   addSection(container,"### "+task.title+"\n"+task.description+"\n"+progressBar(task.value,task.target)+"\n**Reward:** "+GLORY+" **+"+task.reward+"**"+status,
     makeClaimButton(task.customId,task.ready,task.claimed,task.reward));
-  divider(container);
+  if(dividerAfter) divider(container);
 }
 function buildHome(userId,profile) {
   const container=new ContainerBuilder().setAccentColor(0x7562d9);
@@ -173,7 +173,8 @@ function buildNormalPage(userId,state,profile,page,notice) {
   const metrics=getMetrics(userId,state,profile),container=new ContainerBuilder().setAccentColor(0x7562d9);
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## "+GLORY+" NORMAL ACHIEVEMENTS\nOnly the next milestone for each achievement is shown. Claiming it unlocks the next milestone."+(notice?"\n\n✅ "+notice:"")));
   divider(container);
-  NORMAL_ACHIEVEMENTS.slice(safePage*4,safePage*4+4).forEach(function(def){
+  const visible= NORMAL_ACHIEVEMENTS.slice(safePage*4,safePage*4+4);
+  visible.forEach(function(def,visibleIndex){
     const stage=Math.max(0,Number(profile.claimed["normal:"+def.key])||0);
     const done=stage>=def.milestones.length;
     const target=done?def.milestones[def.milestones.length-1]:def.milestones[stage];
@@ -181,7 +182,7 @@ function buildNormalPage(userId,state,profile,page,notice) {
     addTask(container,{
       title:def.title,description:def.description,value:value,target:target,reward:reward,
       claimed:done,ready:ready,customId:"ach:claim-normal:"+userId+":"+def.key+":"+stage,
-    });
+    },visibleIndex<visible.length-1);
   });
   const nav=[];
   if(safePage>0) nav.push(new ButtonBuilder().setCustomId("ach:normal:"+userId+":"+(safePage-1)).setLabel("Previous").setStyle(ButtonStyle.Secondary));
@@ -195,11 +196,12 @@ function buildSpeciesListPage(userId,page,notice) {
   const container=new ContainerBuilder().setAccentColor(0x0891b2);
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🐉 SPECIES ACHIEVEMENTS\nSpecies are ordered from common to rare, followed by dragon awakenings, awakening forms, and secret species. Open a species to view its quests."+(notice?"\n\n✅ "+notice:"")));
   divider(container);
-  SPECIES_ROSTER.slice(safePage*4,safePage*4+4).forEach(function(entry){
+  const visible=SPECIES_ROSTER.slice(safePage*4,safePage*4+4);
+  visible.forEach(function(entry,visibleIndex){
     const category=entry.category+(entry.rarity?" · rarity weight "+entry.rarity:"");
     addSection(container,"### "+entry.emoji+" "+entry.name+"\n**Category:** "+category+"\nComplete its personal mastery trial to earn Glory.",
       new ButtonBuilder().setCustomId("ach:open:"+userId+":"+slug(entry.name)+":0").setLabel("View").setStyle(ButtonStyle.Primary));
-    divider(container);
+    if(visibleIndex<visible.length-1) divider(container);
   });
   const nav=[];
   if(safePage>0) nav.push(new ButtonBuilder().setCustomId("ach:species:"+userId+":"+(safePage-1)).setLabel("Previous").setStyle(ButtonStyle.Secondary));
@@ -269,7 +271,8 @@ function buildSpeciesDetailPage(userId,state,profile,speciesSlug,page,notice) {
     tasks.push({title:"True Dragon Awakening",description:"Unlock True Dragon by awakening all four elemental variants, or receiving an owner-granted unlock.",value:unlocked?1:0,target:1,reward:3,claimed:wasClaimed,ready:unlocked&&!wasClaimed,customId:"ach:claim-awakening:"+userId+":true-dragon"});
   }
   const pageCount=Math.max(1,Math.ceil(tasks.length/4)),safePage=Math.max(0,Math.min(pageCount-1,Number(page)||0));
-  tasks.slice(safePage*4,safePage*4+4).forEach(function(task){addTask(container,Object.assign({},task,{value:task.value||0}));});
+  const visible=tasks.slice(safePage*4,safePage*4+4);
+  visible.forEach(function(task,visibleIndex){addTask(container,Object.assign({},task,{value:task.value||0}),visibleIndex<visible.length-1);});
   const nav=[new ButtonBuilder().setCustomId("ach:species:"+userId+":0").setLabel("Back to Species").setStyle(ButtonStyle.Secondary)];
   if(safePage>0) nav.push(new ButtonBuilder().setCustomId("ach:open:"+userId+":"+speciesSlug+":"+(safePage-1)).setLabel("Previous").setStyle(ButtonStyle.Secondary));
   if((safePage+1)*4<tasks.length) nav.push(new ButtonBuilder().setCustomId("ach:open:"+userId+":"+speciesSlug+":"+(safePage+1)).setLabel("Next").setStyle(ButtonStyle.Primary));
@@ -284,14 +287,15 @@ async function buildLeaderboardPayload(client) {
   if(entries===null) container.addTextDisplayComponents(new TextDisplayBuilder().setContent("MongoDB could not load the Glory leaderboard. Please try again later."));
   else if(!entries.length) container.addTextDisplayComponents(new TextDisplayBuilder().setContent("No Glory has been earned yet. Open /achievements to begin."));
   else {
+    const rows=[];
     for(let index=0;index<entries.length;index++) {
       const entry=entries[index],rank=index+1;
       let name="Unknown Player";
-      try {const user=await client.users.fetch(String(entry.userId));name=user.username;} catch(_){}
+      try {const fetched=await client.users.fetch(String(entry.userId));name=String(fetched.username||"Unknown Player").replace(/[\\r\\n]/g," ");} catch(_){}
       const prefix=rank===1?"🥇":rank===2?"🥈":rank===3?"🥉":"**#"+rank+"**";
-      container.addTextDisplayComponents(new TextDisplayBuilder().setContent(prefix+" "+(rank<=10?"🏅 ":"")+"**"+name+"** · "+GLORY+" **"+Math.max(0,Number(entry.glory)||0).toLocaleString()+"**"));
-      if(index<entries.length-1) divider(container);
+      rows.push(prefix+" "+(rank<=10?"🏅 ":"")+"**"+name+"** · "+GLORY+" **"+Math.max(0,Number(entry.glory)||0).toLocaleString()+"**");
     }
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(rows.join("\n")));
   }
   return {components:[container],flags:MessageFlags.IsComponentsV2,allowedMentions:{parse:[]}};
 }
