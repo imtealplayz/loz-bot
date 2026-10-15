@@ -211,6 +211,19 @@ test("player ultimates feed Glory counters in PvP and bot fights", () => {
     "player ultimate in PvP must update the achievement profile");
 });
 
+test("Glory leaderboard never creates or assigns Discord roles and cleans up legacy roles", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "achievements.js"), "utf8");
+  assert.ok(!source.includes("guild.roles.create"), "the leaderboard must not create Discord roles");
+  assert.ok(!source.includes("member.roles.add"), "the leaderboard must not assign Discord roles");
+  assert.ok(!source.includes("syncGloryRoles"), "the former recurring role-sync function must stay removed");
+  assert.ok(source.includes("async function removeLegacyGloryRoles"),
+    "startup should remove roles created by the retired feature");
+  assert.ok(source.includes("role.delete(\"LOZ no longer uses Discord roles for the Glory leaderboard\")"));
+  assert.ok(source.includes("/^LOZ Glory (#(?:[1-9]|10)|Top 25)$/"),
+    "cleanup must be limited to role names produced by the old feature");
+  assert.ok(!source.includes("Rank-specific roles go to the Top 10"));
+});
+
 test("6.0 broadcast includes the Halloween announcement without owner-command details", () => {
   const source = fs.readFileSync(path.join(__dirname, "..", "commands.js"), "utf8");
   const start = source.indexOf("function buildLoz60AnnouncementPayload()");
