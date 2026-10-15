@@ -201,15 +201,15 @@ function calculateDamage(attacker, defender) {
   if (defender.species.name==="True Dragon") { multiplier*=1-(0.2*(1-ignoreReduction)); specialLines.push("🐉 Dragon Spirit Haki -20% incoming damage"); }
   if (defender.species.name==="Eclipsed Sovereign" && defender.currentHp<defender.maxHp*0.5) { multiplier*=1-(0.1*(1-ignoreReduction)); specialLines.push("🌘 Hybrid Instinct -10%"); }
   if (defender.ultBuff?.type==="cyborgArmor") {
-    multiplier*=0.85; specialLines.push("🤖 Cyborg Armor -15%");
+    multiplier*=1-(0.15*(1-ignoreReduction)); specialLines.push("🤖 Cyborg Armor -15%");
     defender.ultBuff.duration--; if(defender.ultBuff.duration<=0) defender.ultBuff=null;
   }
   if (defender.ultBuff?.type==="damageReduction") {
-    multiplier*=(1-defender.ultBuff.amount); specialLines.push(`⚡ Shield -${defender.ultBuff.amount*100}%`);
+    multiplier*=1-(Math.max(0,Math.min(1,Number(defender.ultBuff.amount)||0))*(1-ignoreReduction)); specialLines.push(`⚡ Shield -${defender.ultBuff.amount*100}%`);
     defender.ultBuff.duration--; if(defender.ultBuff.duration<=0) defender.ultBuff=null;
   }
   if (defender.ultBuff?.type==="earthDamageReduction") {
-    multiplier*=0.4; specialLines.push("🌍 Terra Shield -60%"); defender.ultBuff=null;
+    multiplier*=1-(0.6*(1-ignoreReduction)); specialLines.push("🌍 Terra Shield -60%"); defender.ultBuff=null;
   }
 
   // Type advantage
@@ -231,7 +231,7 @@ function calculateDamage(attacker, defender) {
 
   finalDamage = Math.max(0, Math.floor(finalDamage*multiplier));
   if (defender.species.name === "Chaos Creator" && finalDamage > 0) {
-    finalDamage = Math.ceil(finalDamage * 0.5);
+    finalDamage = Math.ceil(finalDamage * (0.5+0.5*ignoreReduction));
     specialLines.push("🌀 **ABSOLUTE AUTHORITY!** Incoming damage reduced by 50%.");
   }
 
