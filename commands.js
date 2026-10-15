@@ -347,6 +347,15 @@ const HELP_PAGES = [
       {usage:"/help",name:"Open this command guide",description:"Browse the command directory one category at a time."},
     ],
   },
+  {
+    title:"Server & Owner Tools",
+    intro:"Channel controls require server Administrator. Divine intervention is restricted to the primary LOZ owner.",
+    commands:[
+      {usage:"/disable-all",name:"Disable LOZ in this channel",description:"Block LOZ slash commands in the current channel. Server administrators only."},
+      {usage:"/enable-all",name:"Re-enable LOZ in this channel",description:"Restore LOZ commands in a disabled channel. Server administrators only."},
+      {usage:"/disintegrate",name:"Divine intervention",description:"End the primary owner's active player fight and post the battle effects."},
+    ],
+  },
 ];
 
 function buildHelpPayload(pageIndex) {
@@ -825,6 +834,131 @@ async function handleCommand(interaction) {
     ]));
   }
 
+
+  // ── CHANNEL ADMINISTRATION ─────────────────────────────────────
+  if (commandName === "disable-all" || commandName === "enable-all") {
+    const isServerAdmin = Boolean(
+      interaction.inGuild?.()
+      && interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)
+    );
+    if (!isServerAdmin) {
+      return safeReply(interaction, {
+        content: "Only server administrators can use this command.",
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+    if (!channel?.id || !_state?.disabledChannels) {
+      return safeReply(interaction, {
+        content: "I could not identify this channel. No channel settings were changed.",
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+
+    if (commandName === "disable-all") {
+      _state.disabledChannels.add(channel.id);
+      return safeReply(interaction, {
+        content: "🔒 **LOZ disabled in <#" + channel.id + ">.**\\nUsers can no longer use LOZ commands here. Run `/enable-all` in this channel to re-enable them.",
+        allowedMentions: { parse: [] },
+      });
+    }
+
+    _state.disabledChannels.delete(channel.id);
+    return safeReply(interaction, {
+      content: "🔓 **LOZ enabled in <#" + channel.id + ">.**\\nUsers can use LOZ commands here again.",
+      allowedMentions: { parse: [] },
+    });
+  }
+
+  // ── OWNER-ONLY DIVINE INTERVENTION ─────────────────────────────
+  if (commandName === "disintegrate") {
+    if (user.id !== _state.ownerId) {
+      return safeReply(interaction, {
+        content: "Only the bot owner can use this command.",
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+
+    let activeFight = null;
+    let fightId = null;
+    for (const [id, fight] of (_state.activeFights || new Map()).entries()) {
+      if (fight.player1Id === user.id || fight.player2Id === user.id) {
+        activeFight = fight;
+        fightId = id;
+        break;
+      }
+    }
+    if (!activeFight || activeFight.ending) {
+      return safeReply(interaction, {
+        content: activeFight
+          ? "Your fight is already being resolved."
+          : "You are not in an active player fight.",
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+
+    const fightMessage = _state.fightMessages?.get(fightId);
+    const fightChannel = fightMessage?.channel;
+    if (!fightChannel || typeof fightChannel.send !== "function") {
+      return safeReply(interaction, {
+        content: "I could not locate the active fight channel. No changes were made.",
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+
+    const opponentId = activeFight.player1Id === user.id
+      ? activeFight.player2Id
+      : activeFight.player1Id;
+    const loser = activeFight.player1Id === opponentId
+      ? activeFight.player1
+      : activeFight.player2;
+    if (!loser) {
+      return safeReply(interaction, {
+        content: "The active fight data is incomplete. No changes were made.",
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    if (activeFight.timeout) clearTimeout(activeFight.timeout);
+    loser.currentHp = 0;
+    await endFight(fightChannel, fightId, user.id, opponentId, "divine-intervention");
+
+    if (_state.activeFights.has(fightId)) {
+      return interaction.editReply({
+        content: "❌ I could not safely resolve the fight. No disintegration effects were posted; inspect the battle before retrying.",
+      });
+    }
+
+    const shuffled = [...disintegrationMessages].sort(() => 0.5 - Math.random()).slice(0, 8);
+    let effectsSent = 0;
+    for (const line of shuffled) {
+      try {
+        await fightChannel.send(line.replace(/%attacker%/g, user.id).replace(/%defender%/g, opponentId));
+        effectsSent += 1;
+      } catch (error) {
+        console.error("[Disintegrate] Could not post a divine-intervention effect:", error?.stack || error);
+        break;
+      }
+      await new Promise(resolve => setTimeout(resolve, 800));
+    }
+
+    let finaleSent = false;
+    try {
+      await fightChannel.send("🏆 **GOD WINS BY DIVINE INTERVENTION!**");
+      finaleSent = true;
+    } catch (error) {
+      console.error("[Disintegrate] Could not post the finale:", error?.stack || error);
+    }
+
+    if (effectsSent !== shuffled.length || !finaleSent) {
+      return interaction.editReply({
+        content: "The fight was resolved, but Discord prevented LOZ from posting every divine-intervention message in <#" + fightChannel.id + ">.",
+      });
+    }
+    return interaction.editReply({
+      content: "✅ Divine intervention completed in <#" + fightChannel.id + ">.",
+    });
+  }
 
   // ── HELP ──────────────────────────────────────────────────────
   if (commandName === "help") {
@@ -2835,6 +2969,9 @@ async function handleSelectMenu(interaction) {
 
 // ==================== SLASH COMMAND DEFINITIONS ====================
 const commands = [
+  new SlashCommandBuilder().setName("disable-all").setDescription("Disable LOZ commands in this channel").setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
+  new SlashCommandBuilder().setName("enable-all").setDescription("Re-enable LOZ commands in this channel").setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
+  new SlashCommandBuilder().setName("disintegrate").setDescription("Owner-only: end your active player fight through divine intervention"),
   new SlashCommandBuilder().setName("help").setDescription("Show all commands"),
   new SlashCommandBuilder().setName("guide").setDescription("New player tutorial"),
   new SlashCommandBuilder().setName("daily").setDescription("Claim your daily species roll"),

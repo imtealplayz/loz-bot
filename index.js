@@ -1,5 +1,5 @@
 const {
-  Client, GatewayIntentBits, PermissionsBitField, REST, Routes,
+  Client, GatewayIntentBits, REST, Routes,
   ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags,
 } = require("discord.js");
 const express = require("express");
@@ -9,7 +9,6 @@ const state    = require("./state.js");
 const { setState: setHelperState } = require("./helpers.js");
 const { setState: setFightState }   = require("./fights.js");
 const { setState: setCommandState, setClient, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForUpdates, commands } = require("./commands.js");
-const { disintegrationMessages } = require("./constants.js");
 const questSystem = require("./quest-system.js");
 const chaosSystem = require("./chaos.js");
 const leaderboardBadgeSystem = require("./leaderboard-badges.js");
@@ -19,7 +18,6 @@ const achievementSystem = require("./achievements.js");
 const ownerId     = "926063716057894953";
 const secondGodId = "1445387368830992455";
 const TOKEN = (process.env.TOKEN || process.env.DISCORD_TOKEN || "").trim();
-const prefix      = "'";
 
 const SUPPORT_SERVER_INVITE = "https://discord.gg/TKBYpjqnPC";
 
@@ -293,7 +291,6 @@ startHttpServer();
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessageReactions,
   ],
 });
@@ -398,16 +395,12 @@ client.once("clientReady", async () => {
   console.log(`🎉 Bot ready with ${state.userSpecies.size} users!`);
 });
 
-// ==================== MESSAGE CREATE (prefix commands) ====================
+// ==================== MESSAGE CREATE (mention help only; no Message Content intent) ====================
 client.on("messageCreate", async (message) => {
   try {
-    if (message.author.bot) return;
+    if (message.author.bot || !message.mentions.users.has(client.user.id)) return;
 
-    const pingsLoz = message.mentions.users.has(client.user.id)
-      || message.content.startsWith("<@"+client.user.id+">")
-      || message.content.startsWith("<@!"+client.user.id+">");
-    const usesLozPrefix = message.content.startsWith(prefix);
-    if ((pingsLoz || usesLozPrefix) && !isAuthorizedLozOwner(message.author.id)) {
+    if (!isAuthorizedLozOwner(message.author.id)) {
       const access = await database.getActiveAccessBan(message.author.id);
       if (!access?.ok) {
         await denyBannedMessage(message, true);
@@ -419,79 +412,28 @@ client.on("messageCreate", async (message) => {
       }
     }
 
-    // Bot mention response
-    if (
-      message.content.startsWith(`<@${client.user.id}>`) ||
-      message.content.startsWith(`<@!${client.user.id}>`)
-    ) {
-      const mentionCard = new ContainerBuilder().setAccentColor(0x0891b2);
-      mentionCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-        "## Welcome to LOZ\nLegends of the Rift is a turn-based RPG where you roll species, complete quests, and battle players or bots."
-      ));
-      mentionCard.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-      mentionCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-        "### Get Started\nRun **`/guide`** to learn the basics and earn your one-time tutorial roll."
-      ));
-      mentionCard.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-      mentionCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-        "### Need More?\n[Open the full website guide](https://lozbot.vercel.app/)\nRun **`/help`** to browse all commands."
-      ));
-      const mentionReply = await message.reply({
-        components: [mentionCard],
-        flags: MessageFlags.IsComponentsV2,
-        allowedMentions: { parse: [] },
-      });
-      const mentionTimer = setTimeout(() => mentionReply.delete().catch(() => {}), 10_000);
-      if (typeof mentionTimer.unref === "function") mentionTimer.unref();
-      return;
-    }
-
-    if (!message.content.startsWith(prefix)) return;
-    const args = message.content.slice(prefix.length).trim().split(/ +/);
-    const command = args.shift().toLowerCase();
-
-    // ── 'disable all ──────────────────────────────────────────────
-    if (command === "disable" && args[0] === "all") {
-      if (!message.member?.permissions.has(PermissionsBitField.Flags.Administrator))
-        return message.reply("❌ You need Administrator permission to use this!");
-      state.disabledChannels.add(message.channel.id);
-      return message.reply(`🔒 **LOZ disabled in <#${message.channel.id}>.**
-Users can no longer use LOZ commands here. Use \`'enable all\` to re-enable.`);
-    }
-
-    // ── 'enable all ───────────────────────────────────────────────
-    if (command === "enable" && args[0] === "all") {
-      if (!message.member?.permissions.has(PermissionsBitField.Flags.Administrator))
-        return message.reply("❌ You need Administrator permission to use this!");
-      state.disabledChannels.delete(message.channel.id);
-      return message.reply(`🔓 **LOZ enabled in <#${message.channel.id}>.**
-Users can use LOZ commands here again.`);
-    }
-
-    // ── 'disintegrate ─────────────────────────────────────────────
-    if (command === "disintegrate") {
-      if (message.author.id !== ownerId) return message.reply("❌ Only the bot owner can use this command!");
-      let activeFight = null, fightId = null;
-      for (const [id, fight] of state.activeFights.entries()) {
-        if (fight.player1Id === message.author.id || fight.player2Id === message.author.id) { activeFight = fight; fightId = id; break; }
-      }
-      if (!activeFight) return message.reply("❌ You are not in a fight!");
-      const opponentId = activeFight.player1Id === message.author.id ? activeFight.player2Id : activeFight.player1Id;
-      if (activeFight.timeout) clearTimeout(activeFight.timeout);
-      const loser = activeFight.player1Id === opponentId ? activeFight.player1 : activeFight.player2;
-      loser.currentHp = 0;
-      // Use the shared end routine: it updates the existing battle embed and records the
-      // normal win, leaderboard points, cooldowns, quests, and any roll reward exactly once.
-      await require("./fights.js").endFight(message.channel, fightId, message.author.id, opponentId, "divine-intervention");
-      const shuffled = [...disintegrationMessages].sort(() => 0.5 - Math.random()).slice(0, 8);
-      for (const m of shuffled) {
-        await message.channel.send(m.replace(/%attacker%/g, message.author.id).replace(/%defender%/g, opponentId));
-        await new Promise(r => setTimeout(r, 800));
-      }
-      await message.channel.send("🏆 **GOD WINS BY DIVINE INTERVENTION!**");
-    }
-
-  } catch(e) { console.error("messageCreate error:", e); }
+    const mentionCard = new ContainerBuilder().setAccentColor(0x0891b2);
+    mentionCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      "## Welcome to LOZ\\nLegends of the Rift is a turn-based RPG where you roll species, complete quests, and battle players or bots."
+    ));
+    mentionCard.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+    mentionCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      "### Get Started\\nRun **`/guide`** to learn the basics and earn your one-time tutorial roll."
+    ));
+    mentionCard.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+    mentionCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      "### Need More?\\n[Open the full website guide](https://lozbot.vercel.app/)\\nRun **`/help`** to browse all commands."
+    ));
+    const mentionReply = await message.reply({
+      components: [mentionCard],
+      flags: MessageFlags.IsComponentsV2,
+      allowedMentions: { parse: [] },
+    });
+    const mentionTimer = setTimeout(() => mentionReply.delete().catch(() => {}), 10_000);
+    if (typeof mentionTimer.unref === "function") mentionTimer.unref();
+  } catch (e) {
+    console.error("messageCreate error:", e);
+  }
 });
 
 // ==================== INTERACTION CREATE ====================
@@ -534,8 +476,10 @@ client.on("interactionCreate", async (interaction) => {
       if (await chaosSystem.handleReactionButton(interaction)) return;
     }
 
-    // Block commands in disabled channels
-    if (state.disabledChannels.has(interaction.channelId)) {
+    // Keep the channel recovery commands available after a channel has been disabled.
+    const channelToggleCommand = interaction.isCommand()
+      && ["disable-all", "enable-all"].includes(interaction.commandName);
+    if (state.disabledChannels.has(interaction.channelId) && !channelToggleCommand) {
       if (interaction.isCommand() || interaction.isButton() || interaction.isStringSelectMenu()) {
         return interaction.reply({ content: "🔒 LOZ commands are disabled in this channel.", ephemeral: true }).catch(()=>{});
       }

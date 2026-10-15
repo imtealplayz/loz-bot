@@ -2,6 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { PermissionsBitField } = require("discord.js");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -10,7 +11,7 @@ const helpers = require("../helpers.js");
 const combat = require("../combat.js");
 const questSystem = require("../quest-system.js");
 const achievements = require("../achievements.js");
-const { commands } = require("../commands.js");
+const { commands, setState: setCommandState, handleCommand } = require("../commands.js");
 
 function uniqueByName(items) {
   const seen = new Set();
@@ -412,4 +413,96 @@ test("achievement claim buttons have unique IDs even when claimed or locked", ()
   assert.ok(ids[1].startsWith("ach:claimed:"), "each claimed button gets a unique routing ID");
   assert.ok(ids[2].startsWith("ach:locked:"), "locked buttons must retain the locked routing prefix");
   assert.ok(ids[3].startsWith("ach:locked:"), "each locked button gets a unique routing ID");
+});
+
+
+test("legacy prefix commands have slash replacements and LOZ no longer requests privileged intents", () => {
+  const definitions = new Map(commands.map((command) => [command.name, command]));
+  for (const name of ["disable-all", "enable-all", "disintegrate"]) {
+    assert.ok(definitions.has(name), name + " must be registered as a slash command");
+  }
+  assert.ok(definitions.get("disable-all").default_member_permissions, "/disable-all must be administrator-only by default");
+  assert.ok(definitions.get("enable-all").default_member_permissions, "/enable-all must be administrator-only by default");
+
+  const indexSource = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
+  const commandSource = fs.readFileSync(path.join(__dirname, "..", "commands.js"), "utf8");
+  assert.doesNotMatch(indexSource, /GatewayIntentBits\\.(?:MessageContent|GuildMembers)/, "Message Content and Guild Members intents should no longer be requested");
+  assert.doesNotMatch(indexSource, /message\\.content/, "message handlers must not read incoming message text");
+  assert.match(indexSource, /message\\.mentions\\.users\\.has\\(client\\.user\\.id\\)/, "mention-based help should still work without Message Content");
+  assert.match(indexSource, /channelToggleCommand/, "disabled channels must allow /enable-all recovery");
+  assert.match(commandSource, /title:"Server & Owner Tools"/, "the replacement commands should appear in /help");
+});
+
+test("/disable-all and /enable-all update channel state and reject non-administrators", async () => {
+  const disabledChannels = new Set();
+  setCommandState({
+    disabledChannels,
+    ownerId: "primary-owner",
+    secondGodId: "secondary-owner",
+    activeFights: new Map(),
+    fightMessages: new Map(),
+  });
+  const responses = [];
+  function makeInteraction(commandName, { channelId = "channel-1", isAdmin = true, userId = "server-admin" } = {}) {
+    return {
+      commandName,
+      options: {},
+      user: { id: userId },
+      guild: { id: "guild-1" },
+      channel: { id: channelId },
+      inGuild: () => true,
+      memberPermissions: {
+        has: (permission) => isAdmin && permission === PermissionsBitField.Flags.Administrator,
+      },
+      isRepliable: () => true,
+      reply: async (payload) => {
+        responses.push(payload);
+        return payload;
+      },
+    };
+  }
+
+  await handleCommand(makeInteraction("disable-all"));
+  assert.equal(disabledChannels.has("channel-1"), true, "/disable-all must disable the current channel");
+  assert.match(responses.at(-1).content, /disabled in/);
+
+  await handleCommand(makeInteraction("enable-all"));
+  assert.equal(disabledChannels.has("channel-1"), false, "/enable-all must restore a disabled channel");
+  assert.match(responses.at(-1).content, /enabled in/);
+
+  await handleCommand(makeInteraction("disable-all", { channelId: "channel-2", isAdmin: false }));
+  assert.equal(disabledChannels.has("channel-2"), false, "non-administrators must not change channel state");
+  assert.match(responses.at(-1).content, /server administrators/i);
+  assert.equal(responses.at(-1).flags, 64, "permission failures should be private");
+});
+
+test("/disintegrate stays restricted to the primary owner and handles missing fights privately", async () => {
+  setCommandState({
+    disabledChannels: new Set(),
+    ownerId: "primary-owner",
+    secondGodId: "secondary-owner",
+    activeFights: new Map(),
+    fightMessages: new Map(),
+  });
+  let response;
+  function makeInteraction(userId) {
+    return {
+      commandName: "disintegrate",
+      options: {},
+      user: { id: userId },
+      guild: { id: "guild-1" },
+      channel: { id: "channel-1" },
+      inGuild: () => true,
+      isRepliable: () => true,
+      reply: async (payload) => { response = payload; return payload; },
+    };
+  }
+
+  await handleCommand(makeInteraction("secondary-owner"));
+  assert.match(response.content, /Only the bot owner/);
+  assert.equal(response.flags, 64);
+
+  await handleCommand(makeInteraction("primary-owner"));
+  assert.match(response.content, /not in an active player fight/);
+  assert.equal(response.flags, 64);
 });
