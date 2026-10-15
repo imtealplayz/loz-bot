@@ -531,7 +531,7 @@ async function syncLeaderboardCycle(client,state) {
     const previous=Array.isArray(snapshot.data)?snapshot.data:[];
     const current=entries.map(function(e,index){return {userId:String(e.userId),glory:Number(e.glory)||0,rank:index+1};});
     await syncGloryBadges(state,current,previous);
-    const serial=JSON.stringify(current);
+    const serial=JSON.stringify(current.map(function(entry){return {userId:entry.userId,rank:entry.rank};}));
     if(serial!==lastRoleSnapshot) {
       await syncGloryRoles(client,current,previous);
       lastRoleSnapshot=serial;
