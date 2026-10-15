@@ -246,6 +246,21 @@ test("6.0 broadcast includes the Halloween announcement without owner-command de
 });
 
 
+test("LOZ 6.0 registration prompt is never automatically posted after a slash command", () => {
+  const commandsSource = fs.readFileSync(path.join(__dirname, "..", "commands.js"), "utf8");
+  const indexSource = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
+  assert.ok(!commandsSource.includes("function maybePromptForLoz60Event"),
+    "the dedicated per-user automatic event prompt must be removed");
+  assert.ok(!commandsSource.includes("function buildLoz60EventPayload"),
+    "the automatic registration-card builder must be removed");
+  assert.ok(!indexSource.includes("maybePromptForLoz60Event"),
+    "the interaction handler must not trigger the registration prompt");
+  assert.ok(!commandsSource.includes('setLabel("Register for LOZ 6.0")'),
+    "no new event registration prompt should be constructed");
+  assert.ok(indexSource.includes("await maybePromptForUpdates(interaction)"),
+    "the separate optional major-update subscription prompt remains intact");
+});
+
 test("legacy Glory Discord roles are deleted and the leaderboard never assigns roles again", async () => {
   const deleted = [];
   const roleNames = [
