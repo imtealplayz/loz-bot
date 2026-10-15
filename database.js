@@ -1448,33 +1448,40 @@ async function saveGloryLeaderboardSnapshot(data) {
 
 async function claimLoz60RegistrationReward(userId) {
   const id=String(userId);
+  let session;
   try {
-    if (!await connect()) return {ok:false,awarded:false,reason:"database"};
-    const preference=await NotificationPreference.findOneAndUpdate(
-      {userId:id,loz60EventResponse:"registered",loz60RewardsClaimed:{$ne:true}},
-      {$set:{loz60RewardsClaimed:true,updatedAt:new Date()}},
-      {new:true}
-    ).lean();
-    if (!preference) {
-      const existing=await NotificationPreference.findOne({userId:id}).lean();
-      return {ok:true,awarded:false,reason:existing && existing.loz60EventResponse==="registered" ? "already_claimed" : "not_registered"};
-    }
-    try {
-      const updated=await User.findOneAndUpdate(
-        {userId:id,archivedForRepair:{$ne:true}},
-        {$inc:{rolls:25,speciesTokens:1},$set:{userId:id,archivedForRepair:false}},
-        {new:true,upsert:true,setDefaultsOnInsert:true}
-      ).lean();
-      return {ok:true,awarded:true,rolls:Math.max(0,Number(updated && updated.rolls)||0),speciesTokens:Math.max(0,Number(updated && updated.speciesTokens)||0)};
-    } catch(error) {
-      await NotificationPreference.updateOne({userId:id},{$set:{loz60RewardsClaimed:false,updatedAt:new Date()}}).catch(() => {});
-      throw error;
-    }
+    if(userRepairPromise) await userRepairPromise;
+    if(!await connect()) return {ok:false,awarded:false,reason:"database"};
+    session=await mongoose.startSession();
+    let outcome=null;
+    await session.withTransaction(async function() {
+      outcome=null;
+      const preference=await NotificationPreference.findOneAndUpdate(
+        {userId:id,loz60EventResponse:"registered",loz60RewardsClaimed:{$ne:true}},
+        {$set:{loz60RewardsClaimed:true,updatedAt:new Date()}},
+        {new:true,session:session}
+      );
+      if(!preference) {
+        const existingPreference=await NotificationPreference.findOne({userId:id}).session(session).lean();
+        outcome={ok:true,awarded:false,reason:existingPreference&&existingPreference.loz60EventResponse==="registered"?"already_claimed":"not_registered"};
+        return;
+      }
+      const existingUsers=await User.find({userId:id,archivedForRepair:{$ne:true}})
+        .select({rolls:1,speciesTokens:1}).session(session).lean();
+      const rolls=Math.max(0,...existingUsers.map(function(record){return Number(record.rolls)||0;}))+25;
+      const speciesTokens=Math.max(0,...existingUsers.map(function(record){return Number(record.speciesTokens)||0;}))+1;
+      await persistRewardBalance(id,existingUsers,rolls,speciesTokens,session);
+      outcome={ok:true,awarded:true,rolls:rolls,speciesTokens:speciesTokens};
+    });
+    return outcome||{ok:false,awarded:false,reason:"transaction"};
   } catch(error) {
-    console.error("❌ LOZ 6.0 registration reward error:",error.message);
+    console.error("❌ LOZ 6.0 registration reward transaction failed:",error.message);
     return {ok:false,awarded:false,reason:"database"};
+  } finally {
+    if(session) await session.endSession().catch(function(){});
   }
 }
+
 // ==================== EXPORTS ====================
 module.exports = {
   saveUserSpecies, saveUserRolls, saveUserSpeciesFields, addSpeciesTokens, redeemSpeciesToken, awardGuideCompletionRoll, repairUserRecords,
