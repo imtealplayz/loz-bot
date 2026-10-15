@@ -468,23 +468,29 @@ async function syncGloryRoles(client,topEntries,previousEntries) {
   const affected=Array.from(new Set(topEntries.map(function(e){return String(e.userId);}).concat(previousEntries.map(function(e){return String(e.userId);}))));
   for(const guild of client.guilds.cache.values()) {
     try {
-      const names=[];
-      for(let rank=1;rank<=10;rank++) names.push("LOZ Glory #"+rank);
-      names.push("LOZ Glory Top 25");
+      const present=[];
+      for(const userId of affected) {
+        const member=await guild.members.fetch(userId).catch(function(){return null;});
+        if(member) present.push({userId:userId,member:member});
+      }
+      if(!present.length) continue;
+      const wantedByUser=new Map();
+      for(const row of present) {
+        const entry=topEntries.find(function(item){return String(item.userId)===row.userId;});
+        if(entry) wantedByUser.set(row.userId,entry.rank<=10?"LOZ Glory #"+entry.rank:"LOZ Glory Top 25");
+      }
+      const names=Array.from(new Set(Array.from(wantedByUser.values())));
       const roleMap=new Map();
       for(const name of names) {
         let role=guild.roles.cache.find(function(item){return item.name===name;});
         if(!role) role=await guild.roles.create({name:name,mentionable:false,hoist:false,reason:"LOZ Glory leaderboard role sync"});
         roleMap.set(name,role);
       }
-      for(const userId of affected) {
-        const member=await guild.members.fetch(userId).catch(function(){return null;});
-        if(!member) continue;
-        const entry=topEntries.find(function(item){return String(item.userId)===userId;});
-        const wanted=entry?(entry.rank<=10?"LOZ Glory #"+entry.rank:"LOZ Glory Top 25"):null;
-        const old=member.roles.cache.filter(function(role){return /^LOZ Glory (#\d+|Top 25)$/.test(role.name);});
-        if(old.size) await member.roles.remove(old).catch(function(){});
-        if(wanted&&roleMap.get(wanted)) await member.roles.add(roleMap.get(wanted)).catch(function(){});
+      for(const row of present) {
+        const wanted=wantedByUser.get(row.userId)||null;
+        const old=row.member.roles.cache.filter(function(role){return /^LOZ Glory (#\d+|Top 25)$/.test(role.name);});
+        if(old.size) await row.member.roles.remove(old).catch(function(){});
+        if(wanted&&roleMap.get(wanted)) await row.member.roles.add(roleMap.get(wanted)).catch(function(){});
       }
     } catch(error) {
       console.warn("[Glory] Could not sync roles in "+guild.id+": "+(error.message||error));
