@@ -24,7 +24,7 @@ const {
 const { buildFightMessagePayload, buildBotFightMessagePayload, makeCombatant, calculateDamage, applyUltEffect, tickCooldowns, tickBothUltCooldowns, applyOgreRegen, processCurseTick } = require("./combat.js");
 const chaosSystem = require("./chaos.js");
 const { startFight, endFight, doBotTurn, endBotFight } = require("./fights.js");
-const questSystem = require("./quest-system.js");
+const questSystem = require("./quests-system.js");
 const achievementSystem = require("./achievements.js");
 
 let _state = null;
@@ -321,7 +321,7 @@ const HELP_PAGES = [
     title:"Quests & Rewards",
     intro:"Earn extra rolls and keep track of your goals.",
     commands:[
-      {usage:"/quest",name:"Learn about quests",description:"Open a quick explanation of the quest board."},
+      {usage:"/quests",name:"Learn about quests",description:"Open a quick explanation of the quest board."},
       {usage:"/quests",name:"View and claim quests",description:"Track quest progress, claim completed rewards, and open the verified Top.gg vote option."},
       {usage:"/gift user:@player amount:1",name:"Gift Species Rolls",description:"Give another player between 1 and 5 of your rolls."},
       {usage:"/daily",name:"Build your daily streak",description:"Claim a roll every 24 hours; the 7-day streak grants one extra roll."},
@@ -331,9 +331,8 @@ const HELP_PAGES = [
     title:"Battle Records & Rankings",
     intro:"Review past fights and compare player totals.",
     commands:[
-      {usage:"/fightstats [user]",name:"View player fight stats",description:"Check a player's recorded PvP fight wins and losses."},
+       {usage:"/fight stats [user]",name:"View combined fight stats",description:"Check PvP and bot wins, losses, streak, and bot-difficulty records."},
       {usage:"/history [user]",name:"View fight history",description:"Review recent battle results for yourself or another player."},
-      {usage:"/botstats [user]",name:"View bot battle stats",description:"See a player's bot battle wins, losses, and win rates by difficulty."},
       {usage:"/leaderboard type:Fight Wins",name:"Rank fight wins",description:"Show the leaderboard for recorded player fight wins."},
       {usage:"/leaderboard type:Species Rolls",name:"Rank Species Rolls",description:"Show players ranked by their current unspent Species Rolls."},
     ],
@@ -844,6 +843,35 @@ async function handleCommand(interaction) {
   const legacyFightTarget = commandName === "fight" && !fightSubcommand
     ? (options.getUser("player", false) || options.getUser("user", false) || options.getUser("target", false))
     : null;
+
+  if(commandName==="fight" && fightSubcommand==="stats") {
+    const target=options.getUser("user")||user;
+    const fs=_state.fightStats.get(target.id)||{wins:0,losses:0,streak:0};
+    const bs=_state.botStats.get(target.id)||{};
+    const levels=[
+      {key:"easy",name:"Easy",icon:"🧸"},
+      {key:"medium",name:"Medium",icon:"⚔️"},
+      {key:"hard",name:"Hard",icon:"👹"},
+      {key:"impossible",name:"Impossible",icon:"💀"},
+      {key:"brutal",name:"Brutal",icon:"☠️"},
+    ];
+    let botWins=0,botLosses=0;
+    const rows=levels.map(function(level) {
+      const rec=bs[level.key]||{},wins=Number(rec.wins)||0,losses=Number(rec.losses)||0;
+      botWins+=wins;botLosses+=losses;
+      const count=wins+losses;
+      return level.icon+" **"+level.name+"** · Wins: "+wins+" · Losses: "+losses+" · WR: "+(count?((wins/count)*100).toFixed(1):"0.0")+"%";
+    });
+    const wins=Math.max(0,Number(fs.wins)||0),losses=Math.max(0,Number(fs.losses)||0),total=wins+losses;
+    const pvpWins=Math.max(0,wins-botWins),pvpLosses=Math.max(0,losses-botLosses);
+    const species=_state.userSpecies.get(target.id)?.species||humanSpecies;
+    return safeReply(interaction,buildStyledCardPayload("⚔️ "+(target.displayName||target.globalName||target.username)+"'s Battle Stats",species.color||0x0891b2,[
+      {heading:"Career Record",body:"🏆 **Total wins:** "+wins+"\n💔 **Total losses:** "+losses+"\n⚔️ **Completed battles:** "+total+"\n📊 **Overall win rate:** "+(total?((wins/total)*100).toFixed(1):"0.0")+"%\n🔥 **Current streak:** "+(Number(fs.streak)||0)},
+      {heading:"Player Battles",body:"🏆 Wins: "+pvpWins+" · 💔 Losses: "+pvpLosses+" · Total: "+(pvpWins+pvpLosses)},
+      {heading:"Bot Battles",body:"🏆 Wins: "+botWins+" · 💔 Losses: "+botLosses+" · Total: "+(botWins+botLosses)+"\n\n"+rows.join("\n")},
+    ]));
+  }
+
 
   // ── HELP ──────────────────────────────────────────────────────
   if (commandName === "help") {
@@ -1444,21 +1472,6 @@ async function handleCommand(interaction) {
     return interaction.editReply(buildSpeciesSwitchPayload(userData,0));
   }
 
-  // ── FIGHTSTATS ────────────────────────────────────────────────
-  if (commandName === "fightstats") {
-    const target=options.getUser("user")||user;
-    const stats=_state.fightStats.get(target.id);
-    const sp=_state.userSpecies.get(target.id)?.species||humanSpecies;
-    if (!stats||(stats.wins===0&&stats.losses===0)) return safeReply(interaction,buildStyledCardPayload(`⚔️ ${target.displayName}'s Fight Stats`,0x808080,[{body:"No completed fights recorded yet."}]));
-    const total=(stats.wins||0)+(stats.losses||0);
-    const wr=total>0?((stats.wins/total)*100).toFixed(1):"0.0";
-    return safeReply(interaction,buildStyledCardPayload(`⚔️ ${target.displayName}'s Fight Stats`,sp.color||0xff4500,[
-      {heading:"Record",body:`🏆 **Wins:** ${stats.wins||0}\n💔 **Losses:** ${stats.losses||0}\n⚔️ **Total fights:** ${total}`},
-      {heading:"Performance",body:`📊 **Win rate:** ${wr}%\n🔥 **Current win streak:** ${stats.streak||0}`},
-      {heading:"Current Species",body:`${sp.emoji} **${sp.name}**`},
-    ]));
-  }
-
   // ── HISTORY ───────────────────────────────────────────────────
   if (commandName === "history") {
     const target=options.getUser("user")||user;
@@ -1483,6 +1496,8 @@ async function handleCommand(interaction) {
   if (commandName === "leaderboard") {
     const leaderboardType = options.getString("type", true);
     await interaction.deferReply({ flags:MessageFlags.IsComponentsV2 });
+
+    if (leaderboardType === "glory") return interaction.editReply(await achievementSystem.buildLeaderboardPayload(_client));
 
     if (leaderboardType === "fights") {
       const sorted=Array.from(_state.fightLeaderboard.entries())
@@ -1530,37 +1545,17 @@ async function handleCommand(interaction) {
     }
   }
 
-  // ── BOTSTATS ──────────────────────────────────────────────────
-  if (commandName === "botstats") {
-    const target=options.getUser("user")||user;
-    const stats=_state.botStats.get(target.id);
-    if (!stats) return safeReply(interaction,buildStyledCardPayload(`🤖 ${target.displayName}'s Bot Battle Stats`,0x808080,[{body:"No bot fights recorded yet. Challenge LOZ with `/fight bot` to start."}]));
-    const difficulties=[
-      {key:"easy",name:"Easy",icon:"🧸"},
-      {key:"medium",name:"Medium",icon:"⚔️"},
-      {key:"hard",name:"Hard",icon:"👹"},
-      {key:"impossible",name:"Impossible",icon:"💀"},
-      {key:"brutal",name:"Brutal",icon:"☠️"},
-    ];
-    let totalWins=0,totalLosses=0;
-    const rows=difficulties.map(level=>{
-      const wins=stats[level.key]?.wins||0, losses=stats[level.key]?.losses||0;
-      totalWins+=wins; totalLosses+=losses;
-      const count=wins+losses, rate=count?((wins/count)*100).toFixed(1):"0.0";
-      return `${level.icon} **${level.name}**\n🏆 Wins: ${wins} · 💔 Losses: ${losses} · WR: ${rate}%`;
-    });
-    return safeReply(interaction,buildStyledCardPayload(`🤖 ${target.displayName}'s Bot Battle Stats`,0x9b59b6,[
-      {heading:"Overall Record",body:`🏆 **Wins:** ${totalWins}  ·  💔 **Losses:** ${totalLosses}\n📊 **Win rate:** ${totalWins+totalLosses?((totalWins/(totalWins+totalLosses))*100).toFixed(1):"0.0"}%`},
-      {heading:"By Difficulty",body:rows.join("\n\n")},
-    ]));
+  // ── QUEST BOARD ───────────────────────────────────────────────
+  if (commandName === "achievements") {
+    try {
+      await interaction.deferReply({flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral});
+      return interaction.editReply(await achievementSystem.open(user.id));
+    } catch(error) {
+      console.error("[Achievements] Could not open panel:",error);
+      return safeReply(interaction,{content:"Glory achievements are temporarily unavailable. Please try again.",flags:64});
+    }
   }
 
-  // ── QUEST BOARD ───────────────────────────────────────────────
-  if (commandName === "quest") {
-    return safeReply(interaction, buildStyledCardPayload("Quest Board", 0x0891b2, [
-      { body:"Use /quests to open your quest board, track rotating quests, claim rewards, and vote for LOZ to earn Species Rolls. New quests are added every 12 hours; active quests keep their progress." },
-    ], true));
-  }
   if (commandName === "quests") {
     try {
       // Loading/creating the persistent board can involve MongoDB I/O.
@@ -2857,26 +2852,27 @@ const commands = [
         .addChoices({name:"Species Token",value:"species_token"}))),
   new SlashCommandBuilder().setName("species-roll").setDescription("Roll for a new species"),
   new SlashCommandBuilder().setName("switch").setDescription("Switch between your species (3h cooldown)"),
+   new SlashCommandBuilder().setName("achievements").setDescription("View Glory achievements and species trials"),
   new SlashCommandBuilder().setName("awakening").setDescription("Check your species awakening progress"),
-  new SlashCommandBuilder().setName("fight").setDescription("Challenge a player or fight an LOZ bot")
-    .addSubcommand(s=>s.setName("player").setDescription("Challenge another player")
-      .addUserOption(o=>o.setName("user").setDescription("Player to challenge").setRequired(true)))
-    .addSubcommand(s=>s.setName("bot").setDescription("Fight an LOZ bot")
-      .addStringOption(o=>o.setName("difficulty").setDescription("Bot difficulty").setRequired(true).addChoices({name:"🧸 Easy",value:"easy"},{name:"⚔️ Medium",value:"medium"},{name:"👹 Hard",value:"hard"},{name:"💀 Impossible",value:"impossible"},{name:"Brutal",value:"brutal"}))),
-  new SlashCommandBuilder().setName("fightstats").setDescription("View fight stats").addUserOption(o=>o.setName("user").setDescription("User to check")),
-  new SlashCommandBuilder().setName("history").setDescription("View fight history").addUserOption(o=>o.setName("user").setDescription("User to check")),
-  new SlashCommandBuilder().setName("botstats").setDescription("View bot fight stats").addUserOption(o=>o.setName("user").setDescription("User to check")),
-  new SlashCommandBuilder().setName("leaderboard").setDescription("View a player leaderboard")
+  new SlashCommandBuilder().setName("fight").setDescription("Challenge players, fight bots, or view battle stats")
+     .addSubcommand(s=>s.setName("player").setDescription("Challenge another player")
+       .addUserOption(o=>o.setName("user").setDescription("Player to challenge").setRequired(true)))
+     .addSubcommand(s=>s.setName("bot").setDescription("Fight an LOZ bot")
+       .addStringOption(o=>o.setName("difficulty").setDescription("Bot difficulty").setRequired(true).addChoices({name:"🧸 Easy",value:"easy"},{name:"⚔️ Medium",value:"medium"},{name:"👹 Hard",value:"hard"},{name:"💀 Impossible",value:"impossible"},{name:"Brutal",value:"brutal"})))
+     .addSubcommand(s=>s.setName("stats").setDescription("View combined PvP and bot battle stats").addUserOption(o=>o.setName("user").setDescription("Player to check"))),
+   new SlashCommandBuilder().setName("history").setDescription("View fight history").addUserOption(o=>o.setName("user").setDescription("User to check")),
+new SlashCommandBuilder().setName("leaderboard").setDescription("View a player leaderboard")
     .addStringOption(o=>o.setName("type").setDescription("Choose a leaderboard").setRequired(true)
       .addChoices(
         {name:"Fight Wins",value:"fights"},
-        {name:"Species Rolls",value:"rolls"},
+        {name:"Species Rolls",value:"rolls"},{name:"Glory",value:"glory"},
       )),
   new SlashCommandBuilder().setName("patchnotes").setDescription("View latest patch notes"),
   new SlashCommandBuilder().setName("updates").setDescription("Manage major-update DM notifications")
     .addSubcommand(s=>s.setName("subscribe").setDescription("Opt in to major LOZ update DMs"))
     .addSubcommand(s=>s.setName("unsubscribe").setDescription("Opt out of major LOZ update DMs"))
-    .addSubcommand(s=>s.setName("status").setDescription("Check your update DM preference")),
+    .addSubcommand(s=>s.setName("status").setDescription("Check your update DM preference"))
+     .addSubcommand(s=>s.setName("reward").setDescription("Owner-only: reward registered LOZ 6.0 users")),
   new SlashCommandBuilder().setName("broadcast").setDescription("DM the major update to users who opted in").setDefaultMemberPermissions(0n),
   new SlashCommandBuilder().setName("broadtest").setDescription("Send the update DM preview to yourself").setDefaultMemberPermissions(0n),
   new SlashCommandBuilder().setName("servers").setDescription("List LOZ servers with invite links").setDefaultMemberPermissions(0n),
@@ -2887,8 +2883,7 @@ const commands = [
     .addUserOption(o=>o.setName("user").setDescription("Player to gift rolls to").setRequired(true))
     .addIntegerOption(o=>o.setName("amount").setDescription("Number of rolls to gift (maximum 5)").setRequired(true).setMinValue(1).setMaxValue(5)),
   new SlashCommandBuilder().setName("togglerequests").setDescription("Toggle receiving challenge requests").addStringOption(o=>o.setName("status").setDescription("Enable or disable").setRequired(true).addChoices({name:"Enable",value:"enable"},{name:"Disable",value:"disable"})),
-  new SlashCommandBuilder().setName("quest").setDescription("Learn how to open the quest board"),
-  new SlashCommandBuilder().setName("quests").setDescription("View quests, track progress, and claim rewards"),
+    new SlashCommandBuilder().setName("quests").setDescription("View quests, track progress, and claim rewards"),
   // Keep /owner visible in every server; the handler below enforces the exact owner-ID allow-list.
   new SlashCommandBuilder().setName("owner").setDescription("Owner-only commands")
     .addSubcommand(s=>s.setName("menu").setDescription("Show owner command menu"))
