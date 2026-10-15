@@ -191,7 +191,7 @@ test("6.0 broadcast includes the Halloween announcement without owner-command de
   const source = fs.readFileSync(path.join(__dirname, "..", "commands.js"), "utf8");
   const start = source.indexOf("function buildLoz60AnnouncementPayload()");
   assert.notEqual(start, -1);
-  const end = source.indexOf("\\n}\\n", start);
+  const end = source.indexOf("\n}\n", start);
   const broadcastPayload = source.slice(start, end + 2);
   assert.match(broadcastPayload, /Halloween update drops next week/i);
   assert.match(broadcastPayload, /tricks or treats/i);
