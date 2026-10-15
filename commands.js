@@ -1160,7 +1160,7 @@ async function handleCommand(interaction) {
           `**${sp.emoji} ${sp.name}**  ·  ${sp.chance}${sp.note ? " · Random element" : ""}`
         ).join("\n"),
       }));
-      sections.push({heading:"Special Unlocks",body:"🌑 **Reaper** · Quest unlock\n👿 **Archdemon** · Demon awakening\n⚡🤖 **Mechangel** · Cyborg awakening\n🫧 **Slime Lord** · 9.2% unlock chance after defeating its rare boss\n🌘 **Eclipsed Sovereign** · Half-Blood awakening"});
+      sections.push({heading:"Special Unlocks",body:"🌑 **Reaper** · Quest unlock\n👿 **Archdemon** · Demon awakening\n⚡🤖 **Mechangel** · Cyborg awakening\n🫧 **Slime Lord** · 9.2% unlock chance after defeating its rare boss\n🌘 **Eclipsed Sovereign** · Half-Blood awakening\n🐉✨ **True Dragon** · Secret awakening after independently awakening Fire, Thunder, Ice, and Earth Dragons"});
       sections.push({heading:"Species Details",body:"Use `/species species:<name>` to view HP, attack, healing, ultimate cooldown, passive, ultimate, and type matchups."});
       return safeReply(interaction,buildStyledCardPayload("<:reroll_dice:1558042108965822515> Species Compendium",0x0891b2,sections));
     }
