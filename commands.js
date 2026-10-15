@@ -1318,6 +1318,45 @@ async function handleCommand(interaction) {
         .setFooter({text:"Your progress is permanent. The next trial appears after this one is complete."})],flags:64});
     }
 
+    // ── Elemental Dragon awakenings ──────────────────────────────
+    const dragonType=["Fire","Thunder","Ice","Earth"].find(function(type){return sp===type+" Dragon";});
+    if(dragonType) {
+      try {
+        const status=await achievementSystem.getDragonAwakeningStatus(user.id,_state,dragonType);
+        if(!status.ok) return safeReply(interaction,{embeds:[createErrorEmbed(status.notice||"Dragon awakening progress is unavailable. Please try again.")],flags:64});
+        const trialLines=status.trials.map(function(trial){
+          const stateLabel=trial.claimed?"✅ Claimed":trial.ready?"🟡 Ready to claim":"⬜ In progress";
+          return (trial.claimed?"✅":trial.ready?"🟡":"▫️")+" **"+trial.title+"** — "+trial.value+"/"+trial.target+" · "+stateLabel;
+        });
+        let awakeningStatus;
+        if(status.awakened) {
+          awakeningStatus="✅ **Awakened.** This variant is permanently recorded as awakened.";
+        } else if(status.allTrialsClaimed) {
+          awakeningStatus="🌟 **Ready to awaken.** Open `/achievements` → Species Achievements → "+status.speciesName+" and claim **Awaken "+status.speciesName+"**.";
+        } else {
+          awakeningStatus="Complete each trial and claim its reward in `/achievements` → Species Achievements → "+status.speciesName+". Once all three are claimed, claim the awakening task on that species page.";
+        }
+        const variantLines=status.variants.map(function(variant){return (variant.awakened?"✅":"▫️")+" "+variant.name;}).join("\n");
+        const colour={Fire:0xff4500,Thunder:0xffd700,Ice:0x1e90ff,Earth:0x8b4513}[dragonType]||0x1e90ff;
+        const description=[
+          "*Each elemental variant has its own awakening trials. Progress is kept separately for Fire, Thunder, Ice, and Earth.*",
+          "**Elemental Trials**",
+          trialLines.join("\n"),
+          "**Awakening Status**",
+          awakeningStatus,
+          "**True Dragon Progress:** "+status.awakenedCount+"/4 variants awakened"+(status.trueDragonUnlocked?" · ✅ True Dragon unlocked":""),
+          variantLines,
+        ].join("\n\n");
+        return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(colour)
+          .setTitle((userData.species?.emoji||"🐉")+" AWAKENING ALTAR — "+dragonType.toUpperCase()+" DRAGON")
+          .setDescription(description)
+          .setFooter({text:"Use /achievements to claim elemental trials and the awakening reward."})],flags:64});
+      } catch(error) {
+        console.error("[Dragon Awakening] Could not load status:",error?.stack||error);
+        return safeReply(interaction,{embeds:[createErrorEmbed("Dragon awakening progress could not be loaded. Please try again.")],flags:64});
+      }
+    }
+
     // ── No awakening available for this species ─────────────────
     return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(0x2d2d2d).setTitle("✨ AWAKENING ALTAR")
       .setDescription(`*You approach the altar, but it remains silent.*\n\n${userData.species?.emoji||"👤"} **${sp||"Unknown"}** does not yet have an awakening path.\n\nAwakenings are rare transformations granted to species who have proven their worth through relentless battle.\n\n*Check back as new awakenings are discovered.*`)

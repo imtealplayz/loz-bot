@@ -213,6 +213,52 @@ test("player ultimates feed Glory counters in PvP and bot fights", () => {
 });
 
 
+test("elemental Dragon awakening status exposes the three trials and True Dragon progress", () => {
+  const userId = "123456789012345678";
+  const userData = { awakening: { trueDragon: { variants: {
+    fire: { awakened: true }, thunder: { awakened: true }, ice: { awakened: true }, earth: { awakened: false },
+  } } } };
+  const state = { userSpecies: new Map([[userId, userData]]) };
+  const profile = {
+    speciesCounters: {
+      "Fire Dragon": { battles: 5, wins: 3, ults: 2 },
+      "Thunder Dragon": { battles: 2, wins: 1, ults: 0 },
+    },
+    dragonClaims: { fire: { "0": true, "1": true, "2": true }, thunder: { "0": true } },
+    dragonAwakened: { fire: true, thunder: true, ice: true },
+  };
+  const fire = achievements.buildDragonAwakeningStatus(userId, state, profile, "Fire");
+  assert.equal(fire.ok, true);
+  assert.equal(fire.speciesName, "Fire Dragon");
+  assert.equal(fire.awakened, true);
+  assert.equal(fire.allTrialsClaimed, true);
+  assert.equal(fire.trials.length, 3);
+  assert.deepEqual(fire.trials.map((trial) => [trial.value, trial.claimed]), [[5, true], [3, true], [2, true]]);
+  assert.equal(fire.awakenedCount, 3);
+  assert.equal(fire.allAwakened, false);
+  assert.equal(fire.trueDragonUnlocked, false);
+
+  const thunder = achievements.buildDragonAwakeningStatus(userId, state, profile, "Thunder");
+  assert.equal(thunder.awakened, true);
+  assert.equal(thunder.trials[0].value, 2);
+  assert.equal(thunder.trials[0].claimed, true);
+  assert.equal(thunder.trials[1].ready, false);
+  assert.equal(thunder.awakenedCount, 3);
+
+  const allAwakenedProfile = Object.assign({}, profile, { dragonAwakened: { fire: true, thunder: true, ice: true, earth: true } });
+  const earth = achievements.buildDragonAwakeningStatus(userId, state, allAwakenedProfile, "Earth");
+  assert.equal(earth.awakenedCount, 4);
+  assert.equal(earth.allAwakened, true);
+  assert.equal(earth.trueDragonUnlocked, true);
+});
+
+test("/awakening provides the elemental Dragon path instead of the unsupported-species message", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "commands.js"), "utf8");
+  assert.ok(source.includes('const dragonType=["Fire","Thunder","Ice","Earth"].find'));
+  assert.ok(source.includes("achievementSystem.getDragonAwakeningStatus(user.id,_state,dragonType)"));
+  assert.ok(source.includes('Use /achievements to claim elemental trials and the awakening reward.'));
+});
+
 test("Glory leaderboard rows use proper Discord mentions and explicitly label the Glory total", () => {
   const row = achievements.formatLeaderboardRow({
     userId: "123456789012345678",

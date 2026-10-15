@@ -254,6 +254,38 @@ function dragonIsAwakened(profile,userData,key) {
   const id=key.toLowerCase(),stored=userData&&userData.awakening&&userData.awakening.trueDragon&&userData.awakening.trueDragon.variants;
   return profile.dragonAwakened[id]===true||Boolean(stored&&stored[id]&&stored[id].awakened===true);
 }
+function buildDragonAwakeningStatus(userId,state,profile,dragonKey) {
+  const key=DRAGON_KEYS.find(function(item){return String(item).toLowerCase()===String(dragonKey||"").toLowerCase();});
+  if(!key) return {ok:false,notice:"Unknown elemental Dragon variant."};
+  const cleanProfile=normaliseProfile(profile||{}),id=String(userId);
+  const userData=state&&state.userSpecies&&state.userSpecies.get(id)||{};
+  const counters=getSpeciesCounters(cleanProfile,key+" Dragon"),claimed=cleanProfile.dragonClaims[key.toLowerCase()]||{};
+  const trials=[
+    {index:0,title:"Elemental Presence",metric:"battles",target:5,reward:1},
+    {index:1,title:"Elemental Conquest",metric:"wins",target:3,reward:2},
+    {index:2,title:"Elemental Mastery",metric:"ults",target:2,reward:2},
+  ].map(function(task){
+    const value=Math.max(0,Number(counters[task.metric])||0),isClaimed=claimed[String(task.index)]===true;
+    return Object.assign({},task,{value:value,claimed:isClaimed,ready:!isClaimed&&value>=task.target});
+  });
+  const variants=DRAGON_KEYS.map(function(variant){
+    return {key:variant,name:variant+" Dragon",awakened:dragonIsAwakened(cleanProfile,userData,variant)};
+  });
+  const allTrialsClaimed=trials.every(function(task){return task.claimed;});
+  const awakened=dragonIsAwakened(cleanProfile,userData,key);
+  const dragonAwakening=userData.awakening&&userData.awakening.trueDragon||{};
+  const allAwakened=variants.every(function(variant){return variant.awakened;});
+  return {ok:true,key:key,speciesName:key+" Dragon",trials:trials,allTrialsClaimed:allTrialsClaimed,awakened:awakened,
+    variants:variants,awakenedCount:variants.filter(function(variant){return variant.awakened;}).length,allAwakened:allAwakened,
+    trueDragonUnlocked:Boolean(dragonAwakening.unlocked||dragonAwakening.awakened||allAwakened)};
+}
+async function getDragonAwakeningStatus(userId,state,dragonKey) {
+  const key=DRAGON_KEYS.find(function(item){return String(item).toLowerCase()===String(dragonKey||"").toLowerCase();});
+  if(!key) return {ok:false,notice:"Unknown elemental Dragon variant."};
+  const loaded=await loadProfile(String(userId),true);
+  if(!loaded.ok) return {ok:false,notice:"Dragon awakening progress could not be loaded. Please try again."};
+  return buildDragonAwakeningStatus(userId,state,loaded.data,key);
+}
 function buildSpeciesTasks(userId,state,profile,speciesSlug) {
   const entry=getEntry(speciesSlug);
   if(!entry) return {entry:null,tasks:[]};
@@ -707,5 +739,5 @@ async function startLeaderboardScheduler(client,state) {
 }
 module.exports = {
   open,handleButton,recordBattle,recordUltimate,recordDailyClaim,recordRollUsed,
-  buildLeaderboardPayload,formatLeaderboardRow,startLeaderboardScheduler,getSpeciesRoster,removeLegacyGloryRoles,formatClaimSummary,makeClaimButton,
+  buildLeaderboardPayload,formatLeaderboardRow,buildDragonAwakeningStatus,getDragonAwakeningStatus,startLeaderboardScheduler,getSpeciesRoster,removeLegacyGloryRoles,formatClaimSummary,makeClaimButton,
 };
