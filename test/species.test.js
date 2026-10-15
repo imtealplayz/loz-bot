@@ -316,11 +316,11 @@ test("achievement claim summary shows each reward and a combined Glory total", (
     { title: "Elemental Mastery", detail: "Use your ultimate twice", reward: 3 },
   ]);
   assert.match(summary, /Claimed 2 achievement rewards/);
-  assert.match(summary, /\\+5 Glory/);
+  assert.match(summary, /\+5 Glory/);
   assert.match(summary, /Daily Devotion/);
   assert.match(summary, /Reach a 7-day streak/);
-  assert.match(summary, /\\+2 Glory/);
+  assert.match(summary, /\+2 Glory/);
   assert.match(summary, /Elemental Mastery/);
   assert.match(summary, /Use your ultimate twice/);
-  assert.match(summary, /\\+3 Glory/);
+  assert.match(summary, /\+3 Glory/);
 });
