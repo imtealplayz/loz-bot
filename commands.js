@@ -1901,7 +1901,7 @@ async function handleCommand(interaction) {
         : await database.saveUserSpeciesFields(target.id,ud.species,ud.originalSpecies);
       if (!saved) return safeReply(interaction,{embeds:[createErrorEmbed("MongoDB save failed. This change is not confirmed as saved; check the database before redeploying.")],flags:64});
       _state.userSpecies.set(target.id,ud);
-      return safeReply(interaction,{embeds:[createSuccessEmbed(`Changed <@${target.id}>'s species to ${newSp.emoji} **${newSp.name}** and saved it to MongoDB!`)]});
+      return safeReply(interaction,{embeds:[createSuccessEmbed(`Changed <@${target.id}>'s species to ${newSp.emoji} **${newSp.name}** and saved it to MongoDB!`)],flags:64});
     }
 
     if (sub==="species-reset") {

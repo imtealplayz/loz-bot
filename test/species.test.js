@@ -213,6 +213,17 @@ test("player ultimates feed Glory counters in PvP and bot fights", () => {
 });
 
 
+test("owner species-change success replies are ephemeral", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "commands.js"), "utf8");
+  const start = source.indexOf('if (sub==="species-change")');
+  const end = source.indexOf('if (sub==="species-reset")', start);
+  assert.ok(start >= 0 && end > start, "owner species-change handler should exist");
+  const handler = source.slice(start, end);
+  assert.match(handler, /createSuccessEmbed\(`Changed .* saved it to MongoDB!`\)\],flags:64\}\)/,
+    "successful owner species changes must only be visible to the command user");
+  assert.match(handler, /flags:64/, "validation and persistence errors should remain ephemeral too");
+});
+
 test("elemental Dragon awakening status exposes the three trials and True Dragon progress", () => {
   const userId = "123456789012345678";
   const userData = { awakening: { trueDragon: { variants: {
