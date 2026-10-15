@@ -52,20 +52,24 @@ function calculateDamage(attacker, defender) {
     return { damage:0, baseDamage:0, specialLines:["🛡️ **SHADOW CLONE!** The clone absorbs the hit!"], attackerMutations };
   }
   // Dodge buff
-  if (defender.ultBuff?.type === "dodge" && attacker.species.name !== "Chaos Creator") {
+  if (defender.ultBuff?.type === "dodge" && attacker.species.name === "True Dragon") {
+    defender.ultBuff = null;
+    specialLines.push("👁️ Universal Perception sees through the opponent’s evasion.");
+  }
+  if (defender.ultBuff?.type === "dodge" && attacker.species.name !== "Chaos Creator" && attacker.species.name !== "True Dragon") {
     defender.ultBuff = null;
     const lines=["💨 **NIMBLE ESCAPE!** Attack dodged!"];
     recordSlimeLordMiss(attacker, lines);
     return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
   }
   // Goblin passive dodge
-  if (defender.species.name === "Goblin" && attacker.species.name !== "Chaos Creator" && Math.random() < 0.1) {
+  if (defender.species.name === "Goblin" && attacker.species.name !== "Chaos Creator" && attacker.species.name !== "True Dragon" && Math.random() < 0.1) {
     const lines=["💨 **Speed Dodge!** Too slow!"];
     recordSlimeLordMiss(attacker, lines);
     return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
   }
   // Thunder Dragon paralyze
-  if (defender.species.name === "Thunder Dragon" && attacker.species.name !== "Chaos Creator" && Math.random() < 0.1) {
+  if (defender.species.name === "Thunder Dragon" && attacker.species.name !== "Chaos Creator" && attacker.species.name !== "True Dragon" && Math.random() < 0.1) {
     const lines=["⚡ **Paralyzing Shock!** Attack fails!"];
     recordSlimeLordMiss(attacker, lines);
     return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
@@ -102,7 +106,7 @@ function calculateDamage(attacker, defender) {
   }
 
   const baseDamage = Math.floor(Math.random()*(attacker.species.atkMax-attacker.species.atkMin+1))+attacker.species.atkMin;
-  let finalDamage = baseDamage, multiplier = 1;
+  let finalDamage = baseDamage, multiplier = 1, ignoreReduction = 0;
 
   // Attacker passives
   if (attacker.species.name==="Orc" && attacker.currentHp<attacker.maxHp*0.3) { finalDamage+=5; specialLines.push("🟢 Berserker +5"); }
@@ -167,7 +171,7 @@ function calculateDamage(attacker, defender) {
       }
     }
     if (ub.type==="nextAttack" && ub.multiplier) {
-      multiplier*=ub.multiplier; specialLines.push(`✨ ULT ×${ub.multiplier}`);
+      multiplier*=ub.multiplier; ignoreReduction=Math.max(0,Math.min(0.5,Number(ub.ignoreReduction)||0)); specialLines.push(`✨ ULT ×${ub.multiplier}`);
       if (attacker.species.name==="Orc"&&ub.recoil) { const r=Math.floor(finalDamage*multiplier*ub.recoil); attackerMutations.hpDelta-=r; specialLines.push(`💥 Recoil -${r}`); }
       if (attacker.species.name==="Bot"&&ub.recoil) { const r=Math.floor(finalDamage*multiplier*ub.recoil); attackerMutations.hpDelta-=r; specialLines.push(`🤖 Overheat -${r}`); }
       if (attacker.species.name==="Angel"&&ub.angelHeal) { const h=Math.floor(attacker.currentHp*0.35); attackerMutations.hpDelta+=h; specialLines.push(`👼 Divine Blessing +${h}`); }
@@ -180,18 +184,22 @@ function calculateDamage(attacker, defender) {
       ub.duration--; if(ub.duration<=0) attacker.ultBuff=null;
     } else if (ub.type==="thunderActive") {
       multiplier*=1.4; specialLines.push("⚡ Thunder Surge ×1.4"); attacker.ultBuff=null;
+    } else if (ub.type==="trueDragonSuppression") {
+      multiplier*=0.8; specialLines.push("🐉 Dragon Spirit Suppression -20% attack");
+      ub.duration--; if(ub.duration<=0) attacker.ultBuff=null;
     }
   }
 
   // Defender reductions
   const isArchdemon = attacker.species.name==="Archdemon";
   if (!isArchdemon) {
-    if (defender.species.name==="Demon King")  { multiplier*=0.9;  specialLines.push("Fear Aura -10%"); }
-    if (defender.species.name==="Oni")         { multiplier*=0.9;  specialLines.push("Demonic Resilience -10%"); }
-    if (defender.species.name==="Demi God")    { multiplier*=0.85; specialLines.push("Divine Shield -15%"); }
-    if (defender.species.name==="Earth Dragon"){ multiplier*=0.85; specialLines.push("Stone Skin -15%"); }
+    if (defender.species.name==="Demon King")  { multiplier*=1-(0.1*(1-ignoreReduction));  specialLines.push("Fear Aura -10%"); }
+    if (defender.species.name==="Oni")         { multiplier*=1-(0.1*(1-ignoreReduction));  specialLines.push("Demonic Resilience -10%"); }
+    if (defender.species.name==="Demi God")    { multiplier*=1-(0.15*(1-ignoreReduction)); specialLines.push("Divine Shield -15%"); }
+    if (defender.species.name==="Earth Dragon"){ multiplier*=1-(0.15*(1-ignoreReduction)); specialLines.push("Stone Skin -15%"); }
   }
-  if (defender.species.name==="Eclipsed Sovereign" && defender.currentHp<defender.maxHp*0.5) { multiplier*=0.9; specialLines.push("🌘 Hybrid Instinct -10%"); }
+  if (defender.species.name==="True Dragon") { multiplier*=1-(0.2*(1-ignoreReduction)); specialLines.push("🐉 Dragon Spirit Haki -20% incoming damage"); }
+  if (defender.species.name==="Eclipsed Sovereign" && defender.currentHp<defender.maxHp*0.5) { multiplier*=1-(0.1*(1-ignoreReduction)); specialLines.push("🌘 Hybrid Instinct -10%"); }
   if (defender.ultBuff?.type==="cyborgArmor") {
     multiplier*=0.85; specialLines.push("🤖 Cyborg Armor -15%");
     defender.ultBuff.duration--; if(defender.ultBuff.duration<=0) defender.ultBuff=null;
@@ -356,6 +364,11 @@ function applyUltEffect(attacker, defender) {
     }
     case "Archdemon":   attacker.ultBuff={type:"nextAttack",multiplier:2.0,curse:10,curseRounds:3}; msg="👿 **ABYSSAL GATE!**\n2× + 10 curse 3 turns!"; break;
     case "Slime Lord":  attacker.ultBuff={type:"slimeAssimilation"}; msg="🫧 **PREDATORY ASSIMILATION!**\nConvert the next incoming hit into HP; reflect any overflow beyond max HP."; break;
+    case "True Dragon":
+      attacker.ultBuff={type:"nextAttack",multiplier:2,ignoreReduction:0.1};
+      defender.ultBuff={type:"trueDragonSuppression",duration:1};
+      msg="🐉 **FOURFOLD CATACLYSM!**\nYour next attack deals 2× damage and bypasses 10% of enemy damage reduction. The opponent’s next attack is suppressed by 20%.";
+      break;
     case "Chimera": {
       // Copy opponent's species ULT directly — no waiting, no fallback
       // Temporarily spoof attacker species to cast defender's ULT
