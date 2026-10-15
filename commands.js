@@ -24,7 +24,7 @@ const {
 const { buildFightMessagePayload, buildBotFightMessagePayload, makeCombatant, calculateDamage, applyUltEffect, tickCooldowns, tickBothUltCooldowns, applyOgreRegen, processCurseTick } = require("./combat.js");
 const chaosSystem = require("./chaos.js");
 const { startFight, endFight, doBotTurn, endBotFight } = require("./fights.js");
-const questSystem = require("./quests-system.js");
+const questSystem = require("./quest-system.js");
 const achievementSystem = require("./achievements.js");
 
 let _state = null;
