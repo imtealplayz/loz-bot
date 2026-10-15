@@ -297,3 +297,30 @@ test("legacy Glory Discord roles are deleted and the leaderboard never assigns r
   assert.ok(!source.includes("member.roles.add"), "the Glory leaderboard must never assign roles");
   assert.ok(source.includes("GLORY_TOP25"), "profile leaderboard badges should remain available");
 });
+
+
+test("Normal and Species achievement pages support Claim All with detailed reward summaries", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "achievements.js"), "utf8");
+  assert.ok(source.includes("ach:claim-all-normal:"), "normal achievement pages need a Claim All button action");
+  assert.ok(source.includes("ach:claim-all-species:"), "species detail pages need a Claim All button action");
+  assert.ok(source.includes('setLabel("Claim All")'), "both achievement sections should expose a Claim All button");
+  assert.ok(source.includes("function formatClaimSummary"), "bulk claims should report each completed reward");
+  assert.ok(source.includes('def.description+" Target: "+targetValue'), "normal reward details should include the reached milestone target");
+  assert.ok(source.includes("function buildSpeciesTasks"), "species tasks should share eligibility logic for display and batch claims");
+  assert.ok(source.includes("async function applyDragonAwakening"), "batch claiming must preserve dragon awakening side effects");
+});
+
+test("achievement claim summary shows each reward and a combined Glory total", () => {
+  const summary = achievements.formatClaimSummary([
+    { title: "Daily Devotion", detail: "Reach a 7-day streak", reward: 2 },
+    { title: "Elemental Mastery", detail: "Use your ultimate twice", reward: 3 },
+  ]);
+  assert.match(summary, /Claimed 2 achievement rewards/);
+  assert.match(summary, /\\+5 Glory/);
+  assert.match(summary, /Daily Devotion/);
+  assert.match(summary, /Reach a 7-day streak/);
+  assert.match(summary, /\\+2 Glory/);
+  assert.match(summary, /Elemental Mastery/);
+  assert.match(summary, /Use your ultimate twice/);
+  assert.match(summary, /\\+3 Glory/);
+});

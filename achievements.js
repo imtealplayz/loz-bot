@@ -149,6 +149,14 @@ function makeClaimButton(customId,ready,claimed,reward) {
   if(ready) return new ButtonBuilder().setCustomId(customId).setLabel("Claim "+reward+" Glory").setStyle(ButtonStyle.Primary);
   return new ButtonBuilder().setCustomId("ach:locked").setLabel("In Progress").setStyle(ButtonStyle.Secondary).setDisabled(true);
 }
+function formatClaimSummary(claims,fallback) {
+  if(!Array.isArray(claims)||!claims.length) return fallback||"No achievements on this page were ready to claim.";
+  const total=claims.reduce(function(sum,item){return sum+Math.max(0,Number(item.reward)||0);},0);
+  const lines=claims.map(function(item){
+    return "• **"+item.title+"**"+(item.detail?" · "+item.detail:"")+" · **+"+(Number(item.reward)||0)+" Glory**";
+  });
+  return "Claimed "+claims.length+" achievement "+(claims.length===1?"reward":"rewards")+" for "+GLORY+" **+"+total+" Glory**:\n"+lines.join("\n");
+}
 function addTask(container,task,dividerAfter=true) {
   const status=task.claimed?"\n**Status:** Claimed":task.ready?"\n**Status:** Ready to claim":"";
   addSection(container,"### "+task.title+"\n"+task.description+"\n"+progressBar(task.value,task.target)+"\n**Reward:** "+GLORY+" **+"+task.reward+"**"+status,
@@ -184,7 +192,11 @@ function buildNormalPage(userId,state,profile,page,notice) {
       claimed:done,ready:ready,customId:"ach:claim-normal:"+userId+":"+def.key+":"+stage+":"+safePage,
     },visibleIndex<visible.length-1);
   });
-  const nav=[];
+  const hasReadyClaim=visible.some(function(def){
+    const stage=Math.max(0,Number(profile.claimed["normal:"+def.key])||0);
+    return stage<def.milestones.length&&(Number(metrics[def.metric])||0)>=def.milestones[stage];
+  });
+  const nav=[new ButtonBuilder().setCustomId("ach:claim-all-normal:"+userId+":"+safePage).setLabel("Claim All").setStyle(ButtonStyle.Success).setDisabled(!hasReadyClaim)];
   if(safePage>0) nav.push(new ButtonBuilder().setCustomId("ach:normal:"+userId+":"+(safePage-1)).setLabel("Previous").setStyle(ButtonStyle.Secondary));
   nav.push(new ButtonBuilder().setCustomId("ach:home").setLabel("Back").setStyle(ButtonStyle.Secondary));
   if((safePage+1)*4<NORMAL_ACHIEVEMENTS.length) nav.push(new ButtonBuilder().setCustomId("ach:normal:"+userId+":"+(safePage+1)).setLabel("Next").setStyle(ButtonStyle.Primary));
@@ -238,14 +250,18 @@ function dragonIsAwakened(profile,userData,key) {
   const id=key.toLowerCase(),stored=userData&&userData.awakening&&userData.awakening.trueDragon&&userData.awakening.trueDragon.variants;
   return profile.dragonAwakened[id]===true||Boolean(stored&&stored[id]&&stored[id].awakened===true);
 }
-function buildSpeciesDetailPage(userId,state,profile,speciesSlug,page,notice) {
+function buildSpeciesTasks(userId,state,profile,speciesSlug) {
   const entry=getEntry(speciesSlug);
-  if(!entry) return buildSpeciesListPage(userId,0,"That species entry could not be found.");
-  const userData=state.userSpecies.get(String(userId))||{},container=new ContainerBuilder().setAccentColor(entry.species.color||0x0891b2);
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## "+entry.emoji+" "+entry.name+" · SPECIES TRIALS\nEach trial has its own progress and claim button. Rewards are claimed individually."+(notice?"\n\n✅ "+notice:"")));
-  divider(container);
+  if(!entry) return {entry:null,tasks:[]};
+  const userData=state.userSpecies.get(String(userId))||{};
   const tasks=[],trial=makeSpeciesTrial(entry),counters=getSpeciesCounters(profile,entry.name),trialClaimed=profile.claimed[trial.id]===true;
-  tasks.push({title:trial.title,description:trial.description,metric:trial.metric,value:Number(counters[trial.metric])||0,target:trial.target,reward:trial.reward,claimed:trialClaimed,ready:!trialClaimed&&(Number(counters[trial.metric])||0)>=trial.target,customId:"ach:claim-species:"+userId+":"+slug(entry.name)});
+  tasks.push({
+    kind:"species",achievementId:trial.id,speciesName:entry.name,
+    title:trial.title,description:trial.description,metric:trial.metric,
+    value:Number(counters[trial.metric])||0,target:trial.target,reward:trial.reward,
+    claimed:trialClaimed,ready:!trialClaimed&&(Number(counters[trial.metric])||0)>=trial.target,
+    customId:"ach:claim-species:"+userId+":"+slug(entry.name),
+  });
   const dragonKey=dragonKeyForName(entry.name);
   if(dragonKey) {
     const key=dragonKey.toLowerCase(),claimed=profile.dragonClaims[key]||{};
@@ -256,24 +272,58 @@ function buildSpeciesDetailPage(userId,state,profile,speciesSlug,page,notice) {
     ];
     dragonTasks.forEach(function(task,index){
       const value=Math.max(0,Number(counters[task.metric])||0),isClaimed=claimed[String(index)]===true;
-      tasks.push({title:task.title,description:task.description,value:value,target:task.target,reward:task.reward,claimed:isClaimed,ready:!isClaimed&&value>=task.target,customId:"ach:claim-dragon:"+userId+":"+key+":"+index});
+      tasks.push({
+        kind:"dragon",dragonSlug:key,taskIndex:index,title:task.title,description:task.description,
+        metric:task.metric,value:value,target:task.target,reward:task.reward,
+        claimed:isClaimed,ready:!isClaimed&&value>=task.target,
+        customId:"ach:claim-dragon:"+userId+":"+key+":"+index,
+      });
     });
     const allTrialsClaimed=claimed["0"]===true&&claimed["1"]===true&&claimed["2"]===true;
     const awakened=dragonIsAwakened(profile,userData,dragonKey),gloryClaimed=profile.dragonAwakened[key]===true;
-    tasks.push({title:"Awaken "+entry.name,description:"Claim all three elemental trials to awaken this variant. All four variants must be awakened independently to unlock True Dragon.",value:awakened?1:allTrialsClaimed?1:0,target:1,reward:3,claimed:gloryClaimed,ready:!gloryClaimed&&allTrialsClaimed,customId:"ach:awaken-dragon:"+userId+":"+key});
+    tasks.push({
+      kind:"dragon-awakening",dragonKey:dragonKey,dragonSlug:key,
+      title:"Awaken "+entry.name,
+      description:"Claim all three elemental trials to awaken this variant. All four variants must be awakened independently to unlock True Dragon.",
+      metric:"awakening",value:awakened?1:allTrialsClaimed?1:0,target:1,reward:3,
+      claimed:gloryClaimed,ready:!gloryClaimed&&allTrialsClaimed,
+      customId:"ach:awaken-dragon:"+userId+":"+dragonKey,
+    });
   }
   if(AWAKENING_SPECIES[entry.name]) {
     const awakened=hasAwakened(userData,entry.name),id="awakening:"+slug(entry.name),wasClaimed=profile.claimed[id]===true;
-    tasks.push({title:AWAKENING_SPECIES[entry.name].target+" Awakening",description:AWAKENING_SPECIES[entry.name].description+" Existing saved progress is used; this does not reset or replace the awakening.",value:awakened?1:0,target:1,reward:3,claimed:wasClaimed,ready:awakened&&!wasClaimed,customId:"ach:claim-awakening:"+userId+":"+slug(entry.name)});
+    tasks.push({
+      kind:"awakening",achievementId:id,speciesSlug:slug(entry.name),
+      title:AWAKENING_SPECIES[entry.name].target+" Awakening",
+      description:AWAKENING_SPECIES[entry.name].description+" Existing saved progress is used; this does not reset or replace the awakening.",
+      metric:"awakening",value:awakened?1:0,target:1,reward:3,claimed:wasClaimed,ready:awakened&&!wasClaimed,
+      customId:"ach:claim-awakening:"+userId+":"+slug(entry.name),
+    });
   }
   if(entry.name==="True Dragon") {
     const unlocked=Boolean(userData.awakening&&userData.awakening.trueDragon&&(userData.awakening.trueDragon.awakened||userData.awakening.trueDragon.unlocked)),id="awakening:true-dragon",wasClaimed=profile.claimed[id]===true;
-    tasks.push({title:"True Dragon Awakening",description:"Unlock True Dragon by awakening all four elemental variants, or receiving an owner-granted unlock.",value:unlocked?1:0,target:1,reward:3,claimed:wasClaimed,ready:unlocked&&!wasClaimed,customId:"ach:claim-awakening:"+userId+":true-dragon"});
+    tasks.push({
+      kind:"awakening",achievementId:id,speciesSlug:slug(entry.name),
+      title:"True Dragon Awakening",
+      description:"Unlock True Dragon by awakening all four elemental variants, or receiving an owner-granted unlock.",
+      metric:"awakening",value:unlocked?1:0,target:1,reward:3,claimed:wasClaimed,ready:unlocked&&!wasClaimed,
+      customId:"ach:claim-awakening:"+userId+":true-dragon",
+    });
   }
+  return {entry,tasks};
+}
+function buildSpeciesDetailPage(userId,state,profile,speciesSlug,page,notice) {
+  const built=buildSpeciesTasks(userId,state,profile,speciesSlug);
+  if(!built.entry) return buildSpeciesListPage(userId,0,"That species entry could not be found.");
+  const entry=built.entry,tasks=built.tasks,container=new ContainerBuilder().setAccentColor(entry.species.color||0x0891b2);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## "+entry.emoji+" "+entry.name+" · SPECIES TRIALS\nClaim All collects every ready reward shown on this page and lists what you earned."+(notice?"\n\n✅ "+notice:"")));
+  divider(container);
   const pageCount=Math.max(1,Math.ceil(tasks.length/4)),safePage=Math.max(0,Math.min(pageCount-1,Number(page)||0));
   const visible=tasks.slice(safePage*4,safePage*4+4);
   visible.forEach(function(task,visibleIndex){addTask(container,Object.assign({},task,{value:task.value||0,customId:task.customId+":"+safePage}),visibleIndex<visible.length-1);});
-  const nav=[new ButtonBuilder().setCustomId("ach:species:"+userId+":0").setLabel("Back to Species").setStyle(ButtonStyle.Secondary)];
+  const hasReadyClaim=visible.some(function(task){return task.ready;});
+  const nav=[new ButtonBuilder().setCustomId("ach:claim-all-species:"+userId+":"+speciesSlug+":"+safePage).setLabel("Claim All").setStyle(ButtonStyle.Success).setDisabled(!hasReadyClaim)];
+  nav.push(new ButtonBuilder().setCustomId("ach:species:"+userId+":0").setLabel("Back to Species").setStyle(ButtonStyle.Secondary));
   if(safePage>0) nav.push(new ButtonBuilder().setCustomId("ach:open:"+userId+":"+speciesSlug+":"+(safePage-1)).setLabel("Previous").setStyle(ButtonStyle.Secondary));
   if((safePage+1)*4<tasks.length) nav.push(new ButtonBuilder().setCustomId("ach:open:"+userId+":"+speciesSlug+":"+(safePage+1)).setLabel("Next").setStyle(ButtonStyle.Primary));
   nav.push(new ButtonBuilder().setCustomId("ach:home").setLabel("Achievement Menu").setStyle(ButtonStyle.Secondary));
@@ -364,6 +414,37 @@ async function claimDragonAwakeningGlory(userId,speciesSlug,dragonKey) {
     return {awarded:true,notice:"Awarded 3 Glory for awakening "+dragonKey+" Dragon."};
   });
 }
+async function applyDragonAwakening(userId,state,dragonKey) {
+  const speciesSlug=String(dragonKey||"").toLowerCase();
+  const loaded=await loadProfile(userId,true);
+  if(!DRAGON_KEYS.includes(dragonKey)||!loaded.ok) return {ok:false,notice:"Dragon awakening data is unavailable.",rewards:[]};
+  const profile=loaded.data,claimed=profile.dragonClaims[speciesSlug]||{};
+  if(!(claimed["0"]&&claimed["1"]&&claimed["2"])) return {ok:false,notice:"Claim all three elemental trials before awakening this variant.",rewards:[]};
+  const userData=state.userSpecies.get(String(userId))||{},currentAwakening=userData.awakening||{},existing=currentAwakening.trueDragon||{},variants=Object.assign({},existing.variants||{});
+  if(variants[speciesSlug]&&variants[speciesSlug].awakened===true) {
+    const reward=await claimDragonAwakeningGlory(userId,speciesSlug,dragonKey);
+    if(!reward.ok) return {ok:false,notice:"This dragon is already awakened, but its 3 Glory reward could not be saved. The reward remains available to retry from this task.",rewards:[]};
+    if(reward.outcome&&reward.outcome.awarded) return {ok:true,notice:"This dragon was already awakened. Its missing 3 Glory reward has now been credited.",rewards:[{title:"Awaken "+dragonKey+" Dragon",detail:"Elemental variant already awakened",reward:3}]};
+    return {ok:true,notice:"This dragon is already awakened and its 3 Glory reward was already credited.",rewards:[]};
+  }
+  variants[speciesSlug]={awakened:true,awakenedAt:Date.now()};
+  const allAwakened=DRAGON_KEYS.every(function(key){return variants[key.toLowerCase()]&&variants[key.toLowerCase()].awakened===true;});
+  const newAwakening=Object.assign({},currentAwakening,{trueDragon:Object.assign({},existing,{variants:variants,unlocked:allAwakened||existing.unlocked===true,awakened:allAwakened||existing.awakened===true})});
+  const saved=await database.saveUserSpecies(String(userId),{awakening:newAwakening});
+  if(!saved) return {ok:false,notice:"MongoDB could not save the awakening. No unlock was applied.",rewards:[]};
+  userData.awakening=newAwakening;
+  state.userSpecies.set(String(userId),userData);
+  const award=await claimDragonAwakeningGlory(userId,speciesSlug,dragonKey);
+  if(!award.ok) return {ok:false,notice:"Dragon awakening saved, but its 3 Glory reward could not be saved. The reward remains available to retry from this task.",rewards:[]};
+  if(award.outcome&&award.outcome.awarded) {
+    return {
+      ok:true,
+      notice:allAwakened?"All four elemental dragons are now awakened. True Dragon is unlocked!":"Awakened "+dragonKey+" Dragon.",
+      rewards:[{title:"Awaken "+dragonKey+" Dragon",detail:allAwakened?"Final elemental variant awakened; True Dragon unlocked":"Elemental variant awakened",reward:3}],
+    };
+  }
+  return {ok:true,notice:"This dragon is awakened and its 3 Glory reward was already credited.",rewards:[]};
+}
 
 async function handleButton(interaction,state,client) {
   const id=String(interaction.customId||"");
@@ -383,6 +464,30 @@ async function handleButton(interaction,state,client) {
   if(parts[1]==="species") {await interaction.update(buildSpeciesListPage(actor,Number(parts[3])||0));return true;}
   if(parts[1]==="open") {await interaction.update(await renderDetail(actor,state,parts[3],Number(parts[4])||0));return true;}
   if(parts[1]==="leaderboard") {await interaction.update(await buildLeaderboardPayload(client));return true;}
+  if(parts[1]==="claim-all-normal") {
+    const requestedPage=Number(parts[3])||0,page=Math.max(0,Math.min(Math.ceil(NORMAL_ACHIEVEMENTS.length/4)-1,requestedPage));
+    const claim=await mutateProfile(actor,function(profile){
+      const metrics=getMetrics(actor,state,profile),visible=NORMAL_ACHIEVEMENTS.slice(page*4,page*4+4),rewards=[];
+      for(const def of visible) {
+        const stage=Math.max(0,Number(profile.claimed["normal:"+def.key])||0);
+        if(stage>=def.milestones.length) continue;
+        const targetValue=def.milestones[stage],value=Number(metrics[def.metric])||0;
+        if(value<targetValue) continue;
+        const reward=def.rewards[stage];
+        profile.claimed["normal:"+def.key]=stage+1;
+        profile.glory+=reward;
+        rewards.push({title:def.title,detail:def.description+" Target: "+targetValue,reward:reward});
+      }
+      if(!rewards.length) return {abort:true,noReady:true,rewards:[]};
+      return {rewards:rewards};
+    });
+    const outcome=claim.outcome||{};
+    const notice=!claim.ok
+      ?"Database save failed. No rewards were confirmed."
+      :formatClaimSummary(outcome.rewards,"No achievements on this page were ready to claim.");
+    await interaction.update(await renderNormal(actor,state,page,notice));
+    return true;
+  }
   if(parts[1]==="claim-normal") {
     const key=parts[3],expected=Number(parts[4])||0,page=Number(parts[5])||0,def=NORMAL_ACHIEVEMENTS.find(function(item){return item.key===key;});
     if(!def){await interaction.update(await renderNormal(actor,state,0,"That achievement could not be found."));return true;}
@@ -397,6 +502,60 @@ async function handleButton(interaction,state,client) {
     });
     const notice=claim.ok&&claim.outcome&&!claim.outcome.abort&&claim.outcome.notice?claim.outcome.notice:claim.ok?"Not ready, already claimed, or claim is out of date.":"Database save failed; no reward was confirmed.";
     await interaction.update(await renderNormal(actor,state,page,notice));
+    return true;
+  }
+  if(parts[1]==="claim-all-species") {
+    const speciesSlug=parts[3],requestedPage=Number(parts[4])||0;
+    if(!getEntry(speciesSlug)){await interaction.update(buildSpeciesListPage(actor,0,"That species entry could not be found."));return true;}
+    const claim=await mutateProfile(actor,function(profile){
+      const built=buildSpeciesTasks(actor,state,profile,speciesSlug);
+      if(!built.entry) return {abort:true,invalid:true,rewards:[],specialTasks:[]};
+      const pageCount=Math.max(1,Math.ceil(built.tasks.length/4)),page=Math.max(0,Math.min(pageCount-1,requestedPage));
+      const visible=built.tasks.slice(page*4,page*4+4),rewards=[],specialTasks=[];
+      for(const task of visible) {
+        if(!task.ready) continue;
+        if(task.kind==="dragon-awakening") {specialTasks.push(task);continue;}
+        if(task.kind==="species") {
+          const counters=getSpeciesCounters(profile,task.speciesName);
+          if(profile.claimed[task.achievementId]===true||(Number(counters[task.metric])||0)<task.target) continue;
+          profile.claimed[task.achievementId]=true;
+          profile.glory+=task.reward;
+          rewards.push({title:task.title,detail:task.description,reward:task.reward});
+        } else if(task.kind==="dragon") {
+          const claimed=profile.dragonClaims[task.dragonSlug]||{},counters=getSpeciesCounters(profile,built.entry.name);
+          if(claimed[String(task.taskIndex)]===true||(Number(counters[task.metric])||0)<task.target) continue;
+          claimed[String(task.taskIndex)]=true;
+          profile.dragonClaims[task.dragonSlug]=claimed;
+          profile.glory+=task.reward;
+          rewards.push({title:task.title,detail:task.description,reward:task.reward});
+        } else if(task.kind==="awakening") {
+          if(profile.claimed[task.achievementId]===true) continue;
+          profile.claimed[task.achievementId]=true;
+          profile.glory+=task.reward;
+          rewards.push({title:task.title,detail:task.description,reward:task.reward});
+        }
+      }
+      if(!rewards.length) return {abort:true,noReady:specialTasks.length===0,rewards:[],specialTasks:specialTasks};
+      return {rewards:rewards,specialTasks:specialTasks};
+    });
+    const outcome=claim.outcome||{};
+    let notice;
+    if(!claim.ok) notice="Database save failed. No rewards from this batch were confirmed.";
+    else if(outcome.invalid) notice="That species entry could not be found.";
+    else {
+      const rewards=Array.isArray(outcome.rewards)?outcome.rewards.slice():[];
+      const extraNotices=[];
+      for(const task of (outcome.specialTasks||[])) {
+        const awakening=await applyDragonAwakening(actor,state,task.dragonKey);
+        if(awakening.ok) {
+          rewards.push(...awakening.rewards);
+          if(awakening.notice&&!awakening.rewards.length) extraNotices.push(awakening.notice);
+        } else extraNotices.push("⚠️ "+awakening.notice);
+      }
+      notice=rewards.length?formatClaimSummary(rewards):extraNotices.length?extraNotices.join("\n"):"No achievements on this page were ready to claim.";
+      if(rewards.length&&extraNotices.length) notice+="\n"+extraNotices.join("\n");
+    }
+    await interaction.update(await renderDetail(actor,state,speciesSlug,requestedPage,notice));
     return true;
   }
   if(parts[1]==="claim-species") {
@@ -435,40 +594,10 @@ async function handleButton(interaction,state,client) {
     return true;
   }
   if(parts[1]==="awaken-dragon") {
-    const speciesSlug=parts[3],page=Number(parts[4])||0,key=DRAGON_KEYS.find(function(k){return k.toLowerCase()===speciesSlug;});
-    const loaded=await loadProfile(actor,true);
-    if(!key||!loaded.ok){await interaction.update(buildSpeciesListPage(actor,0,"Dragon awakening data is unavailable."));return true;}
-    const profile=loaded.data,claimed=profile.dragonClaims[speciesSlug]||{};
-    if(!(claimed["0"]&&claimed["1"]&&claimed["2"])) {
-      await interaction.update(await renderDetail(actor,state,slug(key+" Dragon"),0,"Claim all three trials before awakening this variant."));
-      return true;
-    }
-    const userData=state.userSpecies.get(actor)||{},currentAwakening=userData.awakening||{},existing=currentAwakening.trueDragon||{},variants=Object.assign({},existing.variants||{});
-    if(variants[speciesSlug]&&variants[speciesSlug].awakened===true) {
-      const reward=await claimDragonAwakeningGlory(actor,speciesSlug,key);
-      const notice=!reward.ok
-        ? "This dragon is already awakened, but its 3 Glory reward could not be saved. The reward remains available to retry from this task."
-        : reward.outcome&&reward.outcome.awarded
-          ? "This dragon was already awakened. Its missing 3 Glory reward has now been credited."
-          : "This dragon is already awakened and its 3 Glory reward has already been credited.";
-      await interaction.update(await renderDetail(actor,state,slug(key+" Dragon"),page,notice));
-      return true;
-    }
-    variants[speciesSlug]={awakened:true,awakenedAt:Date.now()};
-    const allAwakened=DRAGON_KEYS.every(function(k){return variants[k.toLowerCase()]&&variants[k.toLowerCase()].awakened===true;});
-    const newAwakening=Object.assign({},currentAwakening,{trueDragon:Object.assign({},existing,{variants:variants,unlocked:allAwakened||existing.unlocked===true,awakened:allAwakened||existing.awakened===true})});
-    const saved=await database.saveUserSpecies(actor,{awakening:newAwakening});
-    if(!saved){await interaction.update(await renderDetail(actor,state,slug(key+" Dragon"),0,"MongoDB could not save the awakening. No unlock was applied."));return true;}
-    userData.awakening=newAwakening;state.userSpecies.set(actor,userData);
-    const award=await claimDragonAwakeningGlory(actor,speciesSlug,key);
-    const notice=!award.ok
-      ? "Dragon awakening saved, but its 3 Glory reward could not be saved. The reward remains available to retry from this task."
-      : award.outcome&&award.outcome.alreadyAwarded
-        ? "This dragon is awakened and its 3 Glory reward has already been credited."
-        : allAwakened
-          ? "All four elemental dragons are now awakened. True Dragon is unlocked! Awarded 3 Glory for this awakening."
-          : "Awakened "+key+" Dragon and awarded 3 Glory. Awaken the other three variants to unlock True Dragon.";
-    await interaction.update(await renderDetail(actor,state,slug(key+" Dragon"),page,notice));
+    const page=Number(parts[4])||0,key=DRAGON_KEYS.find(function(k){return k.toLowerCase()===String(parts[3]||"").toLowerCase();});
+    const awakening=await applyDragonAwakening(actor,state,key);
+    const speciesSlug=key?slug(key+" Dragon"):slug(parts[3]);
+    await interaction.update(await renderDetail(actor,state,speciesSlug,page,awakening.notice));
     return true;
   }
   if(parts[1]==="claim-awakening") {
@@ -569,5 +698,5 @@ async function startLeaderboardScheduler(client,state) {
 }
 module.exports = {
   open,handleButton,recordBattle,recordUltimate,recordDailyClaim,recordRollUsed,
-  buildLeaderboardPayload,startLeaderboardScheduler,getSpeciesRoster,removeLegacyGloryRoles,
+  buildLeaderboardPayload,startLeaderboardScheduler,getSpeciesRoster,removeLegacyGloryRoles,formatClaimSummary,
 };
