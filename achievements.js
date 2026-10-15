@@ -338,7 +338,7 @@ function formatLeaderboardRow(entry, rank) {
   const userId=String(entry && entry.userId || "");
   // A Discord mention renders the user's current display name in this server and
   // avoids stale/incorrect username strings. allowedMentions below prevents pings.
-  const player=/^\\d{17,20}$/.test(userId) ? "<@"+userId+">" : "Unknown Player";
+  const player=/^\d{17,20}$/.test(userId) ? "<@"+userId+">" : "Unknown Player";
   const prefix=rank===1?"🥇":rank===2?"🥈":rank===3?"🥉":"**#"+String(rank).padStart(2,"0")+"**";
   const glory=Math.max(0,Number(entry && entry.glory)||0).toLocaleString();
   return prefix+" "+(rank<=10?"🏅 ":"")+"**"+player+"** · "+GLORY+" **"+glory+" Glory**";
