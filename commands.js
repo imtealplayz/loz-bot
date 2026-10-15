@@ -2493,6 +2493,8 @@ async function handleButton(interaction) {
         }
         fight.playerUltBuff=playerC.ultBuff;
         fight.playerLastUltUsed=playerC.lastUltUsed;
+        // Record the activated ultimate for Glory milestones and the equipped species' mastery trial.
+        await achievementSystem.recordUltimate(user.id,fight.playerSpecies);
         await questSystem.trackProgress(user.id,"ults",1);
         if (requiresChoice) {
           fight.playerUltBuff=playerC.ultBuff; fight.playerUltCooldown=playerC.species.ultCooldown;
@@ -2662,6 +2664,8 @@ async function handleButton(interaction) {
         } else {
           ({message:um,requiresChoice,choiceType}=applyUltEffect(player,opponent));
         }
+        // Count an activated ultimate for Glory milestones and species mastery in both PvP and bot fights.
+        await achievementSystem.recordUltimate(player.id,player.species);
         await questSystem.trackProgress(player.id,"ults",1);
         if (requiresChoice) {
           player.ultChoicePending=true;
