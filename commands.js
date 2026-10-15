@@ -29,7 +29,6 @@ const achievementSystem = require("./achievements.js");
 
 let _state = null;
 let _client = null;
-const loz60PromptedThisRestart = new Set();
 function setState(s) { _state = s; }
 function setClient(c) { _client = c; }
 
@@ -675,71 +674,6 @@ function buildMajorUpdatePayload() {
   };
 }
 
-
-// LOZ 6.0 event announcement. The public copy remains available to other users;
-// each person's confirmation is private and can disappear without deleting it.
-function buildLoz60EventPayload(targetUserId, pingUser = false) {
-  if (!/^\d{17,20}$/.test(String(targetUserId || ""))) {
-    throw new Error("A valid target user ID is required for the LOZ 6.0 event prompt.");
-  }
-
-  const embed = new EmbedBuilder()
-    .setColor(0x8b5cf6)
-    .setTitle("🌘 LOZ 6.0v — The Rift Awakens")
-    .setDescription(
-      "Something new is stirring beyond the Rift.\n\n" +
-      "LOZ 6.0v drops on **15 October 2026 at around 10 PM IST**.\n\n" +
-      "Register now to qualify for **free launch rewards** when the update arrives."
-    )
-    .addFields(
-      { name:"📅 Launch Window", value:"**15 October 2026**\nAround **10 PM IST**", inline:true },
-      { name:"🎁 Event Reward", value:"Register to qualify for launch rewards.", inline:true },
-      { name:"📜 Explore the Rift Lore", value:"[Read the lore on the LOZ website](https://lozbot.vercel.app/)", inline:false },
-    )
-    .setFooter({ text:"Use /updates subscribe to stay updated." });
-
-  const payload = {
-    embeds:[embed],
-    components:[
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("loz60_event_interested_" + targetUserId)
-          .setLabel("Register for LOZ 6.0")
-          .setEmoji("🌘")
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId("loz60_event_not_interested_" + targetUserId)
-          .setLabel("Not Interested")
-          .setEmoji("✖️")
-          .setStyle(ButtonStyle.Secondary)
-      )
-    ],
-    allowedMentions:{ parse:[], users:pingUser ? [targetUserId] : [] },
-  };
-
-  // Public first-command prompt: ping is message content, outside the embed.
-  if (pingUser) payload.content = "<@" + targetUserId + ">";
-  return payload;
-}
-
-// Post a public, user-bound event announcement once per user per running process.
-async function maybePromptForLoz60Event(interaction) {
-  const userId = interaction?.user?.id;
-  if (!userId || !interaction.isCommand?.() || loz60PromptedThisRestart.has(userId)) return false;
-  const channel = interaction.channel;
-  if (!channel || typeof channel.send !== "function") return false;
-
-  // Mark before awaiting to prevent duplicates from rapid, concurrent commands.
-  loz60PromptedThisRestart.add(userId);
-  try {
-    await channel.send(buildLoz60EventPayload(userId, true));
-    return true;
-  } catch(error) {
-    loz60PromptedThisRestart.delete(userId);
-    console.warn("LOZ 6.0 public first-command prompt failed:", error?.code || error?.message || error);
-    return false;
-  }
-}
 
 function buildLoz60EventResultPayload(title, description, color=0x0891b2) {
   const embed = new EmbedBuilder()
@@ -2926,4 +2860,4 @@ new SlashCommandBuilder().setName("leaderboard").setDescription("View a player l
     .addSubcommand(s=>s.setName("repair-user-db").setDescription("Archive and repair duplicate player records")),
 ].map(c=>c.toJSON());
 
-module.exports = { setState, setClient, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForUpdates, maybePromptForLoz60Event, commands };
+module.exports = { setState, setClient, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForUpdates, commands };
