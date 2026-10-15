@@ -1,6 +1,7 @@
 const { botPersonalities, humanSpecies, slimeLordSpecies } = require("./constants.js");
 const database = require("./database.js");
 const questSystem = require("./quest-system.js");
+const achievementSystem = require("./achievements.js");
 const chaosSystem = require("./chaos.js");
 const {
   updateFightStats, updateBotStats,
@@ -151,6 +152,10 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
   chaosSystem.cancelChaosReaction(fight);
   const winner=fight.player1Id===winnerId?fight.player1:fight.player2;
   const loser =fight.player1Id===loserId ?fight.player1:fight.player2;
+  await Promise.all([
+    achievementSystem.recordBattle(fight.player1Id,fight.player1.species,{won:winnerId===fight.player1Id,mode:"pvp"}),
+    achievementSystem.recordBattle(fight.player2Id,fight.player2.species,{won:winnerId===fight.player2Id,mode:"pvp"}),
+  ]);
   // Rotating quest progress is independent from existing leaderboard/awakening progress.
   await Promise.all([
     questSystem.trackProgress(fight.player1Id,"battles",1),
@@ -532,6 +537,7 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
     await updateHalfBloodProgress(fight.playerId,"fight",1,fight.playerSpecies.name);
   // Count completed battles before the Slime Lord boss early-return as well.
   await questSystem.trackProgress(fight.playerId,"battles",1);
+  await achievementSystem.recordBattle(fight.playerId,fight.playerSpecies,{won:winner==="player",mode:"bot",boss:Boolean(fight.isSlimeBoss)});
   if (winner==="player" && reason!=="timeout") {
     await questSystem.trackProgress(fight.playerId,"botWins",1);
     if (difficulty==="brutal") await questSystem.trackProgress(fight.playerId,"brutalWins",1);
