@@ -20,6 +20,7 @@ const NORMAL_ACHIEVEMENTS = [
   {key:"total-wins",title:"Battle-Hardened",metric:"totalWins",milestones:[10,25,50,100,250,500],rewards:[1,2,2,3,5,8],description:"Win battles against players or LOZ bots."},
   {key:"total-battles",title:"Veteran of the Rift",metric:"totalBattles",milestones:[25,50,100,250,500,1000],rewards:[1,2,3,4,6,9],description:"Complete battles. Both wins and losses count."},
   {key:"pvp-wins",title:"Duelist",metric:"pvpWins",milestones:[5,10,25,50,100,250],rewards:[1,2,3,4,6,9],description:"Win player-versus-player battles."},
+  {key:"pvp-battles",title:"Arena Regular",metric:"pvpBattles",milestones:[10,25,50,100,250,500],rewards:[1,2,3,4,6,8],description:"Complete player-versus-player battles. Both wins and losses count."},
   {key:"bot-wins",title:"Bot Breaker",metric:"botWins",milestones:[5,10,25,50,100,250],rewards:[1,2,3,4,6,9],description:"Defeat LOZ bots at any difficulty."},
   {key:"bot-battles",title:"Trial by Machine",metric:"botBattles",milestones:[10,25,50,100,250,500],rewards:[1,2,3,4,6,8],description:"Complete battles against LOZ bots. Wins and losses count."},
   {key:"rolls-held",title:"Stockpiler",metric:"rollsHeld",milestones:[5,10,25,50,100],rewards:[1,1,2,3,5],description:"Keep this many unspent Species Rolls in your balance."},
@@ -90,13 +91,14 @@ function getSpeciesRoster() {
   const dragons=dragonSpecies.types.map(function(t){
     return {name:t.type+" Dragon",emoji:t.emoji+"🐉",rarity:0,category:"Dragon Awakening"};
   });
-  const secret=[humanSpecies,godSpecies,reaperSpecies,archdemonSpecies,slimeLordSpecies,eclipsedSovereignSpecies,chaosCreatorSpecies,trueDragonSpecies];
+  const secret=[godSpecies,reaperSpecies,archdemonSpecies,slimeLordSpecies,eclipsedSovereignSpecies,chaosCreatorSpecies,trueDragonSpecies];
   const result=[], seen=new Set();
   function add(species,category) {
     if(!species||!species.name||seen.has(species.name)) return;
     seen.add(species.name);
     result.push({name:species.name,emoji:species.emoji||"✨",rarity:Number(species.rarity)||0,category:category,species:species});
   }
+  add(humanSpecies,"Common");
   normal.forEach(function(s){add(s,"Rarity");});
   dragons.forEach(function(s){add(s,"Dragon Awakening");});
   awakeningForms.forEach(function(s){add(s,"Awakening Form");});
@@ -121,6 +123,7 @@ function getMetrics(userId,state,profile) {
     totalWins:wins+bossWins,
     totalBattles:wins+losses+bossBattles,
     pvpWins:Math.max(0,wins-bot.wins),
+    pvpBattles:Math.max(0,wins+losses-bot.wins-bot.losses),
     botWins:bot.wins+bossWins,
     botBattles:bot.wins+bot.losses+bossBattles,
     rollsHeld:Math.max(0,Number(user.rolls)||0),
