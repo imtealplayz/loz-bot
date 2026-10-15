@@ -1,5 +1,16 @@
 const patchNotes = [
   {
+    version:"6.0", date:"2026-10-15",
+    changes:[
+      "Introduced Glory with claimable normal milestones and individual species mastery trials.",
+      "Added the True Dragon secret awakening, earned by independently awakening Fire, Thunder, Ice, and Earth Dragons.",
+      "Combined PvP and bot battle records under /fight stats and added a global Top 25 Glory leaderboard.",
+      "Reduced the rotating quest interval from 12 hours to 6 hours.",
+      "Increased Mechangel's ultimate cooldown to 9 rounds.",
+      "Added the one-time LOZ 6.0 registration reward for eligible registrants.",
+    ],
+  },
+  {
     version: "5.9", date: "2026-10-14",
     changes: [
       "Removed passive and ultimate ability descriptions from /profile so profiles focus on species, inventory, fight record, badges, and membership.",
@@ -210,7 +221,7 @@ const speciesList = [
   { number:13, name:"Chimera",    rarity:4,  emoji:"🎭",    chance:"2.2%",  roleName:"Chimera",     color:0x9b59b6, hp:115, atkMin:16, atkMax:26, healMin:14, healMax:22, ultCooldown:15 },
   { number:14, name:"Cyborg",     rarity:14, emoji:"🤖",    chance:"7.0%",  roleName:"Cyborg",      color:0x00ffff, hp:125, atkMin:12, atkMax:19, healMin:8,  healMax:14, ultCooldown:7  },
   { number:15, name:"Half-Blood", rarity:52, emoji:"🩸",    chance:"26.0%", roleName:"Half-Blood",  color:0x8b4513, hp:90,  atkMin:10, atkMax:16, healMin:10, healMax:18, ultCooldown:7  },
-  { number:16, name:"Mechangel",  rarity:0,  emoji:"⚡🤖",  chance:"—",     roleName:"Mechangel",   color:0x00ffff, hp:140, atkMin:15, atkMax:23, healMin:10, healMax:18, ultCooldown:6  },
+  { number:16, name:"Mechangel",  rarity:0,  emoji:"⚡🤖",  chance:"—",     roleName:"Mechangel",   color:0x00ffff, hp:140, atkMin:15, atkMax:23, healMin:10, healMax:18, ultCooldown:9  },
 ];
 
 const dragonSpecies = {
@@ -237,6 +248,7 @@ const archdemonSpecies = { number:19, name:"Archdemon",emoji:"👿",   roleName:
 const slimeLordSpecies = { number:20, name:"Slime Lord",emoji:"🫧",roleName:"Slime-Lord",color:0x2dd4bf,hp:130,atkMin:18,atkMax:27,healMin:15,healMax:25,ultCooldown:9,chance:"Special boss unlock" };
 const eclipsedSovereignSpecies = { number:21, name:"Eclipsed Sovereign", emoji:"🌘", roleName:"Eclipsed-Sovereign", color:0x6f2da8, hp:115, atkMin:15, atkMax:22, healMin:14, healMax:22, ultCooldown:7, chance:"Special awakening" };
 const chaosCreatorSpecies = { number:22, name:"Chaos Creator", emoji:"🌀", roleName:null, color:0x18181b, hp:150, atkMin:20, atkMax:28, healMin:18, healMax:30, ultCooldown:2, chance:"Primary owner only" };
+const trueDragonSpecies = { number:23, name:"True Dragon", emoji:"🐉✨", roleName:"True-Dragon", color:0x6f2da8, hp:200, atkMin:32, atkMax:42, healMin:18, healMax:28, ultCooldown:9, chance:"Secret / Awakening" };
 
 // ==================== BOT DIFFICULTY ====================
 const botSpeciesByDifficulty = {
@@ -244,7 +256,7 @@ const botSpeciesByDifficulty = {
   medium:     ["High Orc","Kijin","Orc Lord","Chimera"],
   hard:       ["Oni","Demon","Fire Dragon","Thunder Dragon"],
   impossible: ["Demon King","Demon Lord","Demi God","Ice Dragon","Earth Dragon","God"],
-  brutal:     ["Reaper","Mechangel","Archdemon"],
+  brutal:     ["Reaper","Mechangel","Archdemon","True Dragon"],
 };
 
 const botPersonalities = {
@@ -394,6 +406,7 @@ function getPassiveDescription(name) {
     Archdemon:"**Lord of Darkness** — +15% dmg and +5 flat all attacks",
     "Slime Lord":"**Adaptive Momentum** — each miss or counter builds a next-attack multiplier: ×1.2, ×1.4, ×1.6, ×1.8, up to ×2.0; a successful hit consumes the bonus.",
     "Chaos Creator":"**Absolute Authority** — receives 50% less damage, cannot miss normal attacks, and counter attempts against its attacks are counter-countered.",
+    "True Dragon":"**Dragon Spirit Haki** — takes 20% less incoming damage; Universal Perception sees through evasion.",
   };
   return passives[name] || "Unknown passive";
 }
@@ -423,7 +436,8 @@ function getActiveDescription(name) {
     Cyborg:"**Self-Repair** — heal 30% max HP + 15% dmg reduction 2 turns (CD: 7)",
     "Half-Blood":"**Awakened Blood** — 1.4× + heal 10 HP (CD: 7)",
     "Eclipsed Sovereign":"**Bloodline Overdrive** — 1.8× next attack + heal 15 HP (CD: 7)",
-    Mechangel:"**System Restoration** — heal 40% + 20% reduction 2 turns (CD: 6)",
+    Mechangel:"**System Restoration** — heal 40% + 20% reduction 2 turns (CD: 9)",
+    "True Dragon":"**Fourfold Cataclysm** — 2× next attack, bypasses 10% of enemy damage reduction, and suppresses the opponent’s next attack by 20% (CD: 9)",
     Archdemon:"**Abyssal Gate** — 2× + 10 curse 3 turns (CD: 10)",
     "Slime Lord":"**Predatory Assimilation** — converts the next incoming damage hit into HP; any amount beyond max HP is reflected to the attacker (CD: 9).",
     "Chaos Creator":"**Disintegrate** — after primary-owner confirmation, instantly eliminates the current opponent. Victory rewards and stats are credited normally (CD: 2).",
@@ -433,7 +447,7 @@ function getActiveDescription(name) {
 
 module.exports = {
   patchNotes, speciesList, dragonSpecies, botSpecies,
-  godSpecies, humanSpecies, reaperSpecies, archdemonSpecies, slimeLordSpecies, eclipsedSovereignSpecies, chaosCreatorSpecies,
+  godSpecies, humanSpecies, reaperSpecies, archdemonSpecies, slimeLordSpecies, eclipsedSovereignSpecies, chaosCreatorSpecies, trueDragonSpecies,
   botSpeciesByDifficulty, botPersonalities,
   typeAdvantages, critRates, failChances, awakeningRequirements,
   disintegrationMessages, getPassiveDescription, getActiveDescription,
