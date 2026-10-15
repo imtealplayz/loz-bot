@@ -187,6 +187,14 @@ test("True Dragon is present in owner unlock, owner species-change flow, and /sw
   assert.ok(source.includes('else if (spname==="True Dragon")'));
 });
 
+test("player ultimates feed Glory counters in PvP and bot fights", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "commands.js"), "utf8");
+  assert.ok(source.includes("achievementSystem.recordUltimate(user.id,fight.playerSpecies)"),
+    "player ultimate in bot fights must update the achievement profile");
+  assert.ok(source.includes("achievementSystem.recordUltimate(player.id,player.species)"),
+    "player ultimate in PvP must update the achievement profile");
+});
+
 test("6.0 broadcast includes the Halloween announcement without owner-command details", () => {
   const source = fs.readFileSync(path.join(__dirname, "..", "commands.js"), "utf8");
   const start = source.indexOf("function buildLoz60AnnouncementPayload()");
