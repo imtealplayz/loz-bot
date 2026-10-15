@@ -9,6 +9,7 @@ const constants = require("../constants.js");
 const helpers = require("../helpers.js");
 const combat = require("../combat.js");
 const questSystem = require("../quest-system.js");
+const achievements = require("../achievements.js");
 const { commands } = require("../commands.js");
 
 function uniqueByName(items) {
@@ -242,4 +243,42 @@ test("6.0 broadcast includes the Halloween announcement without owner-command de
   assert.ok(!noteText.includes("/updates reward"));
   assert.ok(!noteText.includes("/broadcast"));
   assert.ok(!noteText.includes("owner command"));
+});
+
+
+test("legacy Glory Discord roles are deleted and the leaderboard never assigns roles again", async () => {
+  const deleted = [];
+  const roleNames = [
+    "LOZ Glory #1",
+    "LOZ Glory #10",
+    "LOZ Glory Top 25",
+    "LOZ Glory #11",
+    "LOZ Fight Wins #1",
+  ];
+  const roles = roleNames.map((name) => ({
+    name,
+    delete: async (reason) => { deleted.push({ name, reason }); },
+  }));
+  const guild = {
+    id: "test-guild",
+    roles: {
+      fetch: async () => new Map(roles.map((role, index) => [String(index), role])),
+    },
+  };
+  const client = { guilds: { cache: new Map([["test-guild", guild]]) } };
+
+  await achievements.removeLegacyGloryRoles(client);
+
+  assert.deepEqual(
+    deleted.map((entry) => entry.name).sort(),
+    ["LOZ Glory #1", "LOZ Glory #10", "LOZ Glory Top 25"].sort(),
+    "only the exact legacy Top 10 / Top 25 Glory roles should be deleted"
+  );
+  assert.ok(deleted.every((entry) => entry.reason.includes("no longer uses Discord roles")));
+
+  const source = fs.readFileSync(path.join(__dirname, "..", "achievements.js"), "utf8");
+  assert.ok(!source.includes("syncGloryRoles"), "role synchronization must stay removed");
+  assert.ok(!source.includes("guild.roles.create"), "the Glory leaderboard must never create roles");
+  assert.ok(!source.includes("member.roles.add"), "the Glory leaderboard must never assign roles");
+  assert.ok(source.includes("GLORY_TOP25"), "profile leaderboard badges should remain available");
 });
