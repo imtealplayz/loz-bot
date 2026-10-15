@@ -569,5 +569,5 @@ async function startLeaderboardScheduler(client,state) {
 }
 module.exports = {
   open,handleButton,recordBattle,recordUltimate,recordDailyClaim,recordRollUsed,
-  buildLeaderboardPayload,startLeaderboardScheduler,getSpeciesRoster,
+  buildLeaderboardPayload,startLeaderboardScheduler,getSpeciesRoster,removeLegacyGloryRoles,
 };
