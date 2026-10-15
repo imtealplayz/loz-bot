@@ -5,7 +5,7 @@ const { humanSpecies } = require("./constants.js");
 
 const VOTE_INTERVAL_MS = 12 * 60 * 60 * 1000;
 const VOTE_REMINDER_RETRY_MS = 15 * 60 * 1000;
-const QUEST_INTERVAL_MS = 12 * 60 * 60 * 1000;
+const QUEST_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const CLAIMED_VISIBLE_MS = 5 * 60 * 1000;
 const MAX_ROTATING_QUESTS = 3;
 const VOTE_ROLL_REWARD = 2;
