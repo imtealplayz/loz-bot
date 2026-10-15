@@ -40,7 +40,7 @@ function slug(value) {
 function normaliseProfile(data) {
   data = data && typeof data === "object" ? data : {};
   data.glory = Math.max(0,Number(data.glory)||0);
-  data.counters = Object.assign({dailyClaims:0,rollsUsed:0,ultimates:0,slimeLordBossWins:0},data.counters||{});
+  data.counters = Object.assign({dailyClaims:0,rollsUsed:0,ultimates:0,slimeLordBossWins:0,slimeLordBossBattles:0},data.counters||{});
   data.speciesCounters = data.speciesCounters && typeof data.speciesCounters === "object" ? data.speciesCounters : {};
   data.claimed = data.claimed && typeof data.claimed === "object" ? data.claimed : {};
   data.dragonClaims = data.dragonClaims && typeof data.dragonClaims === "object" ? data.dragonClaims : {};
@@ -114,13 +114,15 @@ function getMetrics(userId,state,profile) {
   const fight=state.fightStats.get(String(userId))||{}, bot=botTotals(state,userId);
   const wins=Math.max(0,Number(fight.wins)||0),losses=Math.max(0,Number(fight.losses)||0);
   const daily=state.dailyClaims.get(String(userId))||{}, user=state.userSpecies.get(String(userId))||{};
+  const bossWins=Math.max(0,Number(profile.counters.slimeLordBossWins)||0);
+  const bossBattles=Math.max(0,Number(profile.counters.slimeLordBossBattles)||0);
   return {
     dailyStreak:Math.max(0,Number(daily.streak)||0),
-    totalWins:wins,
-    totalBattles:wins+losses,
+    totalWins:wins+bossWins,
+    totalBattles:wins+losses+bossBattles,
     pvpWins:Math.max(0,wins-bot.wins),
-    botWins:bot.wins,
-    botBattles:bot.wins+bot.losses,
+    botWins:bot.wins+bossWins,
+    botBattles:bot.wins+bot.losses+bossBattles,
     rollsHeld:Math.max(0,Number(user.rolls)||0),
     rollsUsed:Math.max(0,Number(profile.counters.rollsUsed)||0),
     dailyClaims:Math.max(0,Number(profile.counters.dailyClaims)||0),
@@ -305,7 +307,10 @@ async function recordBattle(userId,species,options) {
       if(options.won) entry.botWins=(Number(entry.botWins)||0)+1;
     }
     profile.speciesCounters[name]=entry;
-    if(options.boss&&options.won) profile.counters.slimeLordBossWins=(Number(profile.counters.slimeLordBossWins)||0)+1;
+    if(options.boss) {
+      profile.counters.slimeLordBossBattles=(Number(profile.counters.slimeLordBossBattles)||0)+1;
+      if(options.won) profile.counters.slimeLordBossWins=(Number(profile.counters.slimeLordBossWins)||0)+1;
+    }
   });
   if(!result.ok) console.warn("[Achievements] Could not record battle for "+userId);
 }
