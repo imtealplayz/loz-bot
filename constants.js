@@ -3,6 +3,7 @@ const patchNotes = [
     version:"6.0", date:"2026-10-15",
     changes:[
       "Introduced Glory with claimable normal milestones and individual species mastery trials.",
+      "Fixed ultimate-use tracking so activated ultimates advance Glory milestones and species-specific mastery trials.",
       "Added the True Dragon secret awakening, earned by independently awakening Fire, Thunder, Ice, and Earth Dragons.",
       "Combined PvP and bot battle records under /fight stats and added a global Top 25 Glory leaderboard.",
       "Reduced the rotating quest interval from 12 hours to 6 hours.",
