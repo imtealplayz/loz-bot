@@ -73,6 +73,7 @@ const notificationPreferenceSchema = new mongoose.Schema({
   loz60EventResponse: { type:String, enum:["registered","not_interested"], default:null },
   loz60EventRespondedAt: { type:Date, default:null },
   loz60EventRegisteredAt: { type:Date, default:null },
+  loz60RewardsClaimed: { type:Boolean, default:false },
   updatedAt:       { type:Date, default:Date.now },
 }, { minimize:false });
 
@@ -165,6 +166,11 @@ const FightLeaderboard = mongoose.model("FightLeaderboard", fightLeaderboardSche
 const GuildInviteReward = mongoose.model("GuildInviteReward", guildInviteRewardSchema);
 const LeaderboardBadgeState = mongoose.model("LeaderboardBadgeState", leaderboardBadgeStateSchema);
 const AccessBan = mongoose.model("AccessBan", accessBanSchema);
+const achievementProfileSchema = new mongoose.Schema({
+  userId:{type:String,required:true,unique:true},
+  data:{type:Object,default:{},minimize:false},
+},{minimize:false});
+const AchievementProfile = mongoose.model("AchievementProfile", achievementProfileSchema);
 
 // ==================== HELPERS ====================
 async function upsert(Model, filter, data) {
@@ -1391,6 +1397,84 @@ async function deleteUser(userId) {
   return true;
 }
 
+async function getAchievementProfile(userId) {
+  try {
+    if (!await connect()) return {ok:false,data:null};
+    const record = await AchievementProfile.findOne({userId:String(userId)}).lean();
+    return {ok:true,data:record && record.data && typeof record.data === "object" ? record.data : {}};
+  } catch(error) {
+    console.error("❌ Achievement profile read error:",error.message);
+    return {ok:false,data:null};
+  }
+}
+
+async function saveAchievementProfile(userId,data) {
+  return await upsert(AchievementProfile,{userId:String(userId)},{userId:String(userId),data});
+}
+
+async function getGloryLeaderboardTop(limit=25) {
+  try {
+    if (!await connect()) return null;
+    const safeLimit=Math.max(1,Math.min(25,Number(limit)||25));
+    const entries=await AchievementProfile.find({"data.glory":{$gt:0}}).sort({"data.glory":-1,userId:1}).limit(safeLimit).lean();
+    return entries.map(entry => ({userId:String(entry.userId),glory:Math.max(0,Number(entry.data && entry.data.glory)||0)}));
+  } catch(error) {
+    console.error("❌ Glory leaderboard read error:",error.message);
+    return null;
+  }
+}
+
+async function getGloryLeaderboardSnapshot() {
+  try {
+    if (!await connect()) return {ok:false,data:null};
+    const record=await LeaderboardBadgeState.findOne({key:"glory"}).lean();
+    return {ok:true,data:Array.isArray(record && record.data) ? record.data : []};
+  } catch(error) {
+    console.error("❌ Glory leaderboard snapshot read error:",error.message);
+    return {ok:false,data:null};
+  }
+}
+
+async function saveGloryLeaderboardSnapshot(data) {
+  try {
+    if (!await connect()) return false;
+    await LeaderboardBadgeState.findOneAndUpdate({key:"glory"},{$set:{key:"glory",data:Array.isArray(data)?data:[]}},{upsert:true,new:true,setDefaultsOnInsert:true});
+    return true;
+  } catch(error) {
+    console.error("❌ Glory leaderboard snapshot write error:",error.message);
+    return false;
+  }
+}
+
+async function claimLoz60RegistrationReward(userId) {
+  const id=String(userId);
+  try {
+    if (!await connect()) return {ok:false,awarded:false,reason:"database"};
+    const preference=await NotificationPreference.findOneAndUpdate(
+      {userId:id,loz60EventResponse:"registered",loz60RewardsClaimed:{$ne:true}},
+      {$set:{loz60RewardsClaimed:true,updatedAt:new Date()}},
+      {new:true}
+    ).lean();
+    if (!preference) {
+      const existing=await NotificationPreference.findOne({userId:id}).lean();
+      return {ok:true,awarded:false,reason:existing && existing.loz60EventResponse==="registered" ? "already_claimed" : "not_registered"};
+    }
+    try {
+      const updated=await User.findOneAndUpdate(
+        {userId:id,archivedForRepair:{$ne:true}},
+        {$inc:{rolls:25,speciesTokens:1},$set:{userId:id,archivedForRepair:false}},
+        {new:true,upsert:true,setDefaultsOnInsert:true}
+      ).lean();
+      return {ok:true,awarded:true,rolls:Math.max(0,Number(updated && updated.rolls)||0),speciesTokens:Math.max(0,Number(updated && updated.speciesTokens)||0)};
+    } catch(error) {
+      await NotificationPreference.updateOne({userId:id},{$set:{loz60RewardsClaimed:false,updatedAt:new Date()}}).catch(() => {});
+      throw error;
+    }
+  } catch(error) {
+    console.error("❌ LOZ 6.0 registration reward error:",error.message);
+    return {ok:false,awarded:false,reason:"database"};
+  }
+}
 // ==================== EXPORTS ====================
 module.exports = {
   saveUserSpecies, saveUserRolls, saveUserSpeciesFields, addSpeciesTokens, redeemSpeciesToken, awardGuideCompletionRoll, repairUserRecords,
@@ -1404,5 +1488,7 @@ module.exports = {
   claimUpdateSubscriptionPrompt, dismissUpdateSubscriptionPrompt,
   awardGuildInviteReward,
   getLeaderboardBadgeSnapshot, saveLeaderboardBadgeSnapshot,
+  getAchievementProfile, saveAchievementProfile, getGloryLeaderboardTop,
+  getGloryLeaderboardSnapshot, saveGloryLeaderboardSnapshot, claimLoz60RegistrationReward,
   setAccessBan, getActiveAccessBan, removeAccessBan,
 };
