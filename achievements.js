@@ -145,9 +145,13 @@ function addSection(container,body,button) {
   container.addSectionComponents(new SectionBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent(body)).setButtonAccessory(button));
 }
 function makeClaimButton(customId,ready,claimed,reward) {
-  if(claimed) return new ButtonBuilder().setCustomId("ach:claimed").setLabel("Claimed").setStyle(ButtonStyle.Success).setDisabled(true);
+  // Discord requires every component in a message to have a unique custom ID,
+  // including disabled buttons. Keep the routing prefix while deriving uniqueness
+  // from the task's otherwise-unique active claim ID.
+  const uniqueSuffix=String(customId||"").replace(/^ach:/,"");
+  if(claimed) return new ButtonBuilder().setCustomId("ach:claimed:"+uniqueSuffix).setLabel("Claimed").setStyle(ButtonStyle.Success).setDisabled(true);
   if(ready) return new ButtonBuilder().setCustomId(customId).setLabel("Claim "+reward+" Glory").setStyle(ButtonStyle.Primary);
-  return new ButtonBuilder().setCustomId("ach:locked").setLabel("In Progress").setStyle(ButtonStyle.Secondary).setDisabled(true);
+  return new ButtonBuilder().setCustomId("ach:locked:"+uniqueSuffix).setLabel("In Progress").setStyle(ButtonStyle.Secondary).setDisabled(true);
 }
 function formatClaimSummary(claims,fallback) {
   if(!Array.isArray(claims)||!claims.length) return fallback||"No achievements on this page were ready to claim.";
@@ -698,5 +702,5 @@ async function startLeaderboardScheduler(client,state) {
 }
 module.exports = {
   open,handleButton,recordBattle,recordUltimate,recordDailyClaim,recordRollUsed,
-  buildLeaderboardPayload,startLeaderboardScheduler,getSpeciesRoster,removeLegacyGloryRoles,formatClaimSummary,
+  buildLeaderboardPayload,startLeaderboardScheduler,getSpeciesRoster,removeLegacyGloryRoles,formatClaimSummary,makeClaimButton,
 };

@@ -324,3 +324,19 @@ test("achievement claim summary shows each reward and a combined Glory total", (
   assert.match(summary, /Use your ultimate twice/);
   assert.match(summary, /\+3 Glory/);
 });
+
+
+test("achievement claim buttons have unique IDs even when claimed or locked", () => {
+  const buttons = [
+    achievements.makeClaimButton("ach:claim-normal:123:daily-streak:0:0", false, true, 1),
+    achievements.makeClaimButton("ach:claim-normal:123:total-wins:0:0", false, true, 1),
+    achievements.makeClaimButton("ach:claim-species:123:human:0", false, false, 2),
+    achievements.makeClaimButton("ach:claim-species:123:slime-lord:0", false, false, 3),
+  ];
+  const ids = buttons.map((button) => button.data.custom_id);
+  assert.equal(new Set(ids).size, ids.length, "all component custom IDs must be unique");
+  assert.ok(ids[0].startsWith("ach:claimed:"), "claimed buttons must retain the claimed routing prefix");
+  assert.ok(ids[1].startsWith("ach:claimed:"), "each claimed button gets a unique routing ID");
+  assert.ok(ids[2].startsWith("ach:locked:"), "locked buttons must retain the locked routing prefix");
+  assert.ok(ids[3].startsWith("ach:locked:"), "each locked button gets a unique routing ID");
+});
