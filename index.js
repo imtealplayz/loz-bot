@@ -340,7 +340,7 @@ async function registerCommands() {
     // LOZ is a guild RPG. Prevent bot-token channel-posting commands from being invoked
     // through a user-installed app context where the LOZ bot account may not have access.
     const globalCommandPayload = commands.map(command => ({
-      ...command.toJSON(),
+      ...(typeof command.toJSON === "function" ? command.toJSON() : command),
       integration_types: [0], // GUILD_INSTALL
       contexts: [0], // GUILD
     }));
