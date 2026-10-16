@@ -552,7 +552,7 @@ test("Human remains playable but is excluded from Species Achievements", () => {
 });
 
 test("legacy Archdemon unlocks survive rerolls and remain switchable", () => {
-  const { isArchdemonUnlocked, preserveLegacyArchdemonUnlock } = require("../commands.js");
+  const { isArchdemonUnlocked, markArchdemonUnlocked, preserveLegacyArchdemonUnlock } = require("../commands.js");
   const legacyOwnerGrant = {
     species: constants.archdemonSpecies,
     originalSpecies: constants.archdemonSpecies,
@@ -564,6 +564,8 @@ test("legacy Archdemon unlocks survive rerolls and remain switchable", () => {
   assert.equal(preserveLegacyArchdemonUnlock(legacyOwnerGrant), true);
   assert.equal(legacyOwnerGrant.awakening.demon.awakened, true,
     "the legacy ownership evidence is upgraded to the permanent unlock flag");
+  assert.equal(legacyOwnerGrant.questSpecies.archdemon.unlocked, true,
+    "legacy ownership is also upgraded to the independent permanent-grant marker");
 
   legacyOwnerGrant.species = constants.humanSpecies;
   legacyOwnerGrant.originalSpecies = constants.humanSpecies;
@@ -578,6 +580,37 @@ test("legacy Archdemon unlocks survive rerolls and remain switchable", () => {
   assert.equal(preserveLegacyArchdemonUnlock(unrelatedPlayer), false);
   assert.equal(unrelatedPlayer.awakening.demon.awakened, false,
     "players without Archdemon ownership are not granted the unlock");
+});
+
+test("owner-granted Archdemon stays unlocked independently of equipped species", () => {
+  const { isArchdemonUnlocked, markArchdemonUnlocked } = require("../commands.js");
+  const player = {
+    species: constants.humanSpecies,
+    originalSpecies: constants.humanSpecies,
+    awakening: { demon: { playerWins: 3, demonBotWins: 1, awakened: false } },
+    questSpecies: {},
+  };
+
+  assert.equal(markArchdemonUnlocked(player), true);
+  assert.equal(player.awakening.demon.awakened, true);
+  assert.equal(player.questSpecies.archdemon.unlocked, true);
+  assert.equal(player.questSpecies.archdemon.godGranted, true);
+  assert.equal(isArchdemonUnlocked(player), true);
+
+  player.species = constants.humanSpecies;
+  player.originalSpecies = constants.humanSpecies;
+  assert.equal(isArchdemonUnlocked(player), true,
+    "an owner grant must survive rerolls and changes to originalSpecies");
+});
+
+test("Archdemon unlock uses a verified database grant and a persisted-state fallback", () => {
+  const commandsSource = fs.readFileSync(path.join(__dirname, "..", "commands.js"), "utf8");
+  const databaseSource = fs.readFileSync(path.join(__dirname, "..", "database.js"), "utf8");
+  assert.match(commandsSource, /database\.grantArchdemonUnlock\(target\.id\)/);
+  assert.match(commandsSource, /database\.getArchdemonUnlockState\(user\.id\)/);
+  assert.match(databaseSource, /async function grantArchdemonUnlock\(userId\)/);
+  assert.match(databaseSource, /"questSpecies\.archdemon\.unlocked":true/);
+  assert.match(databaseSource, /"awakening\.demon\.awakened":true/);
 });
 
 test("startup developer alert explains lost-species recovery with a plain official-server URL", () => {
