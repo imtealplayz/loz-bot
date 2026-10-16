@@ -8,7 +8,7 @@ const database = require("./database.js"); // MongoDB
 const state    = require("./state.js");
 const { setState: setHelperState } = require("./helpers.js");
 const { setState: setFightState }   = require("./fights.js");
-const { setState: setCommandState, setClient, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForUpdates, commands } = require("./commands.js");
+const { setState: setCommandState, setClient, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForDeveloperAlert, commands } = require("./commands.js");
 const questSystem = require("./quest-system.js");
 const chaosSystem = require("./chaos.js");
 const leaderboardBadgeSystem = require("./leaderboard-badges.js");
@@ -486,8 +486,8 @@ client.on("interactionCreate", async (interaction) => {
     }
     if (interaction.isCommand()) {
       await handleCommand(interaction);
-      // Do not interrupt normal command use with an automatic LOZ 6.0 registration card.
-      await maybePromptForUpdates(interaction);
+      // Show the current developer-alert reminder privately, at most once per day until viewed.
+      await maybePromptForDeveloperAlert(interaction);
     } else if (interaction.isButton()) {
       const questHandled = await questSystem.handleButton(interaction);
       if (!questHandled) await handleButton(interaction);
