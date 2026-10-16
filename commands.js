@@ -3004,12 +3004,11 @@ new SlashCommandBuilder().setName("leaderboard").setDescription("View a player l
     .addSubcommand(s=>s.setName("unsubscribe").setDescription("Opt out of major LOZ update DMs"))
     .addSubcommand(s=>s.setName("status").setDescription("Check your update DM preference"))
      .addSubcommand(s=>s.setName("reward").setDescription("Owner-only: reward registered LOZ 6.0 users")),
-  new SlashCommandBuilder().setName("broadcast").setDescription("Send the LOZ update announcement to subscribers").setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-  new SlashCommandBuilder().setName("broadtest").setDescription("Preview the LOZ update announcement by DM").setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-  new SlashCommandBuilder().setName("servers").setDescription("List LOZ servers with invite links").setDefaultMemberPermissions(0n),
+  new SlashCommandBuilder().setName("broadcast").setDescription("Send the LOZ update announcement to subscribers"),
+  new SlashCommandBuilder().setName("broadtest").setDescription("Preview the LOZ update announcement by DM"),
+  new SlashCommandBuilder().setName("servers").setDescription("List LOZ servers with invite links"),
   new SlashCommandBuilder().setName("view").setDescription("View restricted LOZ information")
-    .addSubcommand(s=>s.setName("subscribers").setDescription("View the number of active update subscribers"))
-    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
+    .addSubcommand(s=>s.setName("subscribers").setDescription("View the number of active update subscribers")),
   new SlashCommandBuilder().setName("gift").setDescription("Gift species rolls to another player")
     .addUserOption(o=>o.setName("user").setDescription("Player to gift rolls to").setRequired(true))
     .addIntegerOption(o=>o.setName("amount").setDescription("Number of rolls to gift (maximum 5)").setRequired(true).setMinValue(1).setMaxValue(5)),
