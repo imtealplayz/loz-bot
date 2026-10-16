@@ -550,3 +550,32 @@ test("Human remains playable but is excluded from Species Achievements", () => {
   assert.ok(achievementRoster.some((entry) => entry.category === "Rarity" && entry.name !== "Human"), "normal species achievements should remain available");
   assert.ok(achievementRoster.some((entry) => entry.name === "True Dragon"), "secret and awakening species achievements should remain available");
 });
+
+test("legacy Archdemon unlocks survive rerolls and remain switchable", () => {
+  const { isArchdemonUnlocked, preserveLegacyArchdemonUnlock } = require("../commands.js");
+  const legacyOwnerGrant = {
+    species: constants.archdemonSpecies,
+    originalSpecies: constants.archdemonSpecies,
+    awakening: { demon: { playerWins: 25, demonBotWins: 20, awakened: false } },
+  };
+
+  assert.equal(isArchdemonUnlocked(legacyOwnerGrant), true,
+    "a profile currently using or originally granted Archdemon remains eligible");
+  assert.equal(preserveLegacyArchdemonUnlock(legacyOwnerGrant), true);
+  assert.equal(legacyOwnerGrant.awakening.demon.awakened, true,
+    "the legacy ownership evidence is upgraded to the permanent unlock flag");
+
+  legacyOwnerGrant.species = constants.humanSpecies;
+  legacyOwnerGrant.originalSpecies = constants.humanSpecies;
+  assert.equal(isArchdemonUnlocked(legacyOwnerGrant), true,
+    "the permanent flag survives replacing originalSpecies during a reroll");
+
+  const unrelatedPlayer = {
+    species: constants.humanSpecies,
+    originalSpecies: constants.humanSpecies,
+    awakening: { demon: { playerWins: 10, demonBotWins: 2, awakened: false } },
+  };
+  assert.equal(preserveLegacyArchdemonUnlock(unrelatedPlayer), false);
+  assert.equal(unrelatedPlayer.awakening.demon.awakened, false,
+    "players without Archdemon ownership are not granted the unlock");
+});
