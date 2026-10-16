@@ -153,6 +153,27 @@ function buildStyledCardPayload(title, color, sections = [], ephemeral = false) 
   };
 }
 
+function isArchdemonUnlocked(userData) {
+  return userData?.awakening?.demon?.awakened === true
+    || userData?.originalSpecies?.name === "Archdemon"
+    || userData?.species?.name === "Archdemon";
+}
+
+// Older God-granted Archdemon records could rely on species/originalSpecies
+// instead of awakening.demon.awakened. Preserve that proof before a reroll
+// replaces originalSpecies with the newly rolled species.
+function preserveLegacyArchdemonUnlock(userData) {
+  if (!userData || (userData.species?.name !== "Archdemon" && userData.originalSpecies?.name !== "Archdemon")) {
+    return false;
+  }
+  userData.awakening = { ...(userData.awakening || {}) };
+  userData.awakening.demon = {
+    ...(userData.awakening.demon || {}),
+    awakened: true,
+  };
+  return true;
+}
+
 function buildSpeciesSwitchPayload(userData, requestedPage=0, userId=null) {
   const current=userData.species || humanSpecies;
   const canUseChaosCreator = userId===_state?.ownerId
@@ -162,7 +183,7 @@ function buildSpeciesSwitchPayload(userData, requestedPage=0, userId=null) {
   const specialForms=[
     ...(canUseChaosCreator ? [{id:"switch_chaos_creator",name:"Chaos Creator",emoji:"🌀",unlocked:true,style:ButtonStyle.Danger}] : []),
     {id:"switch_reaper",name:"Reaper",emoji:"🌑",unlocked:userData.questSpecies?.reaper?.unlocked===true,style:ButtonStyle.Primary},
-    {id:"switch_archdemon",name:"Archdemon",emoji:"👿",unlocked:userData.awakening?.demon?.awakened===true,style:ButtonStyle.Danger},
+    {id:"switch_archdemon",name:"Archdemon",emoji:"👿",unlocked:isArchdemonUnlocked(userData),style:ButtonStyle.Danger},
     {id:"switch_mechangel",name:"Mechangel",emoji:"⚡🤖",unlocked:userData.awakening?.cyborg?.awakened===true,style:ButtonStyle.Primary},
     {id:"switch_slime_lord",name:"Slime Lord",emoji:"🫧",unlocked:userData.questSpecies?.slimeLord?.unlocked===true,style:ButtonStyle.Success},
     {id:"switch_eclipsed_sovereign",name:"Eclipsed Sovereign",emoji:"🌘",unlocked:userData.awakening?.halfBlood?.awakened===true,style:ButtonStyle.Primary},
@@ -2271,6 +2292,7 @@ async function handleButton(interaction) {
     const rollResult=getRandomSpecies();
     const newSpecies=rollResult.isDragon?getDragonSubtype():rollResult;
      void achievementSystem.recordRollUsed(user.id);
+    preserveLegacyArchdemonUnlock(userData);
     userData.species=newSpecies;
     userData.originalSpecies=newSpecies;
     userData.rolls=(userData.rolls||0)-1;
@@ -2297,7 +2319,7 @@ async function handleButton(interaction) {
       newSp=chaosCreatorSpecies;
     }
     else if (customId==="switch_reaper") { if(!ud.questSpecies?.reaper?.unlocked && ud.originalSpecies?.name!=="Reaper") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Reaper has not been unlocked for your account."}])); newSp=reaperSpecies; }
-    else if (customId==="switch_archdemon") { if(ud.awakening?.demon?.awakened!==true && ud.originalSpecies?.name!=="Archdemon") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Complete the Demon awakening before equipping Archdemon."}])); newSp=archdemonSpecies; }
+    else if (customId==="switch_archdemon") { if(!isArchdemonUnlocked(ud)) return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Complete the Demon awakening before equipping Archdemon."}])); newSp=archdemonSpecies; }
     else if (customId==="switch_slime_lord") { if(ud.questSpecies?.slimeLord?.unlocked!==true && ud.originalSpecies?.name!=="Slime Lord") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Defeat the rare Slime Lord boss or ask God to permanently unlock this species."}])); newSp=getSpeciesByName("Slime Lord"); }
     else if (customId==="switch_eclipsed_sovereign") { if(ud.awakening?.halfBlood?.awakened!==true && ud.originalSpecies?.name!=="Eclipsed Sovereign") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Complete the Half-Blood awakening or ask God to permanently unlock this species."}])); newSp=getSpeciesByName("Eclipsed Sovereign"); }
     else if (customId==="switch_true_dragon") { if(ud.awakening?.trueDragon?.unlocked!==true && ud.awakening?.trueDragon?.awakened!==true && ud.originalSpecies?.name!=="True Dragon") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Awaken Fire, Thunder, Ice, and Earth Dragons independently to unlock True Dragon."}])); newSp=trueDragonSpecies; }
@@ -2912,4 +2934,4 @@ new SlashCommandBuilder().setName("leaderboard").setDescription("View a player l
     .addSubcommand(s=>s.setName("repair-user-db").setDescription("Archive and repair duplicate player records")),
 ].map(c=>c.toJSON());
 
-module.exports = { setState, setClient, setRegisteredCommandIds, getCurrentDeveloperAlert, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForDeveloperAlert, commands };
+module.exports = { setState, setClient, setRegisteredCommandIds, getCurrentDeveloperAlert, isArchdemonUnlocked, preserveLegacyArchdemonUnlock, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForDeveloperAlert, commands };
