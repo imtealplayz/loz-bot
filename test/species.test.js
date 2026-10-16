@@ -579,3 +579,14 @@ test("legacy Archdemon unlocks survive rerolls and remain switchable", () => {
   assert.equal(unrelatedPlayer.awakening.demon.awakened, false,
     "players without Archdemon ownership are not granted the unlock");
 });
+
+test("startup developer alert explains lost-species recovery with a plain official-server URL", () => {
+  const commandsSource = fs.readFileSync(path.join(__dirname, "..", "commands.js"), "utf8");
+  const indexSource = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
+  assert.match(commandsSource, /Lost a Species After an Update\?/);
+  assert.match(commandsSource, /keep any proof you have/i);
+  assert.match(commandsSource, /confirmed lost species can be restored/i);
+  assert.match(commandsSource, /Official server: " \+ SUPPORT_SERVER_INVITE/);
+  assert.doesNotMatch(commandsSource, /LOZ Official Server\]\(https:\/\/discord\.gg\/TKBYpjqnPC\)/);
+  assert.match(indexSource, /DEVELOPER_ALERT_STARTUP_CYCLE = "loz-species-recovery-2026-10-17"/);
+});
