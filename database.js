@@ -62,14 +62,9 @@ const userSchema = new mongoose.Schema({
   badges:          { type:Array,  default:[] },
 }, { minimize:false });
 
-// Explicit opt-in for major-update DMs; separate collection avoids modifying player records.
+// Persistent records for LOZ 6.0 event registration and registration rewards.
 const notificationPreferenceSchema = new mongoose.Schema({
   userId:        { type:String, required:true, unique:true },
-  broadcastOptIn:  { type:Boolean, default:false },
-  promptedOnce:    { type:Boolean, default:false },
-  promptSuppressed:{ type:Boolean, default:false },
-  promptCount:     { type:Number, default:0 },
-  lastPromptedAt:  { type:Date, default:null },
   loz60EventResponse: { type:String, enum:["registered","not_interested"], default:null },
   loz60EventRespondedAt: { type:Date, default:null },
   loz60EventRegisteredAt: { type:Date, default:null },
@@ -156,6 +151,13 @@ const accessBanSchema = new mongoose.Schema({
 // ==================== MODELS ====================
 const User             = mongoose.model("User",             userSchema);
 const NotificationPreference = mongoose.model("NotificationPreference", notificationPreferenceSchema);
+const developerAlertStateSchema = new mongoose.Schema({
+  userId: { type:String, required:true, unique:true },
+  viewedAlertId: { type:String, default:null },
+  lastPromptedAt: { type:Date, default:null },
+  updatedAt: { type:Date, default:Date.now },
+}, { minimize:false });
+const DeveloperAlertState = mongoose.model("DeveloperAlertState", developerAlertStateSchema);
 const Leaderboard      = mongoose.model("Leaderboard",      leaderboardSchema);
 const FightStats       = mongoose.model("FightStats",       fightStatsSchema);
 const BotStats         = mongoose.model("BotStats",         botStatsSchema);
@@ -324,129 +326,68 @@ async function saveUserSpeciesFields(userId, species, originalSpecies) {
   return await upsertUser(userId, { species, originalSpecies });
 }
 
-// Users receive major-update DMs only after explicitly opting in.
-async function setBroadcastOptIn(userId, enabled) {
+async function claimDeveloperAlertPrompt(userId, alertId) {
   try {
-    if (!await connect()) return false;
-    const changes = { userId, broadcastOptIn:Boolean(enabled), updatedAt:new Date() };
-    // Once a user subscribes, do not show them future subscription prompts,
-    // even if they later opt out through /updates unsubscribe.
-    if (enabled) changes.promptSuppressed = true;
-    await NotificationPreference.findOneAndUpdate(
-      { userId },
-      { $set:changes },
-      { upsert:true, new:true, runValidators:true }
-    );
-    return true;
-  } catch(e) {
-    console.error("❌ Broadcast preference save error:", e.message);
-    return false;
-  }
-}
-
-async function getBroadcastOptIn(userId) {
-  try {
-    if (!await connect()) return null;
-    const preference = await NotificationPreference.findOne({ userId }).select({ broadcastOptIn:1 }).lean();
-    return Boolean(preference?.broadcastOptIn);
-  } catch(e) {
-    console.error("❌ Broadcast preference read error:", e.message);
-    return null;
-  }
-}
-
-
-async function claimUpdateSubscriptionPrompt(userId, randomValue = Math.random()) {
-  try {
-    if (!await connect()) return false;
+    if (!userId || !alertId || !await connect()) return false;
     const now = new Date();
-    const preference = await NotificationPreference.findOne({ userId }).lean();
+    const cutoff = now.getTime() - 24 * 60 * 60 * 1000;
+    const record = await DeveloperAlertState.findOne({ userId }).lean();
 
-    if (preference?.broadcastOptIn || preference?.promptSuppressed) return false;
+    if (record?.viewedAlertId === alertId) return false;
+    if (record?.lastPromptedAt && new Date(record.lastPromptedAt).getTime() > cutoff) return false;
 
-    if (!preference) {
+    if (!record) {
       try {
-        await NotificationPreference.create({
+        await DeveloperAlertState.create({
           userId,
-          broadcastOptIn:false,
-          promptedOnce:true,
-          promptSuppressed:false,
-          promptCount:1,
+          viewedAlertId:null,
           lastPromptedAt:now,
           updatedAt:now,
         });
         return true;
-      } catch(e) {
-        // Another command may have won the first-prompt race.
-        if (e?.code === 11000) return false;
-        throw e;
+      } catch (error) {
+        // Another command may have claimed the first reminder at the same time.
+        if (error?.code === 11000) return false;
+        throw error;
       }
     }
 
-    if (!preference.promptedOnce) {
-      const result = await NotificationPreference.updateOne(
-        {
-          userId,
-          broadcastOptIn:{ $ne:true },
-          promptSuppressed:{ $ne:true },
-          promptedOnce:{ $ne:true },
-        },
-        { $set:{ promptedOnce:true, lastPromptedAt:now, updatedAt:now }, $inc:{ promptCount:1 } }
-      );
-      return result.modifiedCount > 0;
-    }
-
-    // Avoid pestering a user with multiple prompts in one day.
-    const lastPrompt = preference.lastPromptedAt ? new Date(preference.lastPromptedAt).getTime() : 0;
-    if (lastPrompt && now.getTime() - lastPrompt < 24 * 60 * 60 * 1000) return false;
-    if (randomValue >= 0.12) return false;
-
-    const result = await NotificationPreference.updateOne(
+    const result = await DeveloperAlertState.updateOne(
       {
         userId,
-        broadcastOptIn:{ $ne:true },
-        promptSuppressed:{ $ne:true },
-        promptedOnce:true,
-        lastPromptedAt:preference.lastPromptedAt ?? null,
+        viewedAlertId:{ $ne:alertId },
+        lastPromptedAt:record.lastPromptedAt ?? null,
       },
-      { $set:{ lastPromptedAt:now, updatedAt:now }, $inc:{ promptCount:1 } }
+      { $set:{ lastPromptedAt:now, updatedAt:now } }
     );
     return result.modifiedCount > 0;
-  } catch(e) {
-    console.error("❌ Update subscription prompt check error:", e.message);
+  } catch (error) {
+    console.error("Developer alert reminder check error:", error.message);
     return false;
   }
 }
 
-async function dismissUpdateSubscriptionPrompt(userId) {
+async function markDeveloperAlertViewed(userId, alertId) {
   try {
-    if (!await connect()) return false;
-    const result = await NotificationPreference.updateOne(
-      { userId, broadcastOptIn:{ $ne:true }, promptSuppressed:{ $ne:true } },
-      { $set:{ promptedOnce:true, lastPromptedAt:new Date(), updatedAt:new Date() } }
+    if (!userId || !alertId || !await connect()) return false;
+    await DeveloperAlertState.findOneAndUpdate(
+      { userId },
+      {
+        $set:{
+          userId,
+          viewedAlertId:String(alertId),
+          updatedAt:new Date(),
+        },
+      },
+      { upsert:true, new:true, setDefaultsOnInsert:true }
     );
-    return result.matchedCount > 0;
-  } catch(e) {
-    console.error("❌ Update subscription prompt dismissal error:", e.message);
+    return true;
+  } catch (error) {
+    console.error("Developer alert viewed-state save error:", error.message);
     return false;
   }
 }
 
-async function getBroadcastSubscribers() {
-  try {
-    if (!await connect()) return null;
-    const userIds = await NotificationPreference.distinct("userId", { broadcastOptIn:true });
-    return userIds.filter(userId => typeof userId === "string" && /^\d{17,20}$/.test(userId));
-  } catch(e) {
-    console.error("❌ Broadcast subscriber lookup error:", e.message);
-    return null;
-  }
-}
-
-
-// Save LOZ 6.0 event responses separately from player progression.
-// Registered users can receive launch rewards later; users who decline are
-// not DM-prompted repeatedly if /broadcast is run again.
 async function recordLoz60EventResponse(userId, interested) {
   try {
     if (!await connect()) return null;
@@ -1521,9 +1462,8 @@ module.exports = {
   saveQuestProgress, saveQuestBoard, loadAllQuestBoards, awardTopggVote, claimQuestReward, saveDuelChannel,
   loadAllData, loadAllQuestProgress, loadDuelChannel,
   listAllKeys, deleteUser,
-  setBroadcastOptIn, getBroadcastOptIn, getBroadcastSubscribers,
+  claimDeveloperAlertPrompt, markDeveloperAlertViewed,
   recordLoz60EventResponse, getLoz60EventRegisteredUserIds, getLoz60EventRespondedUserIds,
-  claimUpdateSubscriptionPrompt, dismissUpdateSubscriptionPrompt,
   awardGuildInviteReward,
   getLeaderboardBadgeSnapshot, saveLeaderboardBadgeSnapshot,
   getAchievementProfile, saveAchievementProfile, getGloryLeaderboardTop,
