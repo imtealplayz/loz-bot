@@ -561,7 +561,11 @@ function buildDeveloperAlertPayload(ephemeral = true) {
   ));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "## 🧪 Build Your Own Species\nJoin the [LOZ Official Server](https://discord.gg/TKBYpjqnPC) to submit your own species. The submission loved most by the community will be added to LOZ, and its creator will receive that species permanently."
+    "## 🛟 Lost a Species After an Update?\nIf LOZ no longer lets you switch to a species you previously owned or unlocked, keep any proof you have, such as screenshots, clips, older profile screenshots, or messages showing the species. Join the official server and contact the LOZ team. We will review genuine cases, and confirmed lost species can be restored.\n\nOfficial server: " + SUPPORT_SERVER_INVITE
+  ));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    "## 🧪 Build Your Own Species\nJoin the official server to submit your own species. The submission loved most by the community will be added to LOZ, and its creator will receive that species permanently.\n\nOfficial server: " + SUPPORT_SERVER_INVITE
   ));
   return {
     components:[container],
@@ -574,7 +578,7 @@ function buildDeveloperAlertReminderPayload() {
   const alert = getCurrentDeveloperAlert();
   const container = new ContainerBuilder().setAccentColor(0x0891b2);
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "## 🔔 A Message from the LOZ Developers\nA developer alert is available for **LOZ v" + alert.version + "**.\n\nRun " + commandMention("alert") + " to read it."
+    "## 🔔 A Message from the LOZ Developers\nA developer alert is available for **LOZ v" + alert.version + "**.\n\n## 🛟 Lost a Species After an Update?\nIf a species you previously owned or unlocked suddenly appears locked or is missing, keep any proof you have, such as screenshots, clips, older profile screenshots, or messages showing the species. Join the official server and contact the LOZ team so we can review it. Confirmed lost species can be restored.\n\nOfficial server: " + SUPPORT_SERVER_INVITE + "\n\nRun " + commandMention("alert") + " to read the full developer alert."
   ));
   return {
     components:[container],
