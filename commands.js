@@ -155,8 +155,25 @@ function buildStyledCardPayload(title, color, sections = [], ephemeral = false) 
 
 function isArchdemonUnlocked(userData) {
   return userData?.awakening?.demon?.awakened === true
+    || userData?.questSpecies?.archdemon?.unlocked === true
     || userData?.originalSpecies?.name === "Archdemon"
     || userData?.species?.name === "Archdemon";
+}
+
+function markArchdemonUnlocked(userData) {
+  if (!userData || typeof userData !== "object") return false;
+  userData.awakening = { ...(userData.awakening || {}) };
+  userData.awakening.demon = {
+    ...(userData.awakening.demon || {}),
+    awakened:true,
+  };
+  userData.questSpecies = { ...(userData.questSpecies || {}) };
+  userData.questSpecies.archdemon = {
+    ...(userData.questSpecies.archdemon || {}),
+    unlocked:true,
+    godGranted:true,
+  };
+  return true;
 }
 
 // Older God-granted Archdemon records could rely on species/originalSpecies
@@ -166,11 +183,7 @@ function preserveLegacyArchdemonUnlock(userData) {
   if (!userData || (userData.species?.name !== "Archdemon" && userData.originalSpecies?.name !== "Archdemon")) {
     return false;
   }
-  userData.awakening = { ...(userData.awakening || {}) };
-  userData.awakening.demon = {
-    ...(userData.awakening.demon || {}),
-    awakened: true,
-  };
+  markArchdemonUnlocked(userData);
   return true;
 }
 
@@ -1887,6 +1900,7 @@ async function handleCommand(interaction) {
         return safeReply(interaction,{embeds:[createErrorEmbed("Only the primary LOZ owner can grant Chaos Creator.")],flags:64});
       }
       let unlockLabel="";
+      let requiresVerifiedArchdemonGrant=false;
       if (speciesName==="Chaos Creator") {
         ud.questSpecies.chaosCreator={...(ud.questSpecies.chaosCreator||{}),unlocked:true,equipped:false,godGranted:true};
         unlockLabel="Chaos Creator";
@@ -1894,7 +1908,8 @@ async function handleCommand(interaction) {
         ud.questSpecies.reaper={...(ud.questSpecies.reaper||{}),unlocked:true,equipped:false,godGranted:true};
         unlockLabel="Reaper";
       } else if (speciesName==="Archdemon") {
-        ud.awakening.demon={...(ud.awakening.demon||{}),awakened:true};
+        markArchdemonUnlocked(ud);
+        requiresVerifiedArchdemonGrant=true;
         unlockLabel="Archdemon";
       } else if (speciesName==="Mechangel") {
         ud.awakening.cyborg={...(ud.awakening.cyborg||{}),awakened:true};
@@ -1911,8 +1926,12 @@ async function handleCommand(interaction) {
       } else {
         return safeReply(interaction,{embeds:[createErrorEmbed("That exclusive species cannot be unlocked with this command.")],flags:64});
       }
-      const saved=await database.saveUserSpecies(target.id,ud);
-      if (!saved) return safeReply(interaction,{embeds:[createErrorEmbed("MongoDB could not confirm this permanent unlock. No success is being reported; check the player's record before retrying.")],flags:64});
+      const saved=requiresVerifiedArchdemonGrant
+        ? await database.grantArchdemonUnlock(target.id)
+        : await database.saveUserSpecies(target.id,ud);
+      if (requiresVerifiedArchdemonGrant ? saved?.ok!==true : !saved) {
+        return safeReply(interaction,{embeds:[createErrorEmbed("MongoDB could not verify this permanent unlock. No success is being reported; check the player's record before retrying.")],flags:64});
+      }
       _state.userSpecies.set(target.id,ud);
       return safeReply(interaction,{embeds:[createSuccessEmbed("Permanently unlocked " + unlockLabel + " for <@" + target.id + "> without quest or awakening requirements. Use /switch to equip it.")],flags:64});
     }
@@ -1961,7 +1980,7 @@ async function handleCommand(interaction) {
       ud.awakening={...(ud.awakening||{})};
       // God-given exclusive forms must also set their permanent unlock flags so /switch can equip them later.
       if (spname==="Reaper") ud.questSpecies.reaper={...(ud.questSpecies.reaper||{}),unlocked:true,equipped:false,godGranted:true};
-      else if (spname==="Archdemon") ud.awakening.demon={...(ud.awakening.demon||{}),awakened:true};
+      else if (spname==="Archdemon") markArchdemonUnlocked(ud);
       else if (spname==="Mechangel") ud.awakening.cyborg={...(ud.awakening.cyborg||{}),awakened:true};
       else if (spname==="Slime Lord") ud.questSpecies.slimeLord={...(ud.questSpecies.slimeLord||{}),unlocked:true,equipped:false,godGranted:true};
       else if (spname==="Eclipsed Sovereign") ud.awakening.halfBlood={...(ud.awakening.halfBlood||{}),awakened:true};
@@ -2323,7 +2342,26 @@ async function handleButton(interaction) {
       newSp=chaosCreatorSpecies;
     }
     else if (customId==="switch_reaper") { if(!ud.questSpecies?.reaper?.unlocked && ud.originalSpecies?.name!=="Reaper") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Reaper has not been unlocked for your account."}])); newSp=reaperSpecies; }
-    else if (customId==="switch_archdemon") { if(!isArchdemonUnlocked(ud)) return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Complete the Demon awakening before equipping Archdemon."}])); newSp=archdemonSpecies; }
+    else if (customId==="switch_archdemon") {
+      if (!isArchdemonUnlocked(ud)) {
+        // The command may have granted Archdemon in MongoDB while the live cache
+        // is stale. Check the persisted record before telling the player it is locked.
+        const savedUnlock = await database.getArchdemonUnlockState(user.id);
+        if (!savedUnlock?.ok) {
+          return interaction.update(buildStyledCardPayload("Unlock Verification Failed",0xffa500,[{body:"LOZ could not verify your saved Archdemon unlock right now. Please try again in a moment."}]));
+        }
+        if (!savedUnlock.unlocked) {
+          return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Archdemon has not been permanently unlocked for your account."}]));
+        }
+        markArchdemonUnlocked(ud);
+        const repairedUnlock = await database.grantArchdemonUnlock(user.id);
+        if (!repairedUnlock?.ok) {
+          return interaction.update(buildStyledCardPayload("Unlock Save Failed",0xff0000,[{body:"LOZ found evidence of your Archdemon unlock but could not verify the permanent save. Please contact the owner."}]));
+        }
+        _state.userSpecies.set(user.id,ud);
+      }
+      newSp=archdemonSpecies;
+    }
     else if (customId==="switch_slime_lord") { if(ud.questSpecies?.slimeLord?.unlocked!==true && ud.originalSpecies?.name!=="Slime Lord") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Defeat the rare Slime Lord boss or ask God to permanently unlock this species."}])); newSp=getSpeciesByName("Slime Lord"); }
     else if (customId==="switch_eclipsed_sovereign") { if(ud.awakening?.halfBlood?.awakened!==true && ud.originalSpecies?.name!=="Eclipsed Sovereign") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Complete the Half-Blood awakening or ask God to permanently unlock this species."}])); newSp=getSpeciesByName("Eclipsed Sovereign"); }
     else if (customId==="switch_true_dragon") { if(ud.awakening?.trueDragon?.unlocked!==true && ud.awakening?.trueDragon?.awakened!==true && ud.originalSpecies?.name!=="True Dragon") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Awaken Fire, Thunder, Ice, and Earth Dragons independently to unlock True Dragon."}])); newSp=trueDragonSpecies; }
@@ -2938,4 +2976,4 @@ new SlashCommandBuilder().setName("leaderboard").setDescription("View a player l
     .addSubcommand(s=>s.setName("repair-user-db").setDescription("Archive and repair duplicate player records")),
 ].map(c=>c.toJSON());
 
-module.exports = { setState, setClient, setRegisteredCommandIds, getCurrentDeveloperAlert, isArchdemonUnlocked, preserveLegacyArchdemonUnlock, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForDeveloperAlert, commands };
+module.exports = { setState, setClient, setRegisteredCommandIds, getCurrentDeveloperAlert, isArchdemonUnlocked, markArchdemonUnlocked, preserveLegacyArchdemonUnlock, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForDeveloperAlert, commands };
