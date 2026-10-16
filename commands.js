@@ -565,12 +565,15 @@ function buildDeveloperAlertReminderPayload() {
 async function maybePromptForDeveloperAlert(interaction) {
   if (!interaction?.user?.id || (!interaction.replied && !interaction.deferred) || interaction.commandName === "alert") return false;
   const alert = getCurrentDeveloperAlert();
-  const shouldPrompt = await database.claimDeveloperAlertPrompt(interaction.user.id, alert.id);
-  if (!shouldPrompt) return false;
+  const claim = await database.claimDeveloperAlertPrompt(interaction.user.id, alert.id);
+  if (!claim) return false;
   try {
     await interaction.followUp(buildDeveloperAlertReminderPayload());
+    const delivered = await database.markDeveloperAlertPromptDelivered(interaction.user.id, claim.claimedAt);
+    if (!delivered) console.warn("[Developer Alert] Reminder was sent, but its delivery timestamp could not be saved for " + interaction.user.id);
     return true;
   } catch(e) {
+    await database.releaseDeveloperAlertPromptClaim(interaction.user.id, alert.id, claim);
     console.error("Developer alert reminder delivery failed:", e?.message || String(e));
     return false;
   }
@@ -2909,4 +2912,4 @@ new SlashCommandBuilder().setName("leaderboard").setDescription("View a player l
     .addSubcommand(s=>s.setName("repair-user-db").setDescription("Archive and repair duplicate player records")),
 ].map(c=>c.toJSON());
 
-module.exports = { setState, setClient, setRegisteredCommandIds, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForDeveloperAlert, commands };
+module.exports = { setState, setClient, setRegisteredCommandIds, getCurrentDeveloperAlert, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForDeveloperAlert, commands };

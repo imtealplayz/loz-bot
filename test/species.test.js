@@ -334,6 +334,29 @@ test("6.1 patch notes describe safe progression and the community species event"
 });
 
 
+test("restart alert is queued once for saved players and starts cooldown after delivery", () => {
+  const commandsSource = fs.readFileSync(path.join(__dirname, "..", "commands.js"), "utf8");
+  const indexSource = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
+  const databaseSource = fs.readFileSync(path.join(__dirname, "..", "database.js"), "utf8");
+
+  assert.ok(indexSource.includes("DEVELOPER_ALERT_STARTUP_CYCLE"));
+  assert.ok(indexSource.includes("database.queueDeveloperAlertPrompts("));
+  assert.ok(indexSource.includes("[...state.userSpecies.keys()]"),
+    "all saved LOZ player IDs should be included in the one-time startup queue");
+  assert.ok(databaseSource.includes("queuedStartupCycleId"),
+    "the startup cycle must be persisted so a crash restart does not re-queue everyone");
+  assert.ok(databaseSource.includes("pendingPromptAlertId"),
+    "each player gets the alert on their next command after startup");
+  assert.ok(commandsSource.includes("database.markDeveloperAlertPromptDelivered"),
+    "the 24-hour clock is refreshed after the private reminder is delivered");
+  assert.ok(commandsSource.includes("database.releaseDeveloperAlertPromptClaim"),
+    "a failed reminder must release its claimed cooldown");
+  assert.ok(databaseSource.includes("async function markDeveloperAlertViewed"),
+    "the explicit /alert command still marks the alert as viewed");
+  assert.ok(!indexSource.includes("client.users.fetch"),
+    "startup alert delivery must not DM users without an interaction");
+});
+
 test("legacy update subscriptions are removed while developer alerts remain", () => {
   const commandsSource = fs.readFileSync(path.join(__dirname, "..", "commands.js"), "utf8");
   const indexSource = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");

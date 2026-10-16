@@ -155,6 +155,8 @@ const developerAlertStateSchema = new mongoose.Schema({
   userId: { type:String, required:true, unique:true },
   viewedAlertId: { type:String, default:null },
   lastPromptedAt: { type:Date, default:null },
+  pendingPromptAlertId: { type:String, default:null },
+  queuedStartupCycleId: { type:String, default:null },
   updatedAt: { type:Date, default:Date.now },
 }, { minimize:false });
 const DeveloperAlertState = mongoose.model("DeveloperAlertState", developerAlertStateSchema);
@@ -326,15 +328,72 @@ async function saveUserSpeciesFields(userId, species, originalSpecies) {
   return await upsertUser(userId, { species, originalSpecies });
 }
 
+async function queueDeveloperAlertPrompts(userIds, alertId, cycleId) {
+  try {
+    if (!alertId || !cycleId || !await connect()) return { ok:false, queued:0 };
+    const ids = [...new Set((Array.isArray(userIds) ? userIds : [])
+      .map(id => String(id || ""))
+      .filter(id => /^\\d{17,20}$/.test(id)))];
+    if (!ids.length) return { ok:true, queued:0, alreadyQueued:0 };
+
+    const existing = await DeveloperAlertState.find({ userId:{ $in:ids } })
+      .select({ userId:1, queuedStartupCycleId:1 }).lean();
+    const existingById = new Map(existing.map(record => [record.userId, record]));
+    const toUpdate = existing
+      .filter(record => record.queuedStartupCycleId !== cycleId)
+      .map(record => record.userId);
+    const toInsert = ids.filter(id => !existingById.has(id));
+    let queued = 0;
+
+    if (toUpdate.length) {
+      const result = await DeveloperAlertState.updateMany(
+        { userId:{ $in:toUpdate }, queuedStartupCycleId:{ $ne:cycleId } },
+        { $set:{
+          pendingPromptAlertId:String(alertId),
+          queuedStartupCycleId:String(cycleId),
+          updatedAt:new Date(),
+        } }
+      );
+      queued += Number(result.modifiedCount || 0);
+    }
+
+    if (toInsert.length) {
+      try {
+        const created = await DeveloperAlertState.insertMany(toInsert.map(userId => ({
+          userId,
+          viewedAlertId:null,
+          lastPromptedAt:null,
+          pendingPromptAlertId:String(alertId),
+          queuedStartupCycleId:String(cycleId),
+          updatedAt:new Date(),
+        })), { ordered:false });
+        queued += created.length;
+      } catch (error) {
+        queued += Array.isArray(error?.insertedDocs) ? error.insertedDocs.length : 0;
+        if (error?.code !== 11000 && !error?.writeErrors?.every(entry => entry?.code === 11000)) {
+          console.error("Developer alert startup queue insert error:", error.message);
+          return { ok:false, queued };
+        }
+      }
+    }
+
+    return { ok:true, queued, alreadyQueued:Math.max(0, ids.length - queued) };
+  } catch (error) {
+    console.error("Developer alert startup queue error:", error.message);
+    return { ok:false, queued:0 };
+  }
+}
+
 async function claimDeveloperAlertPrompt(userId, alertId) {
   try {
     if (!userId || !alertId || !await connect()) return false;
     const now = new Date();
     const cutoff = now.getTime() - 24 * 60 * 60 * 1000;
     const record = await DeveloperAlertState.findOne({ userId }).lean();
+    const forced = record?.pendingPromptAlertId === alertId;
 
-    if (record?.viewedAlertId === alertId) return false;
-    if (record?.lastPromptedAt && new Date(record.lastPromptedAt).getTime() > cutoff) return false;
+    if (!forced && record?.viewedAlertId === alertId) return false;
+    if (!forced && record?.lastPromptedAt && new Date(record.lastPromptedAt).getTime() > cutoff) return false;
 
     if (!record) {
       try {
@@ -344,25 +403,79 @@ async function claimDeveloperAlertPrompt(userId, alertId) {
           lastPromptedAt:now,
           updatedAt:now,
         });
-        return true;
+        return {
+          claimed:true,
+          forced:false,
+          claimedAt:now,
+          previousLastPromptedAt:null,
+          previousViewedAlertId:null,
+        };
       } catch (error) {
-        // Another command may have claimed the first reminder at the same time.
         if (error?.code === 11000) return false;
         throw error;
       }
     }
 
+    const filter = {
+      userId,
+      lastPromptedAt:record.lastPromptedAt ?? null,
+    };
+    if (forced) filter.pendingPromptAlertId = String(alertId);
+    else filter.viewedAlertId = { $ne:String(alertId) };
+
+    const update = {
+      $set:{ lastPromptedAt:now, updatedAt:now },
+    };
+    if (forced) update.$unset = { pendingPromptAlertId:"", viewedAlertId:"" };
+
+    const result = await DeveloperAlertState.updateOne(filter, update);
+    if (result.modifiedCount <= 0) return false;
+    return {
+      claimed:true,
+      forced,
+      claimedAt:now,
+      previousLastPromptedAt:record.lastPromptedAt ?? null,
+      previousViewedAlertId:record.viewedAlertId ?? null,
+    };
+  } catch (error) {
+    console.error("Developer alert reminder check error:", error.message);
+    return false;
+  }
+}
+
+async function markDeveloperAlertPromptDelivered(userId, claimedAt) {
+  try {
+    if (!userId || !claimedAt || !await connect()) return false;
+    const deliveredAt = new Date();
     const result = await DeveloperAlertState.updateOne(
-      {
-        userId,
-        viewedAlertId:{ $ne:alertId },
-        lastPromptedAt:record.lastPromptedAt ?? null,
-      },
-      { $set:{ lastPromptedAt:now, updatedAt:now } }
+      { userId, lastPromptedAt:claimedAt },
+      { $set:{ lastPromptedAt:deliveredAt, updatedAt:deliveredAt } }
     );
     return result.modifiedCount > 0;
   } catch (error) {
-    console.error("Developer alert reminder check error:", error.message);
+    console.error("Developer alert delivery timestamp error:", error.message);
+    return false;
+  }
+}
+
+async function releaseDeveloperAlertPromptClaim(userId, alertId, claim) {
+  try {
+    if (!userId || !claim?.claimedAt || !await connect()) return false;
+    const update = { $set:{ updatedAt:new Date() } };
+    if (claim.previousLastPromptedAt) update.$set.lastPromptedAt = claim.previousLastPromptedAt;
+    else update.$unset = Object.assign({}, update.$unset, { lastPromptedAt:"" });
+    if (claim.forced) {
+      update.$set.pendingPromptAlertId = String(alertId);
+      if (claim.previousViewedAlertId) update.$set.viewedAlertId = claim.previousViewedAlertId;
+      else update.$unset = Object.assign({}, update.$unset, { viewedAlertId:"" });
+    }
+    const result = await DeveloperAlertState.updateOne(
+      { userId, lastPromptedAt:claim.claimedAt },
+      update
+    );
+    return result.modifiedCount > 0;
+  } catch (error) {
+    console.error("Developer alert prompt rollback error:", error.message);
     return false;
   }
 }
@@ -378,6 +491,7 @@ async function markDeveloperAlertViewed(userId, alertId) {
           viewedAlertId:String(alertId),
           updatedAt:new Date(),
         },
+        $unset:{ pendingPromptAlertId:"" },
       },
       { upsert:true, new:true, setDefaultsOnInsert:true }
     );
@@ -1462,7 +1576,8 @@ module.exports = {
   saveQuestProgress, saveQuestBoard, loadAllQuestBoards, awardTopggVote, claimQuestReward, saveDuelChannel,
   loadAllData, loadAllQuestProgress, loadDuelChannel,
   listAllKeys, deleteUser,
-  claimDeveloperAlertPrompt, markDeveloperAlertViewed,
+  queueDeveloperAlertPrompts, claimDeveloperAlertPrompt, markDeveloperAlertPromptDelivered,
+  releaseDeveloperAlertPromptClaim, markDeveloperAlertViewed,
   recordLoz60EventResponse, getLoz60EventRegisteredUserIds, getLoz60EventRespondedUserIds,
   awardGuildInviteReward,
   getLeaderboardBadgeSnapshot, saveLeaderboardBadgeSnapshot,

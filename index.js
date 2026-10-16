@@ -8,7 +8,7 @@ const database = require("./database.js"); // MongoDB
 const state    = require("./state.js");
 const { setState: setHelperState } = require("./helpers.js");
 const { setState: setFightState }   = require("./fights.js");
-const { setState: setCommandState, setClient, setRegisteredCommandIds, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForDeveloperAlert, commands } = require("./commands.js");
+const { setState: setCommandState, setClient, setRegisteredCommandIds, getCurrentDeveloperAlert, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForDeveloperAlert, commands } = require("./commands.js");
 const questSystem = require("./quest-system.js");
 const chaosSystem = require("./chaos.js");
 const leaderboardBadgeSystem = require("./leaderboard-badges.js");
@@ -20,6 +20,8 @@ const secondGodId = "1445387368830992455";
 const TOKEN = (process.env.TOKEN || process.env.DISCORD_TOKEN || "").trim();
 
 const SUPPORT_SERVER_INVITE = "https://discord.gg/TKBYpjqnPC";
+// Bump only when intentionally queuing a one-time startup alert for a new release event.
+const DEVELOPER_ALERT_STARTUP_CYCLE = "loz-v6.1-restart-2026-10-16";
 
 function buildAccessNoticePayload({ unavailable=false, ephemeral=false }={}) {
   const card=new ContainerBuilder().setAccentColor(unavailable ? 0xe0a020 : 0xdc2626);
@@ -380,6 +382,21 @@ client.once("clientReady", async () => {
     return;
   }
   questSystem.startScheduler();
+
+  // Queue the one-time startup alert for known LOZ players. It appears privately on
+  // each player's next command, because Discord ephemeral messages require an interaction.
+  const startupAlert = getCurrentDeveloperAlert();
+  const startupQueue = await database.queueDeveloperAlertPrompts(
+    [...state.userSpecies.keys()],
+    startupAlert.id,
+    DEVELOPER_ALERT_STARTUP_CYCLE,
+  );
+  if (startupQueue?.ok) {
+    console.log("[Developer Alert] Queued startup alert for " + startupQueue.queued
+      + " players; " + startupQueue.alreadyQueued + " were already queued for this cycle.");
+  } else {
+    console.warn("[Developer Alert] Startup queue could not be fully saved; regular per-command alerts remain enabled.");
+  }
 
   // Only allow state-changing interactions after persistent data is fully loaded.
   databaseReady = true;
