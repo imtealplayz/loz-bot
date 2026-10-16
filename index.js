@@ -337,7 +337,14 @@ async function registerCommands() {
     console.log(`🔄 Registering ${commands.length} global slash commands...`);
     console.log("🔎 Local /owner subcommands:", (localOwner?.options ?? []).map(option => option.name).join(", ") || "(none)");
 
-    const registered = await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+    // LOZ is a guild RPG. Prevent bot-token channel-posting commands from being invoked
+    // through a user-installed app context where the LOZ bot account may not have access.
+    const globalCommandPayload = commands.map(command => ({
+      ...command.toJSON(),
+      integration_types: [0], // GUILD_INSTALL
+      contexts: [0], // GUILD
+    }));
+    const registered = await rest.put(Routes.applicationCommands(client.user.id), { body: globalCommandPayload });
     setRegisteredCommandIds(registered);
     const remoteOwner = registered.find(command => command.name === "owner");
     const remoteSubcommands = (remoteOwner?.options ?? []).map(option => option.name);
