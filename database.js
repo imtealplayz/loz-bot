@@ -215,6 +215,63 @@ async function saveUserSpecies(userId, data) {
   return await upsertUser(userId, data);
 }
 
+
+// Owner-granted Archdemon is a permanent species unlock, independent of the
+// player's Demon quest progress or whichever species is currently equipped.
+async function grantArchdemonUnlock(userId) {
+  try {
+    if (userRepairPromise) await userRepairPromise;
+    if (!await connect()) return { ok:false, error:"database" };
+
+    await User.updateMany(
+      { userId:String(userId), archivedForRepair:{ $ne:true } },
+      { $set:{
+        userId:String(userId),
+        archivedForRepair:false,
+        "awakening.demon.awakened":true,
+        "questSpecies.archdemon.unlocked":true,
+        "questSpecies.archdemon.godGranted":true,
+      } },
+      { upsert:true }
+    );
+
+    const records = await User.find({ userId:String(userId), archivedForRepair:{ $ne:true } })
+      .select({ awakening:1, questSpecies:1 }).lean();
+    const verified = records.some(record =>
+      record.awakening?.demon?.awakened === true
+      && record.questSpecies?.archdemon?.unlocked === true
+      && record.questSpecies?.archdemon?.godGranted === true
+    );
+    return verified ? { ok:true, unlocked:true } : { ok:false, error:"verification" };
+  } catch(error) {
+    console.error("❌ Archdemon permanent-unlock write failed:", error.message);
+    return { ok:false, error:"database" };
+  }
+}
+
+// Read the saved unlock independently of the runtime cache. Any active copy
+// that proves a legitimate unlock is sufficient; the caller can repair the
+// permanent markers without replacing unrelated player data.
+async function getArchdemonUnlockState(userId) {
+  try {
+    if (userRepairPromise) await userRepairPromise;
+    if (!await connect()) return { ok:false, found:false, unlocked:false };
+    const records = await User.find({ userId:String(userId), archivedForRepair:{ $ne:true } })
+      .select({ species:1, originalSpecies:1, awakening:1, questSpecies:1 }).lean();
+    if (!records.length) return { ok:true, found:false, unlocked:false };
+    const unlocked = records.some(record =>
+      record.awakening?.demon?.awakened === true
+      || record.questSpecies?.archdemon?.unlocked === true
+      || record.species?.name === "Archdemon"
+      || record.originalSpecies?.name === "Archdemon"
+    );
+    return { ok:true, found:true, unlocked };
+  } catch(error) {
+    console.error("❌ Archdemon unlock read failed:", error.message);
+    return { ok:false, found:false, unlocked:false };
+  }
+}
+
 // Update only the intended fields so a partial/stale in-memory user object
 // cannot overwrite unrelated persisted player data.
 async function saveUserRolls(userId, rolls) {
@@ -1570,7 +1627,7 @@ async function markLoz60RewardDmSent(userId) {
 
 // ==================== EXPORTS ====================
 module.exports = {
-  saveUserSpecies, saveUserRolls, saveUserSpeciesFields, addSpeciesTokens, redeemSpeciesToken, awardGuideCompletionRoll, repairUserRecords,
+  saveUserSpecies, grantArchdemonUnlock, getArchdemonUnlockState, saveUserRolls, saveUserSpeciesFields, addSpeciesTokens, redeemSpeciesToken, awardGuideCompletionRoll, repairUserRecords,
   saveLeaderboard, saveFightLeaderboard,
   saveFightStats, saveBotStats, saveDailyClaim,
   saveQuestProgress, saveQuestBoard, loadAllQuestBoards, awardTopggVote, claimQuestReward, saveDuelChannel,
