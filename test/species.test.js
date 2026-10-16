@@ -205,12 +205,17 @@ test("True Dragon is present in owner unlock, owner species-change flow, and /sw
   assert.ok(source.includes('else if (spname==="True Dragon")'));
 });
 
-test("player ultimates feed Glory counters in PvP and bot fights", () => {
+test("player ultimates are buffered until a fight resolves, then update Glory counters", () => {
   const source = fs.readFileSync(path.join(__dirname, "..", "commands.js"), "utf8");
-  assert.ok(source.includes("achievementSystem.recordUltimate(user.id,fight.playerSpecies)"),
-    "player ultimate in bot fights must update the achievement profile");
-  assert.ok(source.includes("achievementSystem.recordUltimate(player.id,player.species)"),
-    "player ultimate in PvP must update the achievement profile");
+  const progressSource = fs.readFileSync(path.join(__dirname, "..", "fight-progress.js"), "utf8");
+  assert.ok(source.includes('addFightProgress(fight,user.id,"ults",1)'),
+    "bot-fight ultimate uses should be buffered until the outcome is known");
+  assert.ok(source.includes('addFightProgress(fight,player.id,"ults",1)'),
+    "PvP ultimate uses should be buffered until the outcome is known");
+  assert.ok(progressSource.includes("achievementSystem.recordUltimate(userId,species,ults)"),
+    "resolved ultimate uses must still update the achievement profile");
+  assert.ok(!source.includes("achievementSystem.recordUltimate(user.id,fight.playerSpecies)"));
+  assert.ok(!source.includes("achievementSystem.recordUltimate(player.id,player.species)"));
 });
 
 
@@ -299,40 +304,47 @@ test("Glory leaderboard never creates or assigns Discord roles and cleans up leg
   assert.ok(!source.includes("Rank-specific roles go to the Top 10"));
 });
 
-test("6.0 broadcast includes the Halloween announcement without owner-command details", () => {
-  const source = fs.readFileSync(path.join(__dirname, "..", "commands.js"), "utf8");
-  const start = source.indexOf("function buildLoz60AnnouncementPayload()");
-  assert.notEqual(start, -1);
-  const end = source.indexOf("\n}\n", start);
-  const broadcastPayload = source.slice(start, end + 2);
-  assert.match(broadcastPayload, /Halloween update drops next week/i);
-  assert.match(broadcastPayload, /tricks or treats/i);
-  assert.ok(!broadcastPayload.includes("/owner"));
-  assert.ok(!broadcastPayload.includes("/updates reward"));
-  assert.ok(!broadcastPayload.includes("/broadcast"));
-  const note = constants.patchNotes.find((entry) => entry.version === "6.0");
-  assert.ok(note, "6.0 patch notes should exist");
-  const noteText = JSON.stringify(note.changes).toLowerCase();
-  assert.ok(!noteText.includes("/owner"));
-  assert.ok(!noteText.includes("/updates reward"));
-  assert.ok(!noteText.includes("/broadcast"));
-  assert.ok(!noteText.includes("owner command"));
+test("6.1 patch notes describe safe progression and the community species event", () => {
+  const latest = constants.patchNotes[0];
+  assert.equal(latest.version, "6.1");
+  const latestText = latest.changes.join("\n").toLowerCase();
+  assert.ok(latestText.includes("forfeited pvp fights"));
+  assert.ok(latestText.includes("damage dealt"));
+  assert.ok(latestText.includes("build your own species"));
+  assert.ok(latestText.includes("/owner species-unlock"));
+  assert.ok(constants.patchNotes.some((entry) => entry.version === "6.0"),
+    "older 6.0 patch notes must remain available");
+
+  const commandsSource = fs.readFileSync(path.join(__dirname, "..", "commands.js"), "utf8");
+  const indexSource = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
+  const fightsSource = fs.readFileSync(path.join(__dirname, "..", "fights.js"), "utf8");
+  const achievementsSource = fs.readFileSync(path.join(__dirname, "..", "achievements.js"), "utf8");
+  assert.ok(commandsSource.includes("Build Your Own Species"));
+  assert.ok(commandsSource.includes('id:"switch_chaos_creator"'));
+  assert.ok(commandsSource.includes('customId==="switch_chaos_creator"'));
+  assert.ok(commandsSource.includes('{name:"Chaos Creator 🌀",value:"Chaos Creator"}'));
+  assert.ok(commandsSource.includes("**Quick Access:**"));
+  assert.ok(indexSource.includes("setRegisteredCommandIds(registered)"));
+  assert.ok(!commandsSource.includes("at most once every 24 hours"));
+  assert.ok(fightsSource.includes('if (reason!=="forfeit")'));
+  assert.ok(fightsSource.includes("commitFightProgress(fight,fight.player1Id"));
+  for (const key of ["battles","wins","damage","pvp-battles","bot-battles","ultimates"]) {
+    assert.ok(achievementsSource.includes('key:"' + key + '"'), "missing species trial: " + key);
+  }
 });
 
 
-test("LOZ 6.0 registration prompt is never automatically posted after a slash command", () => {
+test("legacy update subscriptions are removed while developer alerts remain", () => {
   const commandsSource = fs.readFileSync(path.join(__dirname, "..", "commands.js"), "utf8");
   const indexSource = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
-  assert.ok(!commandsSource.includes("function maybePromptForLoz60Event"),
-    "the dedicated per-user automatic event prompt must be removed");
-  assert.ok(!commandsSource.includes("function buildLoz60EventPayload"),
-    "the automatic registration-card builder must be removed");
-  assert.ok(!indexSource.includes("maybePromptForLoz60Event"),
-    "the interaction handler must not trigger the registration prompt");
-  assert.ok(!commandsSource.includes('setLabel("Register for LOZ 6.0")'),
-    "no new event registration prompt should be constructed");
-  assert.ok(indexSource.includes("await maybePromptForUpdates(interaction)"),
-    "the separate optional major-update subscription prompt remains intact");
+  assert.ok(!commandsSource.includes("maybePromptForUpdates"));
+  assert.ok(!indexSource.includes("maybePromptForUpdates"));
+  assert.ok(indexSource.includes("maybePromptForDeveloperAlert"),
+    "the private developer alert flow must remain connected");
+  assert.ok(commandsSource.includes("setRegisteredCommandIds"),
+    "clickable slash-command mentions should use IDs from Discord registration");
+  assert.ok(!commandsSource.includes("at most once every 24 hours"),
+    "the reminder must not announce a 24-hour recurrence");
 });
 
 test("legacy Glory Discord roles are deleted and the leaderboard never assigns roles again", async () => {
