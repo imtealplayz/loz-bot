@@ -2,6 +2,7 @@ const { botPersonalities, humanSpecies, slimeLordSpecies } = require("./constant
 const database = require("./database.js");
 const questSystem = require("./quest-system.js");
 const achievementSystem = require("./achievements.js");
+const { commitFightProgress } = require("./fight-progress.js");
 const chaosSystem = require("./chaos.js");
 const {
   updateFightStats, updateBotStats,
@@ -152,23 +153,28 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
   chaosSystem.cancelChaosReaction(fight);
   const winner=fight.player1Id===winnerId?fight.player1:fight.player2;
   const loser =fight.player1Id===loserId ?fight.player1:fight.player2;
-  await Promise.all([
-    achievementSystem.recordBattle(fight.player1Id,fight.player1.species,{won:winnerId===fight.player1Id,mode:"pvp"}),
-    achievementSystem.recordBattle(fight.player2Id,fight.player2.species,{won:winnerId===fight.player2Id,mode:"pvp"}),
-  ]);
-  // Rotating quest progress is independent from existing leaderboard/awakening progress.
-  await Promise.all([
-    questSystem.trackProgress(fight.player1Id,"battles",1),
-    questSystem.trackProgress(fight.player2Id,"battles",1),
-  ]);
-  if (reason!=="timeout" && reason!=="disintegration" && reason!=="judge")
-    await questSystem.trackProgress(winnerId,"playerWins",1);
-  if (winner.species.name==="Cyborg") await updateCyborgProgress(winnerId,"win");
-  // The new Half-Blood quest counts completed fights regardless of who won.
-  if (fight.player1.species.name==="Half-Blood")
-    await updateHalfBloodProgress(fight.player1Id,"fight",1,fight.player1.species.name);
-  if (fight.player2.species.name==="Half-Blood")
-    await updateHalfBloodProgress(fight.player2Id,"fight",1,fight.player2.species.name);
+  // Forfeits still resolve ordinary W/L records and rewards, but never grant progression.
+  if (reason!=="forfeit") {
+    await Promise.all([
+      achievementSystem.recordBattle(fight.player1Id,fight.player1.species,{won:winnerId===fight.player1Id,mode:"pvp"}),
+      achievementSystem.recordBattle(fight.player2Id,fight.player2.species,{won:winnerId===fight.player2Id,mode:"pvp"}),
+    ]);
+    await Promise.all([
+      questSystem.trackProgress(fight.player1Id,"battles",1),
+      questSystem.trackProgress(fight.player2Id,"battles",1),
+    ]);
+    if (reason!=="timeout" && reason!=="disintegration" && reason!=="judge")
+      await questSystem.trackProgress(winnerId,"playerWins",1);
+    if (winner.species.name==="Cyborg") await updateCyborgProgress(winnerId,"win");
+    if (fight.player1.species.name==="Half-Blood")
+      await updateHalfBloodProgress(fight.player1Id,"fight",1,fight.player1.species.name);
+    if (fight.player2.species.name==="Half-Blood")
+      await updateHalfBloodProgress(fight.player2Id,"fight",1,fight.player2.species.name);
+    await Promise.all([
+      commitFightProgress(fight,fight.player1Id,fight.player1.species),
+      commitFightProgress(fight,fight.player2Id,fight.player2.species),
+    ]);
+  }
   let winPoints=1, rollEarned=false, doubleWin=false;
   if (reason!=="disintegration"&&reason!=="judge") {
     if (Math.random()<0.05) { winPoints=2; doubleWin=true; }
@@ -177,9 +183,11 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
   // FIX: only update fightLeaderboard via updateFightStats, not bomb tag leaderboard
   updateFightStats(winnerId,true,loserId,{opponentName:loser.species.name,opponentSpecies:loser.species,hpLeft:winner.currentHp,special:reason==="forfeit"?"😵 forfeit":reason==="counter"?"💥 counter":reason==="chaos-disintegrate"?"🌀 Disintegrate":reason==="divine-intervention"?"💀 Divine intervention":"",doubleWin,rollEarned,leaderboardPoints:winPoints});
   updateFightStats(loserId,false,winnerId,{opponentName:winner.species.name,opponentSpecies:winner.species,hpLeft:loser.currentHp,special:reason==="forfeit"?"😵 forfeited":"",doubleWin:false,rollEarned:false});
-  updateReaperQuest(winnerId,"player");
-  if (reason!=="disintegration" && reason!=="judge" && winner.species.name==="Demon")
-    await updateDemonAwakeningProgress(winnerId,"playerWin");
+  if (reason!=="forfeit") {
+    updateReaperQuest(winnerId,"player");
+    if (reason!=="disintegration" && reason!=="judge" && winner.species.name==="Demon")
+      await updateDemonAwakeningProgress(winnerId,"playerWin");
+  }
   _state.fightCooldowns.set(winnerId,Date.now()+30000);
   _state.fightCooldowns.set(loserId,Date.now()+30000);
   let desc = "**" + winner.species.name + "**: " + formatFightHealth(Math.max(0, winner.currentHp), winner.maxHp) + "\n";
@@ -535,6 +543,10 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
   // Count every completed Half-Blood bot fight, including losses and Slime Lord boss attempts.
   if (fight.playerSpecies?.name==="Half-Blood")
     await updateHalfBloodProgress(fight.playerId,"fight",1,fight.playerSpecies.name);
+  if (winner==="player" && fight.playerSpecies?.name==="Cyborg")
+    await updateCyborgProgress(fight.playerId,"win");
+  // Bot fights cannot be forfeited; commit in-fight progress once the result is final.
+  await commitFightProgress(fight,fight.playerId,fight.playerSpecies);
   // Count completed battles before the Slime Lord boss early-return as well.
   await questSystem.trackProgress(fight.playerId,"battles",1);
   await achievementSystem.recordBattle(fight.playerId,fight.playerSpecies,{won:winner==="player",mode:"bot",boss:Boolean(fight.isSlimeBoss)});
@@ -548,7 +560,6 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
   }
   let winsEarned=0, rollEarned=false;
   if (winner==="player") {
-    if (fight.playerSpecies.name==="Cyborg") await updateCyborgProgress(fight.playerId,"win");
     if (reason!=="timeout" && fight.playerSpecies.name==="Demon" && fight.botSpecies.name==="Demon")
       await updateDemonAwakeningProgress(fight.playerId,"demonBotWin");
     switch(difficulty) {

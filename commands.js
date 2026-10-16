@@ -26,11 +26,25 @@ const chaosSystem = require("./chaos.js");
 const { startFight, endFight, doBotTurn, endBotFight } = require("./fights.js");
 const questSystem = require("./quest-system.js");
 const achievementSystem = require("./achievements.js");
+const { addFightProgress } = require("./fight-progress.js");
 
 let _state = null;
 let _client = null;
+const registeredCommandIds = new Map();
 function setState(s) { _state = s; }
 function setClient(c) { _client = c; }
+function setRegisteredCommandIds(registered = []) {
+  registeredCommandIds.clear();
+  for (const command of (Array.isArray(registered) ? registered : [])) {
+    if (command?.name && command?.id) registeredCommandIds.set(command.name, String(command.id));
+  }
+}
+function commandMention(name) {
+  const rawName=String(name||"").trim();
+  const commandName=(rawName.startsWith("/")?rawName.slice(1):rawName).split(" ")[0];
+  const id=registeredCommandIds.get(commandName);
+  return id ? "</"+commandName+":"+id+">" : String.fromCharCode(96)+"/"+commandName+String.fromCharCode(96);
+}
 
 const SUPPORT_SERVER_INVITE = "https://discord.gg/TKBYpjqnPC";
 
@@ -139,9 +153,14 @@ function buildStyledCardPayload(title, color, sections = [], ephemeral = false) 
   };
 }
 
-function buildSpeciesSwitchPayload(userData, requestedPage=0) {
+function buildSpeciesSwitchPayload(userData, requestedPage=0, userId=null) {
   const current=userData.species || humanSpecies;
+  const canUseChaosCreator = userId===_state?.ownerId
+    || userData.questSpecies?.chaosCreator?.unlocked===true
+    || userData.originalSpecies?.name==="Chaos Creator"
+    || userData.species?.name==="Chaos Creator";
   const specialForms=[
+    ...(canUseChaosCreator ? [{id:"switch_chaos_creator",name:"Chaos Creator",emoji:"🌀",unlocked:true,style:ButtonStyle.Danger}] : []),
     {id:"switch_reaper",name:"Reaper",emoji:"🌑",unlocked:userData.questSpecies?.reaper?.unlocked===true,style:ButtonStyle.Primary},
     {id:"switch_archdemon",name:"Archdemon",emoji:"👿",unlocked:userData.awakening?.demon?.awakened===true,style:ButtonStyle.Danger},
     {id:"switch_mechangel",name:"Mechangel",emoji:"⚡🤖",unlocked:userData.awakening?.cyborg?.awakened===true,style:ButtonStyle.Primary},
@@ -340,7 +359,7 @@ const HELP_PAGES = [
     title:"Developer Alerts & Support",
     intro:"Read the current developer alert and get help with LOZ.",
     commands:[
-      {usage:"/alert",name:"Read the developer alert",description:"View the latest message from the LOZ developers. LOZ privately reminds you at most once per day until you read it."},
+      {usage:"/alert",name:"Read the developer alert",description:"View the latest message from the LOZ developers. A private reminder appears until you read it."},
       {usage:"/patchnotes",name:"Read patch notes",description:"View the latest LOZ changes and fixes."},
       {usage:"/help",name:"Open this command guide",description:"Browse the command directory one category at a time."},
     ],
@@ -364,10 +383,16 @@ function buildHelpPayload(pageIndex) {
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
     "## LOZ Command Directory\n### " + page.title + " · Page " + (safePage + 1) + "/" + HELP_PAGES.length + "\n" + page.intro
   ));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    "**Quick Access:** " + ["help","alert","patchnotes","quests","achievements","awakening","switch"].map(commandMention).join(" · ")
+  ));
   for (const command of page.commands) {
     container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
     container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      "**\x60" + command.usage + "\x60 — " + command.name + "**\n• " + command.description
+      "**" + (String(command.usage || "").startsWith("/")
+        ? commandMention(String(command.usage).slice(1).split(/[ :]/)[0]) + String(command.usage).slice(String(command.usage).slice(1).split(/[ :]/)[0].length + 1)
+        : "\x60" + command.usage + "\x60") + " — " + command.name + "**\n• " + command.description
     ));
   }
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
@@ -510,7 +535,12 @@ function buildDeveloperAlertPayload(ephemeral = true) {
   ));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "Read the complete release history with /patchnotes.\n[LOZ Website](https://lozbot.vercel.app/)"
+    "Quick commands: " + ["help","patchnotes","quests","achievements","awakening","switch"].map(commandMention).join(" · ")
+      + "\n[LOZ Website](https://lozbot.vercel.app/)"
+  ));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    "## 🧪 Build Your Own Species\nJoin the [LOZ Official Server](https://discord.gg/TKBYpjqnPC) to submit your own species. The submission loved most by the community will be added to LOZ, and its creator will receive that species permanently."
   ));
   return {
     components:[container],
@@ -523,7 +553,7 @@ function buildDeveloperAlertReminderPayload() {
   const alert = getCurrentDeveloperAlert();
   const container = new ContainerBuilder().setAccentColor(0x0891b2);
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "## 🔔 A Message from the LOZ Developers\nA new developer alert is available for **LOZ v" + alert.version + "**.\n\nRun **/alert** to read it.\n\nThis private reminder appears at most once every 24 hours until you view the alert."
+    "## 🔔 A Message from the LOZ Developers\nA developer alert is available for **LOZ v" + alert.version + "**.\n\nRun " + commandMention("alert") + " to read it."
   ));
   return {
     components:[container],
@@ -1468,7 +1498,7 @@ async function handleCommand(interaction) {
       const tl=threeH-(now-userData.lastSwitch), h=Math.floor(tl/3600000), m=Math.floor((tl%3600000)/60000);
       return interaction.editReply(buildStyledCardPayload("Switch Cooldown",0x808080,[{body:`You can switch species again in **${h}h ${m}m**.`}]));
     }
-    return interaction.editReply(buildSpeciesSwitchPayload(userData,0));
+    return interaction.editReply(buildSpeciesSwitchPayload(userData,0,user.id));
   }
 
   // ── HISTORY ───────────────────────────────────────────────────
@@ -1825,8 +1855,14 @@ async function handleCommand(interaction) {
       };
       // Work on a copy so a failed MongoDB write cannot leave a grant active in memory.
       const ud={...current,questSpecies:{...(current.questSpecies||{})},awakening:{...(current.awakening||{})}};
+      if (speciesName==="Chaos Creator" && user.id!==_state.ownerId) {
+        return safeReply(interaction,{embeds:[createErrorEmbed("Only the primary LOZ owner can grant Chaos Creator.")],flags:64});
+      }
       let unlockLabel="";
-      if (speciesName==="Reaper") {
+      if (speciesName==="Chaos Creator") {
+        ud.questSpecies.chaosCreator={...(ud.questSpecies.chaosCreator||{}),unlocked:true,equipped:false,godGranted:true};
+        unlockLabel="Chaos Creator";
+      } else if (speciesName==="Reaper") {
         ud.questSpecies.reaper={...(ud.questSpecies.reaper||{}),unlocked:true,equipped:false,godGranted:true};
         unlockLabel="Reaper";
       } else if (speciesName==="Archdemon") {
@@ -2031,7 +2067,7 @@ async function handleButton(interaction) {
     if (!ud || !ud.species)
       return interaction.update(buildStyledCardPayload("Species Data Unavailable",0xff0000,[{body:"No species data was found. Use /species-roll to begin."}]));
     const page=Number(customId.slice("switch_page_".length));
-    return interaction.update(buildSpeciesSwitchPayload(ud,Number.isInteger(page)?page:0));
+    return interaction.update(buildSpeciesSwitchPayload(ud,Number.isInteger(page)?page:0,user.id));
   }
 
   // ── LOZ 6.0 EVENT REGISTRATION ─────────────────────────────────
@@ -2242,7 +2278,7 @@ async function handleButton(interaction) {
   }
 
   // ── SWITCH ────────────────────────────────────────────────────
-  if (customId==="switch_original"||customId==="switch_reaper"||customId==="switch_archdemon"||customId==="switch_mechangel"||customId==="switch_slime_lord"||customId==="switch_eclipsed_sovereign"||customId==="switch_true_dragon") {
+  if (customId==="switch_original"||customId==="switch_chaos_creator"||customId==="switch_reaper"||customId==="switch_archdemon"||customId==="switch_mechangel"||customId==="switch_slime_lord"||customId==="switch_eclipsed_sovereign"||customId==="switch_true_dragon") {
     const ud=_state.userSpecies.get(user.id);
     if (!ud) return interaction.update(buildStyledCardPayload("Switch Failed",0xff0000,[{body:"No species data was found."}]));
     const now=Date.now(), th=3*60*60*1000;
@@ -2252,6 +2288,11 @@ async function handleButton(interaction) {
     }
     let newSp;
     if (customId==="switch_original") newSp=ud.originalSpecies;
+    else if (customId==="switch_chaos_creator") {
+      if (user.id!==_state.ownerId && ud.questSpecies?.chaosCreator?.unlocked!==true && ud.originalSpecies?.name!=="Chaos Creator" && ud.species?.name!=="Chaos Creator")
+        return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Chaos Creator has not been permanently unlocked for your account."}]));
+      newSp=chaosCreatorSpecies;
+    }
     else if (customId==="switch_reaper") { if(!ud.questSpecies?.reaper?.unlocked && ud.originalSpecies?.name!=="Reaper") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Reaper has not been unlocked for your account."}])); newSp=reaperSpecies; }
     else if (customId==="switch_archdemon") { if(ud.awakening?.demon?.awakened!==true && ud.originalSpecies?.name!=="Archdemon") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Complete the Demon awakening before equipping Archdemon."}])); newSp=archdemonSpecies; }
     else if (customId==="switch_slime_lord") { if(ud.questSpecies?.slimeLord?.unlocked!==true && ud.originalSpecies?.name!=="Slime Lord") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Defeat the rare Slime Lord boss or ask God to permanently unlock this species."}])); newSp=getSpeciesByName("Slime Lord"); }
@@ -2444,9 +2485,8 @@ async function handleButton(interaction) {
         }
         fight.playerUltBuff=playerC.ultBuff;
         fight.playerLastUltUsed=playerC.lastUltUsed;
-        // Record the activated ultimate for Glory milestones and the equipped species' mastery trial.
-        await achievementSystem.recordUltimate(user.id,fight.playerSpecies);
-        await questSystem.trackProgress(user.id,"ults",1);
+        // Hold progression until the fight resolves, so forfeits cannot farm quests or awakenings.
+        addFightProgress(fight,user.id,"ults",1);
         if (requiresChoice) {
           fight.playerUltBuff=playerC.ultBuff; fight.playerUltCooldown=playerC.species.ultCooldown;
           fight.botHp=botC.currentHp; fight.playerHp=playerC.currentHp; fight.log=log.slice(-3);
@@ -2455,15 +2495,14 @@ async function handleButton(interaction) {
           return;
         }
         fight.playerUltCooldown=playerC.species.ultCooldown;
-        if (playerC.species.name==="Cyborg") await updateCyborgProgress(fight.playerId,"ult");
-        if (playerC.species.name==="Half-Blood") await updateHalfBloodProgress(fight.playerId,"ult",1,playerC.species.name);
+        // Cyborg/Half-Blood ultimate stages are committed with the rest of the fight's progress.
         if (playerC.species.name==="Ogre") botC.stunnedTurns=1;
         fight.playerHp=Math.max(0,playerC.currentHp); fight.botHp=Math.max(0,botC.currentHp); fight.botUltBuff=botC.ultBuff;
         log.push(`✨ **YOU USE ULT!**\n${um}`);
       }
     } else if (action==="attack") {
       const result=calculateDamage(playerC,botC);
-      if (result.damage > 0) await questSystem.trackProgress(user.id,"damage",result.damage);
+      if (result.damage > 0) addFightProgress(fight,user.id,"damage",result.damage);
       playerC.currentHp=Math.max(0,Math.min(playerC.maxHp,playerC.currentHp+result.attackerMutations.hpDelta));
       if (result.instantKill) {
         botC.currentHp=0;
@@ -2615,9 +2654,8 @@ async function handleButton(interaction) {
         } else {
           ({message:um,requiresChoice,choiceType}=applyUltEffect(player,opponent));
         }
-        // Count an activated ultimate for Glory milestones and species mastery in both PvP and bot fights.
-        await achievementSystem.recordUltimate(player.id,player.species);
-        await questSystem.trackProgress(player.id,"ults",1);
+        // Hold ultimate progress until the fight resolves; forfeits grant no quest or awakening progress.
+        addFightProgress(fight,player.id,"ults",1);
         if (requiresChoice) {
           player.ultChoicePending=true;
           const msg=_state.fightMessages.get(fightId);
@@ -2633,8 +2671,7 @@ async function handleButton(interaction) {
           return;
         }
         player.ultCooldown=player.species.ultCooldown;
-        if (player.species.name==="Cyborg") await updateCyborgProgress(player.id,"ult");
-        if (player.species.name==="Half-Blood") await updateHalfBloodProgress(player.id,"ult",1,player.species.name);
+        // Cyborg/Half-Blood ultimate stages are committed with the rest of the fight's progress.
         if (player.species.name==="Ogre" && !chaosUltNullified) { opponent.stunnedTurns=1; log.push(`💥 **MASSIVE BLOW!** Opponent stunned! Extra turn!`); }
         log.push(`✨ <@${user.id}> uses ULT!\n${um}`);
         if (player.species.name==="Ogre" && !chaosUltNullified) fight.currentTurn=user.id;
@@ -2674,7 +2711,7 @@ async function handleButton(interaction) {
       } else {
         const targetHpBeforeAttack=opponent.currentHp;
         const result=calculateDamage(player,opponent);
-        if (result.damage > 0) await questSystem.trackProgress(player.id,"damage",result.damage);
+        if (result.damage > 0) addFightProgress(fight,player.id,"damage",result.damage);
         player.currentHp=Math.max(0,Math.min(player.maxHp,player.currentHp+result.attackerMutations.hpDelta));
         if (result.instantKill) {
           opponent.currentHp=0;
@@ -2857,7 +2894,7 @@ new SlashCommandBuilder().setName("leaderboard").setDescription("View a player l
     .addSubcommand(s=>s.setName("ban").setDescription("Ban a user from using LOZ without deleting their data").addUserOption(o=>o.setName("user").setDescription("User to ban").setRequired(true)).addStringOption(o=>o.setName("time").setDescription("Duration: 1s, 1m, 1h, 1d, 1w, or 1y; omit for permanent").setRequired(false).setMaxLength(16)))
     .addSubcommand(s=>s.setName("unban").setDescription("Restore a user's access to LOZ").addUserOption(o=>o.setName("user").setDescription("User to unban").setRequired(true)))
     .addSubcommand(s=>s.setName("clear-fight").setDescription("Clear stuck fight locks without awarding a result").addUserOption(o=>o.setName("user").setDescription("User whose stuck fight should be cleared").setRequired(true)))
-    .addSubcommand(s=>s.setName("species-unlock").setDescription("Permanently unlock an exclusive species for a user").addUserOption(o=>o.setName("user").setDescription("Target user, including yourself").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Exclusive species to unlock").setRequired(true).addChoices({name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"Slime Lord 🫧",value:"Slime Lord"},{name:"Eclipsed Sovereign 🌘",value:"Eclipsed Sovereign"},{name:"True Dragon 🐉",value:"True Dragon"})))
+    .addSubcommand(s=>s.setName("species-unlock").setDescription("Permanently unlock an exclusive species, including Chaos Creator (primary owner only)").addUserOption(o=>o.setName("user").setDescription("Target user, including yourself").setRequired(true)).addStringOption(o=>o.setName("species").setDescription("Exclusive species to unlock").setRequired(true).addChoices({name:"Reaper 🌑",value:"Reaper"},{name:"Archdemon 👿",value:"Archdemon"},{name:"Mechangel ⚡🤖",value:"Mechangel"},{name:"Slime Lord 🫧",value:"Slime Lord"},{name:"Eclipsed Sovereign 🌘",value:"Eclipsed Sovereign"},{name:"True Dragon 🐉",value:"True Dragon"},{name:"Chaos Creator 🌀",value:"Chaos Creator"})))
     .addSubcommandGroup(g=>g.setName("add").setDescription("Give items to a user")
       .addSubcommand(s=>s.setName("items").setDescription("Give inventory items to a user")
         .addUserOption(o=>o.setName("user").setDescription("User receiving the item").setRequired(true))
@@ -2872,4 +2909,4 @@ new SlashCommandBuilder().setName("leaderboard").setDescription("View a player l
     .addSubcommand(s=>s.setName("repair-user-db").setDescription("Archive and repair duplicate player records")),
 ].map(c=>c.toJSON());
 
-module.exports = { setState, setClient, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForDeveloperAlert, commands };
+module.exports = { setState, setClient, setRegisteredCommandIds, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForDeveloperAlert, commands };

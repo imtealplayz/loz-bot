@@ -232,7 +232,7 @@ function dragonKeyForName(name) {
   return DRAGON_KEYS.find(function(key){return name===key+" Dragon";})||null;
 }
 function getSpeciesCounters(profile,name) {
-  return profile.speciesCounters[name]||{battles:0,wins:0,losses:0,ults:0,pvpBattles:0,pvpWins:0,botBattles:0,botWins:0};
+  return profile.speciesCounters[name]||{battles:0,wins:0,losses:0,ults:0,pvpBattles:0,pvpWins:0,botBattles:0,botWins:0,damageDealt:0};
 }
 function makeSpeciesTrial(entry) {
   const name=entry.name;
@@ -244,6 +244,23 @@ function makeSpeciesTrial(entry) {
   else if(name.endsWith("Dragon")) {metric="wins";target=6;reward=3;title="Elemental Dominance";description="Win 6 battles using "+name+".";}
   else if(Number(entry.rarity)>0&&Number(entry.rarity)<=6) {metric="wins";target=8;reward=3;title="Rare Species Mastery";description="Win 8 battles using "+name+".";}
   return {id:"species:"+slug(name),metric:metric,target:target,reward:reward,title:title,description:description};
+}
+
+const EXTRA_SPECIES_TRIALS = [
+  {key:"battles",title:"Seasoned Fighter",metric:"battles",target:10,reward:2,description:name=>"Complete 10 battles as "+name+". Wins and losses count; forfeits do not."},
+  {key:"wins",title:"Victorious",metric:"wins",target:5,reward:2,description:name=>"Win 5 battles as "+name+"."},
+  {key:"damage",title:"Damage Dealer",metric:"damageDealt",target:1000,reward:3,description:name=>"Deal 1,000 damage while using "+name+"."},
+  {key:"pvp-battles",title:"Arena Specialist",metric:"pvpBattles",target:5,reward:2,description:name=>"Complete 5 player battles as "+name+". Forfeits do not count."},
+  {key:"bot-battles",title:"Rift Challenger",metric:"botBattles",target:5,reward:2,description:name=>"Complete 5 bot battles as "+name+"."},
+  {key:"ultimates",title:"Ultimate Adept",metric:"ults",target:5,reward:2,description:name=>"Activate 5 ultimates while using "+name+"."},
+];
+function getExtraSpeciesTrials(name) {
+  return EXTRA_SPECIES_TRIALS.map(function(task){
+    return Object.assign({},task,{
+      achievementId:"species-extra:"+slug(name)+":"+task.key,
+      description:task.description(name),
+    });
+  });
 }
 function hasAwakened(userData,name) {
   const def=AWAKENING_SPECIES[name];
@@ -297,6 +314,15 @@ function buildSpeciesTasks(userId,state,profile,speciesSlug) {
     claimed:trialClaimed,ready:!trialClaimed&&(Number(counters[trial.metric])||0)>=trial.target,
     customId:"ach:claim-species:"+userId+":"+slug(entry.name),
   });
+  for (const extra of getExtraSpeciesTrials(entry.name)) {
+    const value=Math.max(0,Number(counters[extra.metric])||0),claimed=profile.claimed[extra.achievementId]===true;
+    tasks.push({
+      kind:"species-extra",achievementId:extra.achievementId,speciesName:entry.name,
+      title:extra.title,description:extra.description,metric:extra.metric,value:value,
+      target:extra.target,reward:extra.reward,claimed:claimed,ready:!claimed&&value>=extra.target,
+      customId:"ach:claim-species-extra:"+userId+":"+slug(entry.name)+":"+extra.key,
+    });
+  }
   const dragonKey=dragonKeyForName(entry.name);
   if(dragonKey) {
     const key=dragonKey.toLowerCase(),claimed=profile.dragonClaims[key]||{};
@@ -393,7 +419,7 @@ async function recordBattle(userId,species,options) {
   options=options||{};
   if(!species||!species.name) return;
   const result=await mutateProfile(userId,function(profile){
-    const name=species.name,entry=profile.speciesCounters[name]||{battles:0,wins:0,losses:0,ults:0,pvpBattles:0,pvpWins:0,botBattles:0,botWins:0};
+    const name=species.name,entry=profile.speciesCounters[name]||{battles:0,wins:0,losses:0,ults:0,pvpBattles:0,pvpWins:0,botBattles:0,botWins:0,damageDealt:0};
     entry.battles=(Number(entry.battles)||0)+1;
     if(options.won) entry.wins=(Number(entry.wins)||0)+1; else entry.losses=(Number(entry.losses)||0)+1;
     if(options.mode==="pvp") {
@@ -411,15 +437,28 @@ async function recordBattle(userId,species,options) {
   });
   if(!result.ok) console.warn("[Achievements] Could not record battle for "+userId);
 }
-async function recordUltimate(userId,species) {
+async function recordUltimate(userId,species,amount=1) {
   if(!species||!species.name) return;
+  const increment=Math.max(0,Number(amount)||0);
+  if(!increment) return;
   const result=await mutateProfile(userId,function(profile){
-    profile.counters.ultimates=(Number(profile.counters.ultimates)||0)+1;
-    const entry=profile.speciesCounters[species.name]||{battles:0,wins:0,losses:0,ults:0,pvpBattles:0,pvpWins:0,botBattles:0,botWins:0};
-    entry.ults=(Number(entry.ults)||0)+1;
+    profile.counters.ultimates=(Number(profile.counters.ultimates)||0)+increment;
+    const entry=profile.speciesCounters[species.name]||{battles:0,wins:0,losses:0,ults:0,pvpBattles:0,pvpWins:0,botBattles:0,botWins:0,damageDealt:0};
+    entry.ults=(Number(entry.ults)||0)+increment;
     profile.speciesCounters[species.name]=entry;
   });
   if(!result.ok) console.warn("[Achievements] Could not record ultimate for "+userId);
+}
+async function recordDamage(userId,species,amount=1) {
+  if(!species||!species.name) return;
+  const increment=Math.max(0,Number(amount)||0);
+  if(!increment) return;
+  const result=await mutateProfile(userId,function(profile){
+    const entry=profile.speciesCounters[species.name]||{battles:0,wins:0,losses:0,ults:0,pvpBattles:0,pvpWins:0,botBattles:0,botWins:0,damageDealt:0};
+    entry.damageDealt=(Number(entry.damageDealt)||0)+increment;
+    profile.speciesCounters[species.name]=entry;
+  });
+  if(!result.ok) console.warn("[Achievements] Could not record damage for "+userId);
 }
 async function recordDailyClaim(userId) {
   const result=await mutateProfile(userId,function(profile){profile.counters.dailyClaims=(Number(profile.counters.dailyClaims)||0)+1;});
@@ -555,7 +594,7 @@ async function handleButton(interaction,state,client) {
       for(const task of visible) {
         if(!task.ready) continue;
         if(task.kind==="dragon-awakening") {specialTasks.push(task);continue;}
-        if(task.kind==="species") {
+        if(task.kind==="species"||task.kind==="species-extra") {
           const counters=getSpeciesCounters(profile,task.speciesName);
           if(profile.claimed[task.achievementId]===true||(Number(counters[task.metric])||0)<task.target) continue;
           profile.claimed[task.achievementId]=true;
@@ -596,6 +635,23 @@ async function handleButton(interaction,state,client) {
       if(rewards.length&&extraNotices.length) notice+="\n"+extraNotices.join("\n");
     }
     await interaction.update(await renderDetail(actor,state,speciesSlug,requestedPage,notice));
+    return true;
+  }
+  if(parts[1]==="claim-species-extra") {
+    const speciesSlug=parts[3],taskKey=parts[4],page=Number(parts[5])||0,entry=getEntry(speciesSlug);
+    if(!entry){await interaction.update(buildSpeciesListPage(actor,0,"That species could not be found."));return true;}
+    const task=getExtraSpeciesTrials(entry.name).find(function(item){return item.key===taskKey;});
+    if(!task){await interaction.update(await renderDetail(actor,state,speciesSlug,page,"That mastery task could not be found."));return true;}
+    const claim=await mutateProfile(actor,function(profile){
+      if(profile.claimed[task.achievementId]===true) return {abort:true};
+      const counters=profile.speciesCounters[entry.name]||{};
+      if((Number(counters[task.metric])||0)<task.target) return {abort:true};
+      profile.claimed[task.achievementId]=true;
+      profile.glory+=task.reward;
+      return {notice:"Claimed "+task.reward+" Glory for "+task.title+" ("+task.target+")."};
+    });
+    const notice=claim.ok&&claim.outcome&&!claim.outcome.abort?claim.outcome.notice:claim.ok?"Not ready or already claimed.":"Database save failed; no reward was confirmed.";
+    await interaction.update(await renderDetail(actor,state,speciesSlug,page,notice));
     return true;
   }
   if(parts[1]==="claim-species") {
@@ -737,6 +793,6 @@ async function startLeaderboardScheduler(client,state) {
   return true;
 }
 module.exports = {
-  open,handleButton,recordBattle,recordUltimate,recordDailyClaim,recordRollUsed,
-  buildLeaderboardPayload,formatLeaderboardRow,buildDragonAwakeningStatus,getDragonAwakeningStatus,startLeaderboardScheduler,getSpeciesRoster,removeLegacyGloryRoles,formatClaimSummary,makeClaimButton,
+  open,handleButton,recordBattle,recordUltimate,recordDamage,recordDailyClaim,recordRollUsed,
+  buildLeaderboardPayload,formatLeaderboardRow,buildDragonAwakeningStatus,getDragonAwakeningStatus,startLeaderboardScheduler,getSpeciesRoster,removeLegacyGloryRoles,formatClaimSummary,makeClaimButton,getExtraSpeciesTrials,
 };

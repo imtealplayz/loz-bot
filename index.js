@@ -8,7 +8,7 @@ const database = require("./database.js"); // MongoDB
 const state    = require("./state.js");
 const { setState: setHelperState } = require("./helpers.js");
 const { setState: setFightState }   = require("./fights.js");
-const { setState: setCommandState, setClient, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForDeveloperAlert, commands } = require("./commands.js");
+const { setState: setCommandState, setClient, setRegisteredCommandIds, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForDeveloperAlert, commands } = require("./commands.js");
 const questSystem = require("./quest-system.js");
 const chaosSystem = require("./chaos.js");
 const leaderboardBadgeSystem = require("./leaderboard-badges.js");
@@ -336,6 +336,7 @@ async function registerCommands() {
     console.log("🔎 Local /owner subcommands:", (localOwner?.options ?? []).map(option => option.name).join(", ") || "(none)");
 
     const registered = await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+    setRegisteredCommandIds(registered);
     const remoteOwner = registered.find(command => command.name === "owner");
     const remoteSubcommands = (remoteOwner?.options ?? []).map(option => option.name);
     console.log(`✅ Discord accepted ${registered.length} global slash commands.`);

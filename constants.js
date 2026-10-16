@@ -1,5 +1,16 @@
 const patchNotes = [
   {
+    version:"6.1", date:"2026-10-16",
+    changes:[
+      "Forfeited PvP fights no longer grant quest, awakening, Glory, or species-mastery progress; ordinary win/loss records remain intact.",
+      "Expanded species mastery with separate goals for completed battles, wins, damage dealt, PvP battles, bot battles, and activated ultimates.",
+      "Damage and ultimate progress is committed when a fight resolves, preventing forfeits from farming in-fight objectives.",
+      "Added clickable Discord command mentions to /alert and /help, and simplified the private alert reminder text.",
+      "Announced Build Your Own Species in the official LOZ server: the community-favorite submission will be added to LOZ and permanently granted to its creator.",
+      "Made Chaos Creator appear in /switch only for eligible accounts and added permanent grants through /owner species-unlock.",
+    ],
+  },
+  {
     version:"6.0", date:"2026-10-15",
     changes:[
       "Introduced Glory with claimable normal milestones and individual species mastery trials.",
