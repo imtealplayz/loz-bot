@@ -333,7 +333,7 @@ async function queueDeveloperAlertPrompts(userIds, alertId, cycleId) {
     if (!alertId || !cycleId || !await connect()) return { ok:false, queued:0 };
     const ids = [...new Set((Array.isArray(userIds) ? userIds : [])
       .map(id => String(id || ""))
-      .filter(id => /^\\d{17,20}$/.test(id)))];
+      .filter(id => id.length >= 17 && id.length <= 20 && /^[0-9]+$/.test(id)))];
     if (!ids.length) return { ok:true, queued:0, alreadyQueued:0 };
 
     const existing = await DeveloperAlertState.find({ userId:{ $in:ids } })
