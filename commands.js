@@ -1162,11 +1162,12 @@ async function handleCommand(interaction) {
 
   // ── DEVELOPER ALERT ───────────────────────────────────────────
   if (commandName === "alert") {
+    await interaction.deferReply({flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral});
     const alert = getCurrentDeveloperAlert();
     const saved = await database.markDeveloperAlertViewed(user.id, alert.id);
     if (!saved) console.warn("[Developer Alert] Alert displayed, but its viewed state could not be saved for " + user.id);
     const codeRecord = await database.getRedeemCode("UPDATE6.2");
-    return safeReply(interaction, buildDeveloperAlertPayload(true, codeRecord));
+    return interaction.editReply(buildDeveloperAlertPayload(true, codeRecord));
   }
 
   // ── PATCHNOTES ────────────────────────────────────────────────
