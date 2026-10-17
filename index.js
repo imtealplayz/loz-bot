@@ -337,12 +337,14 @@ async function registerCommands() {
     console.log(`🔄 Registering ${commands.length} global slash commands...`);
     console.log("🔎 Local /owner subcommands:", (localOwner?.options ?? []).map(option => option.name).join(", ") || "(none)");
 
-    // LOZ is a guild RPG. Prevent bot-token channel-posting commands from being invoked
-    // through a user-installed app context where the LOZ bot account may not have access.
+    // Keep LOZ installed to servers, while also allowing its commands in a DM
+    // with the LOZ bot account. User-installed/private-channel contexts stay disabled.
+    // Channel administration must remain server-only because it changes a guild channel.
+    const guildOnlyCommands = new Set(["disable-all", "enable-all"]);
     const globalCommandPayload = commands.map(command => ({
       ...(typeof command.toJSON === "function" ? command.toJSON() : command),
       integration_types: [0], // GUILD_INSTALL
-      contexts: [0], // GUILD
+      contexts: guildOnlyCommands.has(command.name) ? [0] : [0, 1], // GUILD + BOT_DM
     }));
     const registered = await rest.put(Routes.applicationCommands(client.user.id), { body: globalCommandPayload });
     setRegisteredCommandIds(registered);
