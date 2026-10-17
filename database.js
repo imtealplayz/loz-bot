@@ -1655,7 +1655,7 @@ async function createRedeemCode({ code, rewardType="rolls", amount=1, expiresMin
     const quantity = Math.floor(Number(amount));
     const duration = Math.floor(Number(expiresMinutes));
     const claims = Math.floor(Number(maxClaims));
-    if (!/^[A-Z0-9_-]{3,32}$/.test(normalized)) return { ok:false, status:"invalid-code" };
+    if (!/^[A-Z0-9._-]{3,32}$/.test(normalized)) return { ok:false, status:"invalid-code" };
     if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 1000000
       || !Number.isSafeInteger(duration) || duration < 1 || duration > 525600
       || !Number.isSafeInteger(claims) || claims < 1 || claims > 100000) {
@@ -1745,7 +1745,7 @@ async function redeemCode(userId, rawCode) {
     const uid = String(userId || "");
     const normalized = normalizeRedeemCode(rawCode);
     if (!/^\d{17,20}$/.test(uid)) return { ok:false, status:"invalid-user" };
-    if (!/^[A-Z0-9_-]{3,32}$/.test(normalized)) return { ok:false, status:"not-found" };
+    if (!/^[A-Z0-9._-]{3,32}$/.test(normalized)) return { ok:false, status:"not-found" };
 
     record = await RedemptionCode.findOne({ code:normalized }).lean();
     if (!record) return { ok:false, status:"not-found" };
