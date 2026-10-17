@@ -60,6 +60,7 @@ const userSchema = new mongoose.Schema({
   giftSent:        { type:Object, default:{ count:0, resetAt:0 } },
   giftReceived:    { type:Object, default:{ count:0, resetAt:0 } },
   badges:          { type:Array,  default:[] },
+  redeemedCodeIds:  { type:[String], default:[] },
 }, { minimize:false });
 
 // Persistent records for LOZ 6.0 event registration and registration rewards.
@@ -148,6 +149,19 @@ const accessBanSchema = new mongoose.Schema({
   expiredAt:  { type:Date, default:null },
 }, { minimize:false });
 
+const redemptionCodeSchema = new mongoose.Schema({
+  code:              { type:String, required:true, unique:true, uppercase:true, trim:true },
+  rewardType:        { type:String, enum:["rolls","tokens"], required:true },
+  amount:            { type:Number, required:true, min:1 },
+  createdBy:         { type:String, required:true },
+  createdAt:         { type:Date, default:Date.now },
+  expiresAt:         { type:Date, required:true },
+  maxClaims:         { type:Number, required:true, min:1, default:1 },
+  claimedCount:      { type:Number, default:0 },
+  claimedUserIds:    { type:[String], default:[] },
+  rewardedUserIds:   { type:[String], default:[] },
+}, { minimize:false });
+
 // ==================== MODELS ====================
 const User             = mongoose.model("User",             userSchema);
 const NotificationPreference = mongoose.model("NotificationPreference", notificationPreferenceSchema);
@@ -171,6 +185,7 @@ const FightLeaderboard = mongoose.model("FightLeaderboard", fightLeaderboardSche
 const GuildInviteReward = mongoose.model("GuildInviteReward", guildInviteRewardSchema);
 const LeaderboardBadgeState = mongoose.model("LeaderboardBadgeState", leaderboardBadgeStateSchema);
 const AccessBan = mongoose.model("AccessBan", accessBanSchema);
+const RedemptionCode = mongoose.model("RedemptionCode", redemptionCodeSchema);
 const achievementProfileSchema = new mongoose.Schema({
   userId:{type:String,required:true,unique:true},
   data:{type:Object,default:{},minimize:false},
@@ -1625,9 +1640,200 @@ async function markLoz60RewardDmSent(userId) {
   }
 }
 
+
+// ==================== REDEMPTION CODES ====================
+function normalizeRedeemCode(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+async function createRedeemCode({ code, rewardType="rolls", amount=1, expiresMinutes=30, maxClaims=1000, createdBy }) {
+  try {
+    if (userRepairPromise) await userRepairPromise;
+    if (!await connect()) return { ok:false, status:"database-error" };
+    const normalized = normalizeRedeemCode(code);
+    const reward = rewardType === "tokens" ? "tokens" : "rolls";
+    const quantity = Math.floor(Number(amount));
+    const duration = Math.floor(Number(expiresMinutes));
+    const claims = Math.floor(Number(maxClaims));
+    if (!/^[A-Z0-9_-]{3,32}$/.test(normalized)) return { ok:false, status:"invalid-code" };
+    if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 1000000
+      || !Number.isSafeInteger(duration) || duration < 1 || duration > 525600
+      || !Number.isSafeInteger(claims) || claims < 1 || claims > 100000) {
+      return { ok:false, status:"invalid-values" };
+    }
+    const now = Date.now();
+    const record = await RedemptionCode.create({
+      code:normalized,
+      rewardType:reward,
+      amount:quantity,
+      createdBy:String(createdBy || "unknown"),
+      createdAt:new Date(now),
+      expiresAt:new Date(now + duration * 60 * 1000),
+      maxClaims:claims,
+      claimedCount:0,
+      claimedUserIds:[],
+      rewardedUserIds:[],
+    });
+    return { ok:true, created:true, code:record.toObject() };
+  } catch(error) {
+    if (error?.code === 11000) return { ok:false, status:"code-exists" };
+    console.error("[Codes] Could not create redemption code:", error?.message || error);
+    return { ok:false, status:"database-error" };
+  }
+}
+
+async function ensureDefaultRedeemCode({ code, rewardType="rolls", amount=3, expiresMinutes=1440, maxClaims=1000, createdBy }) {
+  try {
+    if (userRepairPromise) await userRepairPromise;
+    if (!await connect()) return { ok:false, status:"database-error" };
+    const normalized = normalizeRedeemCode(code);
+    const existing = await RedemptionCode.findOne({ code:normalized }).lean();
+    if (existing) return { ok:true, created:false, code:existing };
+    const now = Date.now();
+    try {
+      const record = await RedemptionCode.create({
+        code:normalized,
+        rewardType:rewardType === "tokens" ? "tokens" : "rolls",
+        amount:Math.max(1,Math.floor(Number(amount)||1)),
+        createdBy:String(createdBy || "system"),
+        createdAt:new Date(now),
+        expiresAt:new Date(now + Math.max(1,Math.floor(Number(expiresMinutes)||1440)) * 60 * 1000),
+        maxClaims:Math.max(1,Math.floor(Number(maxClaims)||1000)),
+        claimedCount:0,
+        claimedUserIds:[],
+        rewardedUserIds:[],
+      });
+      return { ok:true, created:true, code:record.toObject() };
+    } catch(error) {
+      if (error?.code !== 11000) throw error;
+      const raced = await RedemptionCode.findOne({ code:normalized }).lean();
+      return raced ? { ok:true, created:false, code:raced } : { ok:false, status:"database-error" };
+    }
+  } catch(error) {
+    console.error("[Codes] Could not seed default redemption code:", error?.message || error);
+    return { ok:false, status:"database-error" };
+  }
+}
+
+async function getRedeemCode(code) {
+  try {
+    if (!await connect()) return null;
+    return await RedemptionCode.findOne({ code:normalizeRedeemCode(code) }).lean();
+  } catch(error) {
+    console.error("[Codes] Could not read redemption code:", error?.message || error);
+    return null;
+  }
+}
+
+async function listRedeemCodes() {
+  try {
+    if (!await connect()) return { ok:false, codes:[] };
+    const codes = await RedemptionCode.find({}).sort({ createdAt:-1, code:1 }).lean();
+    return { ok:true, codes };
+  } catch(error) {
+    console.error("[Codes] Could not list redemption codes:", error?.message || error);
+    return { ok:false, codes:[] };
+  }
+}
+
+async function redeemCode(userId, rawCode) {
+  let record = null;
+  let reservedHere = false;
+  try {
+    if (userRepairPromise) await userRepairPromise;
+    if (!await connect()) return { ok:false, status:"database-error" };
+    const uid = String(userId || "");
+    const normalized = normalizeRedeemCode(rawCode);
+    if (!/^\d{17,20}$/.test(uid)) return { ok:false, status:"invalid-user" };
+    if (!/^[A-Z0-9_-]{3,32}$/.test(normalized)) return { ok:false, status:"not-found" };
+
+    record = await RedemptionCode.findOne({ code:normalized }).lean();
+    if (!record) return { ok:false, status:"not-found" };
+    if ((record.rewardedUserIds || []).includes(uid)) return { ok:true, alreadyRedeemed:true, rewardType:record.rewardType, amount:record.amount, code:record };
+
+    const codeId = String(record._id);
+    const alreadyReserved = (record.claimedUserIds || []).includes(uid);
+    if (!alreadyReserved) {
+      const now = new Date();
+      if (!record.expiresAt || new Date(record.expiresAt).getTime() <= now.getTime()) return { ok:false, status:"expired" };
+      if ((Number(record.claimedCount)||0) >= (Number(record.maxClaims)||1)) return { ok:false, status:"exhausted" };
+
+      const reserved = await RedemptionCode.findOneAndUpdate(
+        {
+          _id:record._id,
+          expiresAt:{ $gt:now },
+          $expr:{ $lt:["$claimedCount","$maxClaims"] },
+          claimedUserIds:{ $ne:uid },
+        },
+        { $inc:{ claimedCount:1 }, $addToSet:{ claimedUserIds:uid } },
+        { new:true },
+      ).lean();
+      if (reserved) {
+        record = reserved;
+        reservedHere = true;
+      } else {
+        record = await RedemptionCode.findOne({ _id:record._id }).lean();
+        if (!record) return { ok:false, status:"not-found" };
+        if ((record.rewardedUserIds || []).includes(uid)) return { ok:true, alreadyRedeemed:true, rewardType:record.rewardType, amount:record.amount, code:record };
+        if (!(record.claimedUserIds || []).includes(uid)) {
+          if (!record.expiresAt || new Date(record.expiresAt).getTime() <= Date.now()) return { ok:false, status:"expired" };
+          return { ok:false, status:"exhausted" };
+        }
+      }
+    }
+
+    const activeFilter = { userId:uid, archivedForRepair:{ $ne:true } };
+    const existingUsers = await User.find(activeFilter).select({ redeemedCodeIds:1, rolls:1, speciesTokens:1 }).lean();
+    const isRollReward = record.rewardType === "rolls";
+    const rewardField = isRollReward ? "rolls" : "speciesTokens";
+    const hasReward = userRecord => Array.isArray(userRecord?.redeemedCodeIds) && userRecord.redeemedCodeIds.includes(codeId);
+    const alreadyAppliedEverywhere = existingUsers.length > 0 && existingUsers.every(hasReward);
+
+    if (!alreadyAppliedEverywhere) {
+      await User.updateMany(
+        { ...activeFilter, redeemedCodeIds:{ $ne:codeId } },
+        {
+          $inc:{ [rewardField]:Number(record.amount)||1 },
+          $addToSet:{ redeemedCodeIds:codeId },
+          $set:{ userId:uid, archivedForRepair:false },
+        },
+        { upsert:existingUsers.length===0 },
+      );
+    }
+
+    const refreshedUsers = await User.find(activeFilter).select({ redeemedCodeIds:1, rolls:1, speciesTokens:1 }).lean();
+    if (!refreshedUsers.length || !refreshedUsers.every(hasReward)) {
+      return { ok:false, status:"reward-pending", reserved:!reservedHere, code:record };
+    }
+
+    await RedemptionCode.updateOne({ _id:record._id }, { $addToSet:{ rewardedUserIds:uid } });
+    const latest = await RedemptionCode.findOne({ _id:record._id }).lean();
+    if (!latest || !(latest.rewardedUserIds || []).includes(uid)) {
+      return { ok:false, status:"database-error", code:record };
+    }
+
+    const balance = Math.max(0,...refreshedUsers.map(userRecord => Number(userRecord[rewardField])||0));
+    return {
+      ok:true,
+      alreadyRedeemed:alreadyAppliedEverywhere,
+      rewardType:record.rewardType,
+      amount:Number(record.amount)||1,
+      balance,
+      expiresAt:record.expiresAt,
+      claimedCount:Number(latest.claimedCount)||0,
+      maxClaims:Number(latest.maxClaims)||1,
+      code:latest,
+    };
+  } catch(error) {
+    console.error("[Codes] Redemption failed for user " + String(userId || "unknown") + ":", error?.message || error);
+    return { ok:false, status:"database-error", reserved:Boolean(record && (record.claimedUserIds||[]).includes(String(userId||""))) };
+  }
+}
+
 // ==================== EXPORTS ====================
 module.exports = {
   saveUserSpecies, grantArchdemonUnlock, getArchdemonUnlockState, saveUserRolls, saveUserSpeciesFields, addSpeciesTokens, redeemSpeciesToken, awardGuideCompletionRoll, repairUserRecords,
+  createRedeemCode, ensureDefaultRedeemCode, getRedeemCode, listRedeemCodes, redeemCode,
   saveLeaderboard, saveFightLeaderboard,
   saveFightStats, saveBotStats, saveDailyClaim,
   saveQuestProgress, saveQuestBoard, loadAllQuestBoards, awardTopggVote, claimQuestReward, saveDuelChannel,
