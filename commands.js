@@ -1258,26 +1258,64 @@ async function handleCommand(interaction) {
     // Reserve cooldown before async work to prevent overlapping /species-roll commands.
     _state.rerollCooldowns.set(user.id,now+10000);
     const currentSp=userData.species||humanSpecies;
+    const rollPayload=buildSpeciesRollAnnouncement(user.id,user.displayName||user.username,currentSp,userData.rolls,false);
     let pubMsg;
+    let usedEphemeralFallback=false;
     try {
-      pubMsg=await channel.send(buildSpeciesRollAnnouncement(user.id,user.displayName||user.username,currentSp,userData.rolls,false));
-    } catch(error) {
-      if (_state.rerollCooldowns.get(user.id)===now+10000) _state.rerollCooldowns.delete(user.id);
-      console.error("[Species Roll] Failed to post the roll panel:",error?.stack||error);
-      return safeReply(interaction,buildStyledCardPayload("Roll Unavailable",0xff0000,[{body:"LOZ couldn't post the Species Roll message. Your roll was not used; please try again."}],true));
+      pubMsg=await channel.send(rollPayload);
+    } catch(channelError) {
+      console.error(
+        "[Species Roll] Public panel post failed"
+          +" (guild="+(guild?.id||"none")
+          +", channel="+(channel?.id||"unknown")
+          +", code="+(channelError?.code||"unknown")+"):",
+        channelError?.stack||channelError
+      );
+
+      // If LOZ cannot post in this channel, keep the roll available in a private
+      // interaction panel. Opening a panel never consumes a roll.
+      try {
+        const fallbackPayload={
+          ...rollPayload,
+          flags:(rollPayload.flags||MessageFlags.IsComponentsV2)|MessageFlags.Ephemeral,
+        };
+        await interaction.reply(fallbackPayload);
+        usedEphemeralFallback=true;
+        pubMsg=await interaction.fetchReply();
+        console.warn("[Species Roll] Using an ephemeral panel for user "+user.id+" after public channel access failed.");
+      } catch(fallbackError) {
+        if (_state.rerollCooldowns.get(user.id)===now+10000) _state.rerollCooldowns.delete(user.id);
+        console.error("[Species Roll] Private fallback panel failed:",fallbackError?.stack||fallbackError);
+        const failurePayload=buildStyledCardPayload(
+          "Roll Unavailable",0xff0000,
+          [{body:"LOZ couldn't post in this channel or open a private roll panel. Your roll was not used. Ask a server admin to allow LOZ to view and send messages in this channel, or enable DMs and try again."}],
+          true
+        );
+        if (usedEphemeralFallback) {
+          return interaction.editReply(failurePayload).catch(()=>null);
+        }
+        return safeReply(interaction,failurePayload);
+      }
     }
 
     // Opening/replacing a panel does not spend a roll; the Reroll button does that.
-    _state.activeRolls.set(user.id,{channelId:channel.id,messageId:pubMsg.id,timestamp:now});
+    _state.activeRolls.set(user.id,{
+      channelId:channel.id,
+      messageId:pubMsg.id,
+      timestamp:now,
+      ephemeral:usedEphemeralFallback,
+    });
 
-    // Acknowledge before fetching/editing the older message, which may exceed Discord's interaction window.
-    const panelResponse=await safeReply(interaction,{
+    // Acknowledge after public delivery only. The private fallback is already the
+    // interaction response and contains the roll buttons.
+    const panelResponse=usedEphemeralFallback ? null : await safeReply(interaction,{
       content:"Use the Reroll or Cancel button on the newest Species Roll message above. You can open another panel after 10 seconds.",
       flags:MessageFlags.Ephemeral,
     });
 
-    // Expire the old panel only once the replacement is posted successfully.
-    if (previousRoll && previousRoll.messageId!==pubMsg.id) {
+    // Expire an old public panel only once its replacement has been posted successfully.
+    // Old ephemeral panels can't be fetched through the channel message API.
+    if (previousRoll && previousRoll.ephemeral!==true && previousRoll.messageId!==pubMsg.id) {
       try {
         const previousChannel=previousRoll.channelId===channel.id
           ? channel
@@ -1509,17 +1547,45 @@ async function handleCommand(interaction) {
     };
     _state.activeBotFights.set(fightId,fight); _state.activeBotFights.set(user.id,fightId);
     let msg;
+    let fightChannel=channel;
+    let usedDmFallback=false;
+    const fightPayload=buildBotFightMessagePayload(fight,["Fight started. Your turn."],"playing");
     try {
-      msg = await channel.send(buildBotFightMessagePayload(fight, ["Fight started. Your turn."], "playing"));
-    } catch(error) {
-      if (_state.activeBotFights.get(fightId)===fight) _state.activeBotFights.delete(fightId);
-      if (_state.activeBotFights.get(user.id)===fightId) _state.activeBotFights.delete(user.id);
-      console.error("[Bot fight "+fightId+"] Failed to post the initial fight message:",error?.stack||error);
-      return safeReply(interaction,{embeds:[createErrorEmbed("LOZ couldn't post the battle message, so the fight was cancelled. Please try again.")],flags:64});
+      msg=await channel.send(fightPayload);
+    } catch(channelError) {
+      console.error(
+        "[Bot fight "+fightId+"] Public message post failed"
+          +" (guild="+(guild?.id||"none")
+          +", channel="+(channel?.id||"unknown")
+          +", code="+(channelError?.code||"unknown")+"):",
+        channelError?.stack||channelError
+      );
+
+      // A bot battle needs one editable message for its buttons and all later turns.
+      // Use the player's DM as a real-message fallback rather than cancelling combat.
+      try {
+        fightChannel=await user.createDM();
+        msg=await fightChannel.send(fightPayload);
+        usedDmFallback=true;
+        fight.deliveryMode="dm";
+        fight.deliveryChannelId=fightChannel.id;
+        console.warn("[Bot fight "+fightId+"] Started in player DM after public channel access failed.");
+      } catch(dmError) {
+        if (_state.activeBotFights.get(fightId)===fight) _state.activeBotFights.delete(fightId);
+        if (_state.activeBotFights.get(user.id)===fightId) _state.activeBotFights.delete(user.id);
+        console.error("[Bot fight "+fightId+"] DM fallback also failed:",dmError?.stack||dmError);
+        return safeReply(interaction,{embeds:[createErrorEmbed(
+          "LOZ couldn't post in this channel or deliver a private battle. No fight was started. Enable DMs from server members, or ask a server admin to give LOZ View Channel and Send Messages permissions."
+        )],flags:64});
+      }
     }
     _state.fightMessages.set(fightId,msg);
-    fight.timeout=setTimeout(()=>{ if(_state.activeBotFights.get(fightId)===fight) endBotFight(channel,fightId,"bot","player",difficulty,"timeout").catch(error=>console.error("[Bot fight "+fightId+"] Timeout resolution failed:",error?.stack||error)); },120000);
-    return safeReply(interaction,{embeds:[createSuccessEmbed("Fight started!")],flags:64});
+    fight.timeout=setTimeout(()=>{ if(_state.activeBotFights.get(fightId)===fight) endBotFight(fightChannel,fightId,"bot","player",difficulty,"timeout").catch(error=>console.error("[Bot fight "+fightId+"] Timeout resolution failed:",error?.stack||error)); },120000);
+    return safeReply(interaction,{embeds:[createSuccessEmbed(
+      usedDmFallback
+        ? "Fight started in your DMs because LOZ couldn't post in this channel."
+        : "Fight started!"
+    )],flags:64});
   }
 
   if (commandName === "fight" && !fightSubcommand) {
