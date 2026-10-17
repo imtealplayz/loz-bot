@@ -481,8 +481,11 @@ client.once("clientReady", async () => {
     process.exit(1);
   }
 
-  // Enforce persistent server blacklists on current memberships after MongoDB is available.
-  await enforceExistingBlacklistedGuilds();
+  // Enforce existing blacklisted memberships in the background so an unavailable or slow
+  // blacklist query can never block the normal LOZ startup and slash-command registration.
+  void enforceExistingBlacklistedGuilds().catch(error => {
+    console.error("[Server Blacklist] Startup membership check failed:",error?.stack||error);
+  });
 
   for (const guild of client.guilds.cache.values()) {
     const sc = await database.loadDuelChannel(guild.id);
