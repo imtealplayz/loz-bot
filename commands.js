@@ -2698,7 +2698,7 @@ async function handleButton(interaction) {
     const fight=_state.activeBotFights.get(fightId);
     if (!fight) return safeReply(interaction,{embeds:[createErrorEmbed("Fight ended!")],flags:64});
     if (user.id!==fight.playerId) return safeReply(interaction,{embeds:[createErrorEmbed("This isn't your fight!")],flags:64});
-    if (fight.pendingChaosReaction) return safeReply(interaction,{content:"A Chaos Creator reaction is awaiting the primary owner's decision.",flags:64});
+    if (fight.pendingChaosReaction) return safeReply(interaction,{content:"A Chaos Creator reaction is awaiting the Chaos Creator player's decision.",flags:64});
     if (action==="thinking") return safeReply(interaction,{embeds:[createErrorEmbed("It's the bot's turn!")],flags:64});
     if (fight.timeout) clearTimeout(fight.timeout);
     await interaction.deferUpdate();
@@ -2714,11 +2714,12 @@ async function handleButton(interaction) {
     if (playerC.possession) action="possessed";
 
     let chaosDisintegrateConfirmed = false;
-    if (action==="ult" && user.id===chaosSystem.PRIMARY_OWNER_ID
-      && playerC.species.name==="Chaos Creator" && playerC.ultCooldown<=0) {
+    if (action==="ult" && chaosSystem.isChaosCreatorOwner(playerC)
+      && playerC.ultCooldown<=0) {
       const targetName = fight.botSpecies?.name || "opponent";
       const decision = await chaosSystem.askChaosReaction({
         fight, channel,
+        respondentId:playerC.id,
         question:"Do you want to disintegrate this individual named " + targetName + "?",
         confirmedText:"Disintegrating this individual named " + targetName + ".",
         declinedText:"Disintegration cancelled.",
@@ -2888,7 +2889,7 @@ async function handleButton(interaction) {
     if (!fight) return;
     const isP1=user.id===fight.player1Id, isP2=user.id===fight.player2Id;
     if (!isP1&&!isP2) return;
-    if (fight.pendingChaosReaction) return interaction.followUp({content:"A Chaos Creator reaction is awaiting the primary owner's decision.",flags:64});
+    if (fight.pendingChaosReaction) return interaction.followUp({content:"A Chaos Creator reaction is awaiting the Chaos Creator player's decision.",flags:64});
     if (user.id!==fight.currentTurn) return interaction.followUp({embeds:[createErrorEmbed("It's not your turn!")],flags:64});
     if (fight.timeout) clearTimeout(fight.timeout);
     const player=isP1?fight.player1:fight.player2;
@@ -2908,9 +2909,10 @@ async function handleButton(interaction) {
         let chaosUltNullified=false;
         const targetName=opponent.displayName||opponent.species.name;
 
-        if (player.id===chaosSystem.PRIMARY_OWNER_ID && player.species.name==="Chaos Creator") {
+        if (chaosSystem.isChaosCreatorOwner(player)) {
           const decision=await chaosSystem.askChaosReaction({
             fight,channel,
+            respondentId:player.id,
             question:"Do you want to disintegrate this individual named "+targetName+"?",
             confirmedText:"Disintegrating this individual named "+targetName+".",
             declinedText:"Disintegration cancelled.",
@@ -2922,9 +2924,10 @@ async function handleButton(interaction) {
           }
           chaosDisintegrateConfirmed=true;
           finishReason="chaos-disintegrate";
-        } else if (opponent.id===chaosSystem.PRIMARY_OWNER_ID && opponent.species.name==="Chaos Creator") {
+        } else if (chaosSystem.isChaosCreatorOwner(opponent)) {
           const decision=await chaosSystem.askChaosReaction({
             fight,channel,
+            respondentId:opponent.id,
             question:"This individual named "+(player.displayName||player.species.name)+" has activated their ULT. Do you wish to nullify it?",
             confirmedText:"Ultimate nullification confirmed.",
             declinedText:"Ultimate nullification declined.",
@@ -2982,7 +2985,7 @@ async function handleButton(interaction) {
         if (player.curse>0) { processCurseTick(player); log.push(`👿 Curse halves heal! ${rawH}→${actualH}`); }
         const hpBeforeHeal=player.currentHp;
         player.currentHp=Math.min(player.maxHp,player.currentHp+actualH); player.healCooldown=3;
-        if (opponent.id===chaosSystem.PRIMARY_OWNER_ID && opponent.species.name==="Chaos Creator" && player.currentHp>hpBeforeHeal) {
+        if (chaosSystem.isChaosCreatorOwner(opponent) && player.currentHp>hpBeforeHeal) {
           pendingHealReversal={healer:player,hpBefore:hpBeforeHeal};
         }
         log.push(`💚 <@${user.id}> heals for **${actualH} HP**! (${player.currentHp}/${player.maxHp})`);
@@ -3016,7 +3019,7 @@ async function handleButton(interaction) {
           if (opponent.species.name==="God"&&result.missedAttack) { const gh=Math.floor(opponent.currentHp*0.2); opponent.currentHp=Math.min(opponent.maxHp,opponent.currentHp+gh); log.push(`👑 **Divine Retribution!** ${opponent.species.name} heals ${gh}!`); }
           log.push(`⚔️ <@${user.id}> deals **${result.damage}** damage!${result.specialLines.length?` (${result.specialLines.slice(0,2).join(", ")})`:""}`);
         }
-        if (opponent.id===chaosSystem.PRIMARY_OWNER_ID && opponent.species.name==="Chaos Creator" && opponent.currentHp<targetHpBeforeAttack) {
+        if (chaosSystem.isChaosCreatorOwner(opponent) && opponent.currentHp<targetHpBeforeAttack) {
           pendingAttackReversal={victim:opponent,attacker:player,hpBefore:targetHpBeforeAttack};
         }
         fight.currentTurn=opponent.id; fight.round++;
@@ -3026,6 +3029,7 @@ async function handleButton(interaction) {
     if (pendingHealReversal) {
       const decision=await chaosSystem.askChaosReaction({
         fight,channel,
+        respondentId:opponent.id,
         question:"This individual named "+(player.displayName||player.species.name)+" has healed. Do you want to undo the heal?",
         confirmedText:"Healing reversal confirmed.",
         declinedText:"Healing reversal declined.",
@@ -3039,6 +3043,7 @@ async function handleButton(interaction) {
     if (pendingAttackReversal) {
       const decision=await chaosSystem.askChaosReaction({
         fight,channel,
+        respondentId:opponent.id,
         question:"This individual named "+(player.displayName||player.species.name)+" attacked you. Do you want to reverse the damage?",
         confirmedText:"Damage reversal confirmed.",
         declinedText:"Damage reversal declined.",
