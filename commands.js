@@ -1961,6 +1961,36 @@ async function handleCommand(interaction) {
     if (user.id!==_state.ownerId&&user.id!==_state.secondGodId) return safeReply(interaction,{embeds:[createErrorEmbed("Only an authorized LOZ owner can use this command.")],flags:64});
     const sub=options.getSubcommand();
 
+    if (sub==="leave") {
+      if (user.id!==_state.ownerId) {
+        return safeReply(interaction,{embeds:[createErrorEmbed("Only the primary LOZ owner can make the bot leave a server.")],flags:MessageFlags.Ephemeral});
+      }
+
+      const requestedGuildId=String(options.getString("server_id",false)||"").trim();
+      const targetGuildId=requestedGuildId||String(interaction.guildId||"");
+      if (!targetGuildId) {
+        return safeReply(interaction,{embeds:[createErrorEmbed("Provide a server ID when using /owner leave in DMs. In a server, omit server_id to make LOZ leave the current server.")],flags:MessageFlags.Ephemeral});
+      }
+      if (!/^\d{17,20}$/.test(targetGuildId)) {
+        return safeReply(interaction,{embeds:[createErrorEmbed("That server ID is invalid. Copy the server's numeric ID and try again.")],flags:MessageFlags.Ephemeral});
+      }
+
+      await interaction.deferReply({flags:MessageFlags.Ephemeral});
+      const targetGuild=await _client.guilds.fetch(targetGuildId).catch(()=>null);
+      if (!targetGuild) {
+        return interaction.editReply({embeds:[createErrorEmbed("LOZ could not find or access that server. Make sure LOZ is still a member and the server ID is correct.")]});
+      }
+
+      const targetGuildName=String(targetGuild.name||"the selected server");
+      try {
+        await targetGuild.leave();
+        return interaction.editReply({embeds:[createSuccessEmbed("LOZ has left **"+targetGuildName.replace(/[*_~|>]/g,"")+"**. Server ID: "+targetGuildId+".")]});
+      } catch (error) {
+        console.error("[Owner Leave] Could not leave server "+targetGuildId+":",error?.stack||error);
+        return interaction.editReply({embeds:[createErrorEmbed("Discord did not allow LOZ to leave that server. No success is being reported. Check the bot's current membership and try again.")]});
+      }
+    }
+
     if (sub==="ban") {
       const target=options.getUser("user");
       const duration=parseAccessBanDuration(options.getString("time"));
@@ -2151,7 +2181,7 @@ async function handleCommand(interaction) {
         .addFields(
           {name:"🧬 Species Management",value:"`/owner species-change @user <species>`\n`/owner species-unlock @user <species>`\n`/owner species-reset @user`\n`/owner species-add @user <rolls>`",inline:false},
           {name:"🎒 Items",value:"`/owner add items @user species_token <quantity>`",inline:false},
-          {name:"🛡️ Access & Management",value:"`/owner ban @user [time]`\n`/owner unban @user`\n`/owner clear-fight @user`\n`/owner rolls-reset @user`\n`/owner quest-reset @user <quest>`\n`/owner debug-db`\n`/owner repair-user-db`",inline:false}
+          {name:"🛡️ Access & Management",value:"`/owner ban @user [time]`\n`/owner unban @user`\n`/owner clear-fight @user`\n`/owner rolls-reset @user`\n`/owner quest-reset @user <quest>`\n`/owner debug-db`\n`/owner repair-user-db`\n`/owner leave [server_id]`",inline:false}
         ).setFooter({text:"Use /owner menu to see this again"})]});
     }
 
@@ -3203,6 +3233,7 @@ new SlashCommandBuilder().setName("leaderboard").setDescription("View the global
   // Keep /owner visible in every server; the handler below enforces the exact owner-ID allow-list.
   new SlashCommandBuilder().setName("owner").setDescription("Owner-only commands")
     .addSubcommand(s=>s.setName("menu").setDescription("Show owner command menu"))
+    .addSubcommand(s=>s.setName("leave").setDescription("Primary-owner-only: make LOZ leave a server").addStringOption(o=>o.setName("server_id").setDescription("Server ID; omit to leave this server").setRequired(false).setMinLength(17).setMaxLength(20)))
     .addSubcommand(s=>s.setName("reward-registrants").setDescription("Owner-only: reward registered LOZ 6.0 users"))
     .addSubcommand(s=>s.setName("ban").setDescription("Ban a user from using LOZ without deleting their data").addUserOption(o=>o.setName("user").setDescription("User to ban").setRequired(true)).addStringOption(o=>o.setName("time").setDescription("Duration: 1s, 1m, 1h, 1d, 1w, or 1y; omit for permanent").setRequired(false).setMaxLength(16)))
     .addSubcommand(s=>s.setName("unban").setDescription("Restore a user's access to LOZ").addUserOption(o=>o.setName("user").setDescription("User to unban").setRequired(true)))
