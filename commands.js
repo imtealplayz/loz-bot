@@ -1997,7 +1997,7 @@ async function handleCommand(interaction) {
               notice.addTextDisplayComponents(new TextDisplayBuilder().setContent("## ⛔ LOZ Has Left This Server"));
               notice.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
               notice.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-                "LOZ is leaving **"+serverName.replace(/[*_~|>]/g,"")+"** because the server was added to LOZ's blacklist by its owner. LOZ will automatically leave again if someone adds it while it remains blacklisted.\n\n**Server ID:** "+serverId
+                "Your server **"+serverName.replace(/[*_~|>]/g,"")+"** has been blacklisted from LOZ. LOZ is leaving now and will automatically leave again if someone adds it while the server remains blacklisted.\n\n**Server ID:** "+serverId
               ));
               await serverOwner.send({components:[notice],flags:MessageFlags.IsComponentsV2,allowedMentions:{parse:[]}});
               ownerNotified=true;
