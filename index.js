@@ -481,12 +481,6 @@ client.once("clientReady", async () => {
     process.exit(1);
   }
 
-  // Enforce existing blacklisted memberships in the background so an unavailable or slow
-  // blacklist query can never block the normal LOZ startup and slash-command registration.
-  void enforceExistingBlacklistedGuilds().catch(error => {
-    console.error("[Server Blacklist] Startup membership check failed:",error?.stack||error);
-  });
-
   for (const guild of client.guilds.cache.values()) {
     const sc = await database.loadDuelChannel(guild.id);
     if (sc) { state.duelChannels.set(guild.id, sc); console.log(`📋 Loaded duel channel for ${guild.name}`); }
@@ -533,6 +527,11 @@ client.once("clientReady", async () => {
   // Only allow state-changing interactions after persistent data is fully loaded.
   databaseReady = true;
   await registerCommands();
+
+  // Sweep existing memberships after normal startup so blacklist lookup never delays readiness.
+  void enforceExistingBlacklistedGuilds().catch(error => {
+    console.error("[Server Blacklist] Startup membership check failed:",error?.stack||error);
+  });
 
   console.log("✅ Database loaded");
   updatePresence();
