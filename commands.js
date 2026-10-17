@@ -1789,17 +1789,18 @@ async function handleCommand(interaction) {
       if (!/^[A-Z0-9_-]{3,32}$/.test(code)) {
         return safeReply(interaction,{content:"Code must be 3–32 characters and contain only letters, numbers, hyphens, or underscores.",flags:64});
       }
+      await interaction.deferReply({flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral});
       const result=await database.createRedeemCode({code,rewardType,amount,expiresMinutes,maxClaims,createdBy:user.id});
       if (!result?.ok) {
         const error=result?.status==="code-exists" ? "That code already exists. Choose a different code."
           : result?.status==="invalid-values" ? "Amount, expiry, or claim limit is outside the allowed range."
           : "MongoDB could not save this code. No code was created.";
-        return safeReply(interaction,{content:error,flags:64});
+        return interaction.editReply(buildStyledCardPayload("Code Not Created",0xdc2626,[{body:error}],true));
       }
       const record=result.code;
       const expiry=Math.floor(new Date(record.expiresAt).getTime()/1000);
       const rewardName=record.rewardType==="tokens" ? "Species Token(s)" : "Species Roll(s)";
-      return safeReply(interaction,buildStyledCardPayload("Redemption Code Created",0x16a34a,[
+      return interaction.editReply(buildStyledCardPayload("Redemption Code Created",0x16a34a,[
         {body:"**Code:** \`"+record.code+"\`\n**Reward:** "+record.amount+" "+rewardName+"\n**Expires:** <t:"+expiry+":F> (<t:"+expiry+":R>)\n**Claim limit:** "+record.maxClaims+" user(s)"},
       ],true));
     }
