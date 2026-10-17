@@ -1960,6 +1960,115 @@ async function handleCommand(interaction) {
   if (commandName === "owner") {
     if (user.id!==_state.ownerId&&user.id!==_state.secondGodId) return safeReply(interaction,{embeds:[createErrorEmbed("Only an authorized LOZ owner can use this command.")],flags:64});
     const sub=options.getSubcommand();
+    const subGroup=options.getSubcommandGroup(false);
+
+    if (subGroup==="blacklist") {
+      if (user.id!==_state.ownerId) {
+        return safeReply(interaction,{embeds:[createErrorEmbed("Only the primary LOZ owner can manage the server blacklist.")],flags:MessageFlags.Ephemeral});
+      }
+
+      const blacklistAction=options.getSubcommand();
+      if (blacklistAction==="add") {
+        const serverId=String(options.getString("server_id")||"").trim();
+        if (!/^\\d{17,20}$/.test(serverId)) {
+          return safeReply(interaction,{embeds:[createErrorEmbed("That server ID is invalid. Copy the server's numeric ID and try again.")],flags:MessageFlags.Ephemeral});
+        }
+
+        const joinedGuild=_client.guilds.cache.get(serverId)||null;
+        const serverName=String(joinedGuild?.name||"Unknown server");
+        const saved=await database.blacklistGuild(serverId,serverName,user.id);
+        if (!saved?.ok) {
+          return safeReply(interaction,{embeds:[createErrorEmbed("MongoDB could not save this blacklist entry. No success is being reported; check the database before retrying.")],flags:MessageFlags.Ephemeral});
+        }
+
+        let leaveNote="LOZ is not currently in this server. Any future attempt to add LOZ will be rejected automatically.";
+        if (joinedGuild) {
+          const ownerId=String(joinedGuild.ownerId||"");
+          try {
+            await joinedGuild.leave();
+            leaveNote="LOZ has also left this server immediately.";
+            if (ownerId) {
+              try {
+                const serverOwner=await _client.users.fetch(ownerId);
+                const notice=new ContainerBuilder().setAccentColor(0xdc2626);
+                notice.addTextDisplayComponents(new TextDisplayBuilder().setContent("## ⛔ LOZ Has Left This Server"));
+                notice.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+                notice.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+                  "LOZ has left **"+serverName.replace(/[\\\\*_~|>]/g,"")+"** because the server was added to LOZ's blacklist by its owner. LOZ will automatically leave again if someone adds it while it remains blacklisted.\n\n**Server ID:** "+serverId
+                ));
+                await serverOwner.send({components:[notice],flags:MessageFlags.IsComponentsV2,allowedMentions:{parse:[]}});
+              } catch(error) {
+                console.warn("[Server Blacklist] Could not notify the owner of newly blacklisted server "+serverId+": "+String(error?.message||error));
+                leaveNote+=" The server owner could not be notified by DM.";
+              }
+            }
+          } catch(error) {
+            console.error("[Server Blacklist] Could not leave newly blacklisted server "+serverId+":",error?.stack||error);
+            leaveNote="The blacklist entry was saved, but LOZ could not leave the server immediately. The join guard will keep checking future joins; please inspect the logs.";
+          }
+        }
+
+        const status=saved.alreadyBlacklisted ? "This server was already on the blacklist." : "Server added to the persistent blacklist.";
+        return safeReply(interaction,{embeds:[createSuccessEmbed(status+"\\n**Server:** "+serverName+"\\n**Server ID:** "+serverId+"\\n"+leaveNote)],flags:MessageFlags.Ephemeral});
+      }
+
+      if (blacklistAction==="servers") {
+        const listed=await database.listBlacklistedGuilds();
+        if (!listed?.ok) {
+          return safeReply(interaction,{embeds:[createErrorEmbed("MongoDB could not load the server blacklist. Please try again later.")],flags:MessageFlags.Ephemeral});
+        }
+        const entries=listed.entries||[];
+        if (!entries.length) {
+          return safeReply(interaction,{embeds:[createSuccessEmbed("No servers are currently blacklisted.")],flags:MessageFlags.Ephemeral});
+        }
+
+        const lines=entries.map(entry=>{
+          const name=String(entry.guildName||"Unknown server").replace(/[\\\\*_~|>]/g,"").slice(0,100)||"Unknown server";
+          const time=new Date(entry.blacklistedAt||0).getTime();
+          const added=Number.isFinite(time)&&time>0 ? "<t:"+Math.floor(time/1000)+":d>" : "date unknown";
+          return "• **"+name+"** — ID: "+String(entry.guildId)+" — added "+added;
+        });
+        const chunks=[];
+        let current="";
+        for (const line of lines) {
+          if (current && current.length+line.length+1>3400) {
+            chunks.push(current);
+            current="";
+          }
+          current+=(current?"\\n":"")+line;
+        }
+        if (current) chunks.push(current);
+
+        await interaction.deferReply({flags:MessageFlags.Ephemeral});
+        await interaction.editReply(buildStyledCardPayload("⛔ Blacklisted Servers",0xdc2626,[
+          {heading:"Page 1 of "+chunks.length,body:chunks[0]},
+        ],true));
+        for (let i=1;i<chunks.length;i++) {
+          await interaction.followUp(buildStyledCardPayload("⛔ Blacklisted Servers",0xdc2626,[
+            {heading:"Page "+(i+1)+" of "+chunks.length,body:chunks[i]},
+          ],true));
+        }
+        return;
+      }
+    }
+
+    if (sub==="whitelist") {
+      if (user.id!==_state.ownerId) {
+        return safeReply(interaction,{embeds:[createErrorEmbed("Only the primary LOZ owner can manage the server whitelist.")],flags:MessageFlags.Ephemeral});
+      }
+      const serverId=String(options.getString("server_id")||"").trim();
+      if (!/^\\d{17,20}$/.test(serverId)) {
+        return safeReply(interaction,{embeds:[createErrorEmbed("That server ID is invalid. Copy the server's numeric ID and try again.")],flags:MessageFlags.Ephemeral});
+      }
+      const removed=await database.whitelistGuild(serverId);
+      if (!removed?.ok) {
+        return safeReply(interaction,{embeds:[createErrorEmbed("MongoDB could not remove this blacklist entry. Please try again later.")],flags:MessageFlags.Ephemeral});
+      }
+      if (!removed.removed) {
+        return safeReply(interaction,{embeds:[createErrorEmbed("That server is not currently blacklisted. No changes were made.")],flags:MessageFlags.Ephemeral});
+      }
+      return safeReply(interaction,{embeds:[createSuccessEmbed("Removed server **"+serverId+"** from the blacklist. LOZ may now be added to it again; it will not rejoin automatically.")],flags:MessageFlags.Ephemeral});
+    }
 
     if (sub==="leave") {
       if (user.id!==_state.ownerId) {
@@ -3234,6 +3343,10 @@ new SlashCommandBuilder().setName("leaderboard").setDescription("View the global
   new SlashCommandBuilder().setName("owner").setDescription("Owner-only commands")
     .addSubcommand(s=>s.setName("menu").setDescription("Show owner command menu"))
     .addSubcommand(s=>s.setName("leave").setDescription("Primary-owner-only: make LOZ leave a server").addStringOption(o=>o.setName("server_id").setDescription("Server ID; omit to leave this server").setRequired(false).setMinLength(17).setMaxLength(20)))
+    .addSubcommandGroup(g=>g.setName("blacklist").setDescription("Manage servers blocked from using LOZ")
+      .addSubcommand(s=>s.setName("add").setDescription("Blacklist a server and leave it if LOZ is a member").addStringOption(o=>o.setName("server_id").setDescription("Server ID to blacklist").setRequired(true).setMinLength(17).setMaxLength(20)))
+      .addSubcommand(s=>s.setName("servers").setDescription("List all blacklisted servers")))
+    .addSubcommand(s=>s.setName("whitelist").setDescription("Remove a server from the blacklist").addStringOption(o=>o.setName("server_id").setDescription("Server ID to whitelist").setRequired(true).setMinLength(17).setMaxLength(20)))
     .addSubcommand(s=>s.setName("reward-registrants").setDescription("Owner-only: reward registered LOZ 6.0 users"))
     .addSubcommand(s=>s.setName("ban").setDescription("Ban a user from using LOZ without deleting their data").addUserOption(o=>o.setName("user").setDescription("User to ban").setRequired(true)).addStringOption(o=>o.setName("time").setDescription("Duration: 1s, 1m, 1h, 1d, 1w, or 1y; omit for permanent").setRequired(false).setMaxLength(16)))
     .addSubcommand(s=>s.setName("unban").setDescription("Restore a user's access to LOZ").addUserOption(o=>o.setName("user").setDescription("User to unban").setRequired(true)))
