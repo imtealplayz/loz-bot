@@ -335,7 +335,11 @@ async function findRecentGuildJoinExecutor(guild) {
     );
     return entry?.executor || null;
   } catch(error) {
-    console.warn("[Server Blacklist] Could not identify who added LOZ in server "+String(guild.id)+": "+String(error?.message||error));
+    if (Number(error?.code)===50013 || Number(error?.status)===403) {
+      console.warn("[Server Blacklist] Missing View Audit Log permission in server "+String(guild.id)+"; the inviter cannot be identified. Grant LOZ View Audit Log permission to DM the actual inviter.");
+    } else {
+      console.warn("[Server Blacklist] Could not identify who added LOZ in server "+String(guild.id)+": "+String(error?.message||error));
+    }
     return null;
   }
 }
@@ -373,22 +377,20 @@ async function enforceBlacklistedGuild(guild, {joinEvent=false}={}) {
       if (inviter && !inviter.bot) inviterUser=await client.users.fetch(inviter.id).catch(()=>null);
     }
 
-    try {
-      await guild.leave();
-      console.warn("[Server Blacklist] LOZ left blacklisted server "+String(guild.id)+" ("+String(guild.name||"Unknown server")+").");
-    } catch(error) {
-      console.error("[Server Blacklist] Could not leave blacklisted server "+String(guild.id)+":",error?.stack||error);
-      return {ok:false,reason:"leave_failed"};
-    }
-
+    // Notify before leaving so the person who added LOZ gets the message while
+    // the join event is still being handled. DM delivery is best-effort; never
+    // remain in a blacklisted server just because the recipient blocks DMs.
     let dmSent=false;
     if (inviterUser) {
       try {
         await inviterUser.send(buildBlacklistNotice(guild,{inviterKnown:true}));
         dmSent=true;
+        console.info("[Server Blacklist] DM sent to inviter "+String(inviterUser.id)+" for server "+String(guild.id)+".");
       } catch(error) {
         console.warn("[Server Blacklist] Could not DM the user who added LOZ to "+String(guild.id)+": "+String(error?.message||error));
       }
+    } else if (joinEvent) {
+      console.warn("[Server Blacklist] Inviter could not be identified for server "+String(guild.id)+". The bot needs View Audit Log permission to identify the user who added it.");
     }
 
     if (!dmSent && guild.ownerId && String(guild.ownerId)!==String(inviter?.id||"")) {
@@ -396,10 +398,20 @@ async function enforceBlacklistedGuild(guild, {joinEvent=false}={}) {
         const serverOwner=await client.users.fetch(guild.ownerId);
         await serverOwner.send(buildBlacklistNotice(guild,{inviterKnown:false,ownerFallback:true}));
         dmSent=true;
+        console.info("[Server Blacklist] DM sent to server owner "+String(guild.ownerId)+" for server "+String(guild.id)+".");
       } catch(error) {
         console.warn("[Server Blacklist] Could not DM the owner of blacklisted server "+String(guild.id)+": "+String(error?.message||error));
       }
     }
+
+    try {
+      await guild.leave();
+      console.warn("[Server Blacklist] LOZ left blacklisted server "+String(guild.id)+" ("+String(guild.name||"Unknown server")+").");
+    } catch(error) {
+      console.error("[Server Blacklist] Could not leave blacklisted server "+String(guild.id)+":",error?.stack||error);
+      return {ok:false,reason:"leave_failed",dmSent};
+    }
+
     if (!dmSent) console.warn("[Server Blacklist] LOZ left server "+String(guild.id)+" but no notification DM could be delivered.");
     return {ok:true,blacklisted:true,left:true,dmSent};
   } finally {
