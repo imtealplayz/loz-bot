@@ -176,7 +176,7 @@ function buildHome(userId,profile) {
   divider(container);
   addSection(container,"### 🐉 Species Achievements\nEach playable species has an individual mastery trial. Dragon variants and awakening forms have additional objectives.",new ButtonBuilder().setCustomId("ach:species:"+userId+":0").setLabel("View").setStyle(ButtonStyle.Primary));
   divider(container);
-  addSection(container,"### 🏆 Glory Leaderboard\nSee the global Top 25. Only the Top 10 receive rank-update DMs.",new ButtonBuilder().setCustomId("ach:leaderboard:"+userId).setLabel("View").setStyle(ButtonStyle.Secondary));
+  addSection(container,"### 🏆 Glory Leaderboard\nSee the global Top 10, ranked by total Glory.",new ButtonBuilder().setCustomId("ach:leaderboard:"+userId).setLabel("View").setStyle(ButtonStyle.Secondary));
   return {components:[container],flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral,allowedMentions:{parse:[]}};
 }
 function buildNormalPage(userId,state,profile,page,notice) {
@@ -401,17 +401,24 @@ function formatLeaderboardRow(entry, rank) {
   return prefix+" "+(rank<=10?"🏅 ":"")+"**"+player+"** · "+GLORY+" **"+glory+" Glory**";
 }
 async function buildLeaderboardPayload(client) {
-  const entries=await database.getGloryLeaderboardTop(25),container=new ContainerBuilder().setAccentColor(0xe0b64c);
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🏆 "+GLORY+" GLOBAL GLORY LEADERBOARD\nTop 25 players ranked by total Glory. Top 10 players receive in-profile rank badges and rank-update DMs."));
+  const entries=await database.getGloryLeaderboardTop(10);
+  const container=new ContainerBuilder().setAccentColor(0x0891b2);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🏆 LOZ Leaderboard"));
   divider(container);
-  if(entries===null) container.addTextDisplayComponents(new TextDisplayBuilder().setContent("MongoDB could not load the Glory leaderboard. Please try again later."));
-  else if(!entries.length) container.addTextDisplayComponents(new TextDisplayBuilder().setContent("No Glory has been earned yet. Open /achievements to begin."));
-  else {
-    const rows=[];
-    for(let index=0;index<entries.length;index++) {
-      rows.push(formatLeaderboardRow(entries[index],index+1));
-    }
-    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(rows.join("\n")));
+  if(entries===null) {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("### 🏆 Glory\nMongoDB could not load the leaderboard. Please try again later."));
+  } else if(!entries.length) {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("### 🏆 Glory\nNo Glory has been earned yet. Open /achievements to begin."));
+  } else {
+    const rows=entries.map((entry,index)=>{
+      const rank=index+1;
+      const userId=String(entry && entry.userId || "");
+      const player=/^\d{17,20}$/.test(userId) ? "<@"+userId+">" : "Unknown Player";
+      const prefix=rank===1?"🥇":rank===2?"🥈":rank===3?"🥉":"**#"+String(rank).padStart(2,"0")+"**";
+      const glory=Math.max(0,Number(entry && entry.glory)||0).toLocaleString();
+      return prefix+" 🏆 **"+player+"** · **"+glory+" Glory**";
+    });
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("### 🏆 Glory\n*Top "+rows.length+" players · Ranked by total Glory*\n\n"+rows.join("\n")));
   }
   return {components:[container],flags:MessageFlags.IsComponentsV2,allowedMentions:{parse:[]}};
 }
