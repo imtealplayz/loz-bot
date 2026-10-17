@@ -656,7 +656,7 @@ function getCurrentDeveloperAlert() {
   const version = String(note?.version || "current");
   const date = String(note?.date || "");
   return {
-    id: version + "-" + (date || "current"),
+    id: String(note?.alertId || (version + "-" + (date || "current"))),
     version,
     date,
     changes: Array.isArray(note?.changes) ? note.changes : [],
