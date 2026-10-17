@@ -2290,7 +2290,7 @@ async function handleCommand(interaction) {
         .addFields(
           {name:"🧬 Species Management",value:"`/owner species-change @user <species>`\n`/owner species-unlock @user <species>`\n`/owner species-reset @user`\n`/owner species-add @user <rolls>`",inline:false},
           {name:"🎒 Items",value:"`/owner add items @user species_token <quantity>`",inline:false},
-          {name:"🛡️ Access & Management",value:"`/owner ban @user [time]`\n`/owner unban @user`\n`/owner clear-fight @user`\n`/owner rolls-reset @user`\n`/owner quest-reset @user <quest>`\n`/owner debug-db`\n`/owner repair-user-db`\n`/owner leave [server_id]`",inline:false}
+          {name:"🛡️ Access & Management",value:"`/owner ban @user [time]`\n`/owner unban @user`\n`/owner clear-fight @user`\n`/owner rolls-reset @user`\n`/owner quest-reset @user <quest>`\n`/owner debug-db`\n`/owner repair-user-db`\n`/owner leave [server_id]`\n`/owner blacklist add <server_id>`\n`/owner blacklist servers`\n`/owner whitelist <server_id>`",inline:false}
         ).setFooter({text:"Use /owner menu to see this again"})]});
     }
 
