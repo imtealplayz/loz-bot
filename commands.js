@@ -1970,7 +1970,7 @@ async function handleCommand(interaction) {
       const blacklistAction=options.getSubcommand();
       if (blacklistAction==="add") {
         const serverId=String(options.getString("server_id")||"").trim();
-        if (!/^\\d{17,20}$/.test(serverId)) {
+        if (!/^[0-9]{17,20}$/.test(serverId)) {
           return safeReply(interaction,{embeds:[createErrorEmbed("That server ID is invalid. Copy the server's numeric ID and try again.")],flags:MessageFlags.Ephemeral});
         }
 
@@ -1994,7 +1994,7 @@ async function handleCommand(interaction) {
                 notice.addTextDisplayComponents(new TextDisplayBuilder().setContent("## ⛔ LOZ Has Left This Server"));
                 notice.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
                 notice.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-                  "LOZ has left **"+serverName.replace(/[\\\\*_~|>]/g,"")+"** because the server was added to LOZ's blacklist by its owner. LOZ will automatically leave again if someone adds it while it remains blacklisted.\n\n**Server ID:** "+serverId
+                  "LOZ has left **"+serverName.replace(/[*_~|>]/g,"")+"** because the server was added to LOZ's blacklist by its owner. LOZ will automatically leave again if someone adds it while it remains blacklisted.\n\n**Server ID:** "+serverId
                 ));
                 await serverOwner.send({components:[notice],flags:MessageFlags.IsComponentsV2,allowedMentions:{parse:[]}});
               } catch(error) {
@@ -2023,7 +2023,7 @@ async function handleCommand(interaction) {
         }
 
         const lines=entries.map(entry=>{
-          const name=String(entry.guildName||"Unknown server").replace(/[\\\\*_~|>]/g,"").slice(0,100)||"Unknown server";
+          const name=String(entry.guildName||"Unknown server").replace(/[*_~|>]/g,"").slice(0,100)||"Unknown server";
           const time=new Date(entry.blacklistedAt||0).getTime();
           const added=Number.isFinite(time)&&time>0 ? "<t:"+Math.floor(time/1000)+":d>" : "date unknown";
           return "• **"+name+"** — ID: "+String(entry.guildId)+" — added "+added;
@@ -2035,7 +2035,7 @@ async function handleCommand(interaction) {
             chunks.push(current);
             current="";
           }
-          current+=(current?"\\n":"")+line;
+          current+=(current?"\n":"")+line;
         }
         if (current) chunks.push(current);
 
@@ -2057,7 +2057,7 @@ async function handleCommand(interaction) {
         return safeReply(interaction,{embeds:[createErrorEmbed("Only the primary LOZ owner can manage the server whitelist.")],flags:MessageFlags.Ephemeral});
       }
       const serverId=String(options.getString("server_id")||"").trim();
-      if (!/^\\d{17,20}$/.test(serverId)) {
+      if (!/^[0-9]{17,20}$/.test(serverId)) {
         return safeReply(interaction,{embeds:[createErrorEmbed("That server ID is invalid. Copy the server's numeric ID and try again.")],flags:MessageFlags.Ephemeral});
       }
       const removed=await database.whitelistGuild(serverId);
