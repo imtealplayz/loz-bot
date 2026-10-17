@@ -1974,42 +1974,49 @@ async function handleCommand(interaction) {
           return safeReply(interaction,{embeds:[createErrorEmbed("That server ID is invalid. Copy the server's numeric ID and try again.")],flags:MessageFlags.Ephemeral});
         }
 
+        // Acknowledge before any leave action; the command can be invoked inside
+        // the very server LOZ is about to leave.
+        await interaction.deferReply({flags:MessageFlags.Ephemeral});
         const joinedGuild=_client.guilds.cache.get(serverId)||null;
         const serverName=String(joinedGuild?.name||"Unknown server");
         const saved=await database.blacklistGuild(serverId,serverName,user.id);
         if (!saved?.ok) {
-          return safeReply(interaction,{embeds:[createErrorEmbed("MongoDB could not save this blacklist entry. No success is being reported; check the database before retrying.")],flags:MessageFlags.Ephemeral});
+          return interaction.editReply({embeds:[createErrorEmbed("MongoDB could not save this blacklist entry. No success is being reported; check the database before retrying.")]});
         }
 
         let leaveNote="LOZ is not currently in this server. Any future attempt to add LOZ will be rejected automatically.";
         if (joinedGuild) {
-          const ownerId=String(joinedGuild.ownerId||"");
+          const serverOwnerId=String(joinedGuild.ownerId||"");
+          let ownerNotified=false;
+
+          // Send the notice while LOZ is still in the server, before leaving.
+          if (serverOwnerId) {
+            try {
+              const serverOwner=await _client.users.fetch(serverOwnerId);
+              const notice=new ContainerBuilder().setAccentColor(0xdc2626);
+              notice.addTextDisplayComponents(new TextDisplayBuilder().setContent("## ⛔ LOZ Has Left This Server"));
+              notice.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+              notice.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+                "LOZ is leaving **"+serverName.replace(/[*_~|>]/g,"")+"** because the server was added to LOZ's blacklist by its owner. LOZ will automatically leave again if someone adds it while it remains blacklisted.\n\n**Server ID:** "+serverId
+              ));
+              await serverOwner.send({components:[notice],flags:MessageFlags.IsComponentsV2,allowedMentions:{parse:[]}});
+              ownerNotified=true;
+            } catch(error) {
+              console.warn("[Server Blacklist] Could not notify the owner of newly blacklisted server "+serverId+": "+String(error?.message||error));
+            }
+          }
+
           try {
             await joinedGuild.leave();
-            leaveNote="LOZ has also left this server immediately.";
-            if (ownerId) {
-              try {
-                const serverOwner=await _client.users.fetch(ownerId);
-                const notice=new ContainerBuilder().setAccentColor(0xdc2626);
-                notice.addTextDisplayComponents(new TextDisplayBuilder().setContent("## ⛔ LOZ Has Left This Server"));
-                notice.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-                notice.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-                  "LOZ has left **"+serverName.replace(/[*_~|>]/g,"")+"** because the server was added to LOZ's blacklist by its owner. LOZ will automatically leave again if someone adds it while it remains blacklisted.\n\n**Server ID:** "+serverId
-                ));
-                await serverOwner.send({components:[notice],flags:MessageFlags.IsComponentsV2,allowedMentions:{parse:[]}});
-              } catch(error) {
-                console.warn("[Server Blacklist] Could not notify the owner of newly blacklisted server "+serverId+": "+String(error?.message||error));
-                leaveNote+=" The server owner could not be notified by DM.";
-              }
-            }
+            leaveNote="LOZ has left this server immediately."+(ownerNotified ? " The server owner was notified by DM." : " The server owner could not be notified by DM.");
           } catch(error) {
             console.error("[Server Blacklist] Could not leave newly blacklisted server "+serverId+":",error?.stack||error);
-            leaveNote="The blacklist entry was saved, but LOZ could not leave the server immediately. The join guard will keep checking future joins; please inspect the logs.";
+            leaveNote="The blacklist entry was saved, but LOZ could not leave the server immediately. Please inspect the logs.";
           }
         }
 
         const status=saved.alreadyBlacklisted ? "This server was already on the blacklist." : "Server added to the persistent blacklist.";
-        return safeReply(interaction,{embeds:[createSuccessEmbed(status+"\n**Server:** "+serverName+"\n**Server ID:** "+serverId+"\n"+leaveNote)],flags:MessageFlags.Ephemeral});
+        return interaction.editReply({embeds:[createSuccessEmbed(status+"\n**Server:** "+serverName+"\n**Server ID:** "+serverId+"\n"+leaveNote)]});
       }
 
       if (blacklistAction==="servers") {
