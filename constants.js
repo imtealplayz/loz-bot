@@ -1,6 +1,6 @@
 const patchNotes = [
   {
-    version:"6.2", date:"2026-10-17",
+    version:"6.2", date:"2026-10-17", alertId:"6.2-codes-2026-10-17",
     changes:[
       "Added codes. Use UPDATE6.2 to claim your reward.",
     ],
@@ -13,7 +13,6 @@ const patchNotes = [
       "Damage and ultimate progress is committed when a fight resolves, preventing forfeits from farming in-fight objectives.",
       "Added clickable Discord command mentions to /alert and /help, and simplified the private alert reminder text.",
       "Announced Build Your Own Species in the official LOZ server: the community-favorite submission will be added to LOZ and permanently granted to its creator.",
-      "Made Chaos Creator appear in /switch only for eligible accounts and added permanent grants through /owner species-unlock.",
     ],
   },
   {
