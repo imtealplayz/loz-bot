@@ -1,5 +1,11 @@
 const patchNotes = [
   {
+    version:"6.2", date:"2026-10-17",
+    changes:[
+      "Added codes. Use UPDATE6.2 to claim your reward.",
+    ],
+  },
+  {
     version:"6.1", date:"2026-10-16",
     changes:[
       "Forfeited PvP fights no longer grant quest, awakening, Glory, or species-mastery progress; ordinary win/loss records remain intact.",
