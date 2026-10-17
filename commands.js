@@ -1786,7 +1786,7 @@ async function handleCommand(interaction) {
       const amount=options.getInteger("amount") ?? 1;
       const expiresMinutes=options.getInteger("expires-minutes") ?? 30;
       const maxClaims=options.getInteger("max-claims") ?? 1;
-      if (!/^[A-Z0-9_-]{3,32}$/.test(code)) {
+      if (!/^[A-Z0-9._-]{3,32}$/.test(code)) {
         return safeReply(interaction,{content:"Code must be 3–32 characters and contain only letters, numbers, hyphens, or underscores.",flags:64});
       }
       await interaction.deferReply({flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral});
