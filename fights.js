@@ -289,6 +289,7 @@ async function runBotTurn(channel, fightId, turnToken) {
         if (botC.currentHp>botHpBeforeHeal && chaosSystem.isChaosCreatorOwner(playerC)) {
           const decision=await chaosSystem.askChaosReaction({
             fight,channel,
+            respondentId:playerC.id,
             question:"This individual named "+botC.species.name+" has healed. Do you want to undo the heal?",
             confirmedText:"Healing reversal confirmed.",
             declinedText:"Healing reversal declined.",
@@ -307,6 +308,7 @@ async function runBotTurn(channel, fightId, turnToken) {
       if (chaosSystem.isChaosCreatorOwner(playerC)) {
         const decision=await chaosSystem.askChaosReaction({
           fight,channel,
+          respondentId:playerC.id,
           question:"This individual named "+botC.species.name+" has activated their ULT. Do you wish to nullify it?",
           confirmedText:"Ultimate nullification confirmed.",
           declinedText:"Ultimate nullification declined.",
@@ -375,6 +377,7 @@ async function runBotTurn(channel, fightId, turnToken) {
       if (damageTaken>0 && chaosSystem.isChaosCreatorOwner(playerC)) {
         const decision=await chaosSystem.askChaosReaction({
           fight,channel,
+          respondentId:playerC.id,
           question:"This individual named "+botC.species.name+" attacked you. Do you want to reverse the damage?",
           confirmedText:"Damage reversal confirmed.",
           declinedText:"Damage reversal declined.",
