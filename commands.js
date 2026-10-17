@@ -12,6 +12,7 @@ const {
   getPassiveDescription, getActiveDescription,
 } = require("./constants.js");
 const database = require("./database.js");
+const crypto = require("node:crypto");
 const {
   hpBar, createErrorEmbed, createSuccessEmbed, safeReply,
   getSpeciesByName, getRandomSpecies, getDragonSubtype,
@@ -105,6 +106,111 @@ function getSpeciesAutocompleteEntries(includeChaosCreator = false) {
       name: (String(species.emoji || "✨") + " " + species.name).slice(0, 100),
       value: species.name,
     }));
+}
+
+function attachLeaderboardSelector(payload, selectedType) {
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId("leaderboard_select")
+    .setPlaceholder("Choose a leaderboard")
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(
+      {label:"Fight Wins",value:"fights",description:"Ranked by player fight wins",default:selectedType==="fights"},
+      {label:"Species Rolls",value:"rolls",description:"Ranked by unspent Species Rolls",default:selectedType==="rolls"},
+      {label:"Glory",value:"glory",description:"Ranked by total Glory",default:selectedType==="glory"},
+    );
+  payload.components = [...(payload.components || []), new ActionRowBuilder().addComponents(menu)];
+  payload.allowedMentions = {parse:[]};
+  return payload;
+}
+
+async function buildLeaderboardView(leaderboardType, guild) {
+  const type = ["fights","rolls","glory"].includes(leaderboardType) ? leaderboardType : "fights";
+  if (type === "glory") {
+    const entries = await database.getGloryLeaderboardTop(10);
+    let body = "No Glory has been earned yet. Open /achievements to begin.";
+    if (entries === null) body = "MongoDB could not load the Glory leaderboard. Please try again later.";
+    else if (entries.length) {
+      const rows = entries.map((entry,index) => {
+        const rank=index+1;
+        const id=String(entry?.userId || "");
+        const player=/^\d{17,20}$/.test(id) ? "<@"+id+">" : "Unknown Player";
+        const prefix=rank===1?"🥇":rank===2?"🥈":rank===3?"🥉":"**#"+String(rank).padStart(2,"0")+"**";
+        return prefix+" 🏆 **"+player+"** · **"+Math.max(0,Number(entry?.glory)||0).toLocaleString()+" Glory**";
+      });
+      body="*Top "+rows.length+" players · Ranked by total Glory*\n\n"+rows.join("\n");
+    }
+    return attachLeaderboardSelector(buildStyledCardPayload("🏆 LOZ Leaderboard",0x0891b2,[{heading:"🏆 Glory",body}]),type);
+  }
+
+  if (type === "fights") {
+    const sorted=Array.from(_state.fightLeaderboard.entries())
+      .sort((a,b)=>((Number(b[1]?.wins)||0)-(Number(a[1]?.wins)||0))||String(a[0]).localeCompare(String(b[0])))
+      .slice(0,10);
+    const rows=[];
+    for (let index=0;index<sorted.length;index++) {
+      const [uid,score]=sorted[index];
+      let name="Unknown";
+      try {
+        const member=guild ? await guild.members.fetch(uid).catch(()=>null) : null;
+        if (member) name=member.displayName;
+        else { const fetched=await _client.users.fetch(uid).catch(()=>null); if(fetched) name=fetched.username; }
+      } catch(_){}
+      const species=_state.userSpecies.get(uid)?.species;
+      const rank=index===0?"🥇":index===1?"🥈":index===2?"🥉":"**"+String(index+1).padStart(2,"0")+".**";
+      rows.push(rank+" "+(species?.emoji||"⚔️")+" **"+name+"** · **"+(Number(score?.wins)||0)+" wins**");
+    }
+    const body=rows.length ? "*Top "+rows.length+" players · Ranked by wins*\n\n"+rows.join("\n")+"\n\n*Fight to climb the ranks.*" : "No fight records yet. Start battling to appear here.";
+    return attachLeaderboardSelector(buildStyledCardPayload("🏆 LOZ Leaderboard",0x0891b2,[{heading:"⚔️ Fight Wins",body}]),type);
+  }
+
+  const sorted=Array.from(_state.userSpecies.entries())
+    .map(([uid,data])=>({uid,data,rolls:Math.max(0,Number(data?.rolls)||0)}))
+    .filter(entry=>entry.rolls>0)
+    .sort((a,b)=>(b.rolls-a.rolls)||a.uid.localeCompare(b.uid))
+    .slice(0,10);
+  const rows=[];
+  for (let index=0;index<sorted.length;index++) {
+    const {uid,data,rolls}=sorted[index];
+    let name="Unknown";
+    try {
+      const member=guild ? await guild.members.fetch(uid).catch(()=>null) : null;
+      if (member) name=member.displayName;
+      else { const fetched=await _client.users.fetch(uid).catch(()=>null); if(fetched) name=fetched.username; }
+    } catch(_){}
+    const rank=index===0?"🥇":index===1?"🥈":index===2?"🥉":"**"+String(index+1).padStart(2,"0")+".**";
+    rows.push(rank+" "+(data?.species?.emoji||"🎲")+" **"+name+"** · <:reroll_dice:1558042108965822515> **"+rolls+"**");
+  }
+  const body=rows.length ? "*Top "+rows.length+" players · Ranked by current rolls*\n\n"+rows.join("\n")+"\n\n*Earn rolls with \`/daily\` and verified votes.*" : "No unspent rolls to rank yet. Use \`/daily\` to earn Species Rolls.";
+  return attachLeaderboardSelector(buildStyledCardPayload("🏆 LOZ Leaderboard",0x0891b2,[{heading:"🎲 Species Rolls",body}]),type);
+}
+
+function buildCodesViewPayload(records, requestedPage=0, userId=null) {
+  const list=Array.isArray(records) ? records : [];
+  const pageSize=15;
+  const pageCount=Math.max(1,Math.ceil(list.length/pageSize));
+  const page=Math.max(0,Math.min(pageCount-1,Math.floor(Number(requestedPage)||0)));
+  const container=new ContainerBuilder().setAccentColor(0x0891b2);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🎟️ Redemption Codes"));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  const rows=list.slice(page*pageSize,page*pageSize+pageSize).map(record=>{
+    const expiry=new Date(record.expiresAt).getTime();
+    const claims=Math.max(0,Number(record.claimedCount)||0);
+    const maxClaims=Math.max(1,Number(record.maxClaims)||1);
+    const status=!Number.isFinite(expiry)||expiry<=Date.now() ? "EXPIRED" : claims>=maxClaims ? "EXHAUSTED" : "ACTIVE";
+    const reward=record.rewardType==="tokens" ? "Species Tokens" : "Species Rolls";
+    const expiryText=Number.isFinite(expiry) ? "<t:"+Math.floor(expiry/1000)+":R>" : "unknown";
+    return "\`"+String(record.code||"UNKNOWN")+"\` · "+reward+" ×"+(Number(record.amount)||1)+" · "+claims+"/"+maxClaims+" claims · expires "+expiryText+" · **"+status+"**";
+  });
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(rows.length ? rows.join("\n") : "No redemption codes have been generated yet."));
+  const components=[container];
+  if (pageCount>1) {
+    components.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("codes_view_prev_"+userId+"_"+page).setLabel("Previous").setStyle(ButtonStyle.Secondary).setDisabled(page<=0),
+      new ButtonBuilder().setCustomId("codes_view_next_"+userId+"_"+page).setLabel("Next").setStyle(ButtonStyle.Secondary).setDisabled(page>=pageCount-1),
+    ));
+  }
+  return {components,flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral,allowedMentions:{parse:[]}};
 }
 
 async function handleAutocomplete(interaction) {
@@ -395,6 +501,7 @@ const HELP_PAGES = [
     commands:[
       {usage:"/alert",name:"Read the developer alert",description:"View the latest message from the LOZ developers. A private reminder appears until you read it."},
       {usage:"/patchnotes",name:"Read patch notes",description:"View the latest LOZ changes and fixes."},
+      {usage:"/codes redeem code:<code>",name:"Redeem a code",description:"Redeem a limited-time LOZ reward code."},
       {usage:"/help",name:"Open this command guide",description:"Browse the command directory one category at a time."},
     ],
   },
@@ -556,34 +663,32 @@ function getCurrentDeveloperAlert() {
   };
 }
 
-function buildDeveloperAlertPayload(ephemeral = true) {
+function buildDeveloperAlertPayload(ephemeral = true, codeRecord = null) {
   const alert = getCurrentDeveloperAlert();
   const container = new ContainerBuilder().setAccentColor(0x0891b2);
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "## 🔔 Developer Alert\n**LOZ v" + alert.version + "**" + (alert.date ? " · " + alert.date : "") +
-    "\n\nA message from the LOZ development team."
+    "## 🔔 LOZ Update " + alert.version + (alert.date ? " · " + alert.date : "")
   ));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    alert.changes.length ? alert.changes.map(change => "• " + change).join("\n") : "There are no active developer notes right now."
+    "### 🧪 Build Your Own Species\nSubmit your species idea in the official LOZ server. The community-favorite submission will be added to LOZ, and its creator will receive that species permanently.\n\n**Official server:** " + SUPPORT_SERVER_INVITE
   ));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "Quick commands: " + ["help","patchnotes","quests","achievements","awakening","switch"].map(commandMention).join(" · ")
-      + "\n[LOZ Website](https://lozbot.vercel.app/)"
-  ));
-  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "## 🛟 Lost a Species After an Update?\nIf LOZ no longer lets you switch to a species you previously owned or unlocked, keep any proof you have, such as screenshots, clips, older profile screenshots, or messages showing the species. Join the official server and contact the LOZ team. We will review genuine cases, and confirmed lost species can be restored.\n\nOfficial server: " + SUPPORT_SERVER_INVITE
-  ));
-  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "## 🧪 Build Your Own Species\nJoin the official server to submit your own species. The submission loved most by the community will be added to LOZ, and its creator will receive that species permanently.\n\nOfficial server: " + SUPPORT_SERVER_INVITE
-  ));
+  let codeBody = "### 🎁 Limited-Time Reward Code\n**Code:** \`UPDATE6.2\`\nLOZ could not verify the code right now. Please retry shortly.";
+  if (codeRecord) {
+    const expiry = new Date(codeRecord.expiresAt).getTime();
+    const claims = Math.max(0, Number(codeRecord.claimedCount) || 0);
+    const maxClaims = Math.max(1, Number(codeRecord.maxClaims) || 1);
+    const active = Number.isFinite(expiry) && expiry > Date.now() && claims < maxClaims;
+    codeBody = active
+      ? "### 🎁 Limited-Time Reward Code\n**Code:** \`UPDATE6.2\`\n**Reward:** " + (Number(codeRecord.amount) || 3) + " Species Rolls\n**Expires:** <t:" + Math.floor(expiry / 1000) + ":F> (<t:" + Math.floor(expiry / 1000) + ":R>)\n**Claims:** " + claims + "/" + maxClaims + "\nRedeem with \`/codes redeem\`."
+      : "### 🎁 Limited-Time Reward Code\n\`UPDATE6.2\` has expired or reached its claim limit.";
+  }
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(codeBody));
   return {
     components:[container],
     flags:MessageFlags.IsComponentsV2 | (ephemeral ? MessageFlags.Ephemeral : 0),
-    allowedMentions:{ parse:[] },
+    allowedMentions:{parse:[]},
   };
 }
 
@@ -591,12 +696,12 @@ function buildDeveloperAlertReminderPayload() {
   const alert = getCurrentDeveloperAlert();
   const container = new ContainerBuilder().setAccentColor(0x0891b2);
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "## 🔔 A Message from the LOZ Developers\nA developer alert is available for **LOZ v" + alert.version + "**.\n\n## 🛟 Lost a Species After an Update?\nIf a species you previously owned or unlocked suddenly appears locked or is missing, keep any proof you have, such as screenshots, clips, older profile screenshots, or messages showing the species. Join the official server and contact the LOZ team so we can review it. Confirmed lost species can be restored.\n\nOfficial server: " + SUPPORT_SERVER_INVITE + "\n\nRun " + commandMention("alert") + " to read the full developer alert."
+    "## 🔔 LOZ " + alert.version + " Update\nThe latest update announcement is available. Run " + commandMention("alert") + " to view the Build Your Own Species details and check whether \`UPDATE6.2\` is still available."
   ));
   return {
     components:[container],
     flags:MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
-    allowedMentions:{ parse:[] },
+    allowedMentions:{parse:[]},
   };
 }
 
@@ -1060,12 +1165,13 @@ async function handleCommand(interaction) {
     const alert = getCurrentDeveloperAlert();
     const saved = await database.markDeveloperAlertViewed(user.id, alert.id);
     if (!saved) console.warn("[Developer Alert] Alert displayed, but its viewed state could not be saved for " + user.id);
-    return safeReply(interaction, buildDeveloperAlertPayload(true));
+    const codeRecord = await database.getRedeemCode("UPDATE6.2");
+    return safeReply(interaction, buildDeveloperAlertPayload(true, codeRecord));
   }
 
   // ── PATCHNOTES ────────────────────────────────────────────────
   if (commandName === "patchnotes") {
-    const visibleNotes=patchNotes.slice(0,2);
+    const visibleNotes=patchNotes.slice(0,1);
     const container=new ContainerBuilder().setAccentColor(0x0891b2);
 
     visibleNotes.forEach((note,index)=>{
@@ -1628,57 +1734,87 @@ async function handleCommand(interaction) {
     ]));
   }
 
+  // ── REDEMPTION CODES ────────────────────────────────────────────
+  if (commandName === "codes") {
+    const sub=options.getSubcommand();
+    if (sub==="redeem") {
+      await interaction.deferReply({flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral});
+      const inputCode=options.getString("code",true);
+      const result=await database.redeemCode(user.id,inputCode);
+      if (!result?.ok) {
+        const errors={
+          "not-found":["Code Not Found","That code does not exist. Double-check the spelling and try again."],
+          "expired":["Code Expired","This redemption code has expired."],
+          "exhausted":["Code Unavailable","This code has reached its claim limit."],
+          "invalid-user":["Redemption Unavailable","LOZ could not verify your account. Please try again."],
+          "reward-pending":["Reward Still Processing","LOZ reserved your claim but couldn't yet confirm the reward. Retry this same code; it will not grant a duplicate reward."],
+          "database-error":["Redemption Unavailable","LOZ couldn't confirm this redemption in MongoDB. No success is being reported. Please retry the same code shortly."],
+        };
+        const [title,body]=errors[result?.status] || errors["database-error"];
+        return interaction.editReply(buildStyledCardPayload(title,0xdc2626,[{body}],true));
+      }
+      if (result.alreadyRedeemed) {
+        return interaction.editReply(buildStyledCardPayload("Already Redeemed",0x808080,[{body:"You have already redeemed this code. No extra reward was granted."}],true));
+      }
+      const ud=_state.userSpecies.get(user.id)||{
+        species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,speciesTokens:0,
+        requestsEnabled:true,lastSwitch:0,awakening:{},badges:[],
+      };
+      if (result.rewardType==="tokens") ud.speciesTokens=Number(result.balance)||0;
+      else ud.rolls=Number(result.balance)||0;
+      _state.userSpecies.set(user.id,ud);
+      const rewardLabel=result.rewardType==="tokens"
+        ? SPECIES_TOKEN_EMOJI+" **"+result.amount+" Species Token(s)**"
+        : "<:reroll_dice:1558042108965822515> **"+result.amount+" Species Roll(s)**";
+      const balanceLabel=result.rewardType==="tokens"
+        ? "New Species Token balance: **"+ud.speciesTokens+"**."
+        : "New Species Roll balance: **"+ud.rolls+"**.";
+      return interaction.editReply(buildStyledCardPayload("Code Redeemed",0x16a34a,[
+        {body:"Code \`"+String(inputCode).trim().toUpperCase()+"\` redeemed successfully.\n\nReceived "+rewardLabel+".\n"+balanceLabel},
+      ],true));
+    }
+
+    if (user.id!==_state.ownerId) {
+      return safeReply(interaction,{content:"Only the primary LOZ owner can manage redemption codes.",flags:64});
+    }
+
+    if (sub==="generate") {
+      const supplied=options.getString("code");
+      const code=supplied ? supplied.trim().toUpperCase() : crypto.randomBytes(6).toString("hex").toUpperCase();
+      const rewardType=options.getString("reward") || "rolls";
+      const amount=options.getInteger("amount") ?? 1;
+      const expiresMinutes=options.getInteger("expires-minutes") ?? 30;
+      const maxClaims=options.getInteger("max-claims") ?? 1;
+      if (!/^[A-Z0-9_-]{3,32}$/.test(code)) {
+        return safeReply(interaction,{content:"Code must be 3–32 characters and contain only letters, numbers, hyphens, or underscores.",flags:64});
+      }
+      const result=await database.createRedeemCode({code,rewardType,amount,expiresMinutes,maxClaims,createdBy:user.id});
+      if (!result?.ok) {
+        const error=result?.status==="code-exists" ? "That code already exists. Choose a different code."
+          : result?.status==="invalid-values" ? "Amount, expiry, or claim limit is outside the allowed range."
+          : "MongoDB could not save this code. No code was created.";
+        return safeReply(interaction,{content:error,flags:64});
+      }
+      const record=result.code;
+      const expiry=Math.floor(new Date(record.expiresAt).getTime()/1000);
+      const rewardName=record.rewardType==="tokens" ? "Species Token(s)" : "Species Roll(s)";
+      return safeReply(interaction,buildStyledCardPayload("Redemption Code Created",0x16a34a,[
+        {body:"**Code:** \`"+record.code+"\`\n**Reward:** "+record.amount+" "+rewardName+"\n**Expires:** <t:"+expiry+":F> (<t:"+expiry+":R>)\n**Claim limit:** "+record.maxClaims+" user(s)"},
+      ],true));
+    }
+
+    if (sub==="view") {
+      await interaction.deferReply({flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral});
+      const result=await database.listRedeemCodes();
+      if (!result?.ok) return interaction.editReply(buildStyledCardPayload("Code List Unavailable",0xdc2626,[{body:"MongoDB could not load redemption codes. No codes were changed."}],true));
+      return interaction.editReply(buildCodesViewPayload(result.codes,0,user.id));
+    }
+  }
+
   // ── LEADERBOARD ────────────────────────────────────────────────
   if (commandName === "leaderboard") {
-    const leaderboardType = options.getString("type", true);
-    await interaction.deferReply({ flags:MessageFlags.IsComponentsV2 });
-
-    if (leaderboardType === "glory") return interaction.editReply(await achievementSystem.buildLeaderboardPayload(_client));
-
-    if (leaderboardType === "fights") {
-      const sorted=Array.from(_state.fightLeaderboard.entries())
-        .sort((a,b)=>((Number(b[1]?.wins)||0)-(Number(a[1]?.wins)||0))||String(a[0]).localeCompare(String(b[0])))
-        .slice(0,10);
-      const rows=[];
-      for(let n=0;n<sorted.length;n++) {
-        const [uid,score]=sorted[n];
-        let name="Unknown";
-        try {
-          const member=guild ? await guild.members.fetch(uid).catch(()=>null) : null;
-          if(member) name=member.displayName;
-          else { const fetched=await _client.users.fetch(uid).catch(()=>null); if(fetched) name=fetched.username; }
-        } catch(_){}
-        const species=_state.userSpecies.get(uid)?.species;
-        const rank=n===0?"🥇":n===1?"🥈":n===2?"🥉":`**${String(n+1).padStart(2,"0")}.**`;
-        rows.push(`${rank} ${species?.emoji||"⚔️"} **${name}**  ·  \`${Number(score?.wins)||0} wins\``);
-      }
-      return interaction.editReply(buildStyledCardPayload("🏆 LOZ Leaderboard",0xff4500,[
-        {heading:"⚔️ Fight Wins",body:rows.length ? `*Top ${rows.length} players · Ranked by wins*\n\n${rows.join("\n")}\n\n*Fight to climb the ranks.*` : "No fight records yet. Start battling to appear here."},
-      ]));
-    }
-
-    if (leaderboardType === "rolls") {
-      const sorted=Array.from(_state.userSpecies.entries())
-        .map(([uid,data])=>({uid,data,rolls:Math.max(0,Number(data?.rolls)||0)}))
-        .filter(entry=>entry.rolls>0)
-        .sort((a,b)=>(b.rolls-a.rolls)||a.uid.localeCompare(b.uid))
-        .slice(0,10);
-      const rows=[];
-      for(let n=0;n<sorted.length;n++) {
-        const {uid,data,rolls}=sorted[n];
-        let name="Unknown";
-        try {
-          const member=guild ? await guild.members.fetch(uid).catch(()=>null) : null;
-          if(member) name=member.displayName;
-          else { const fetched=await _client.users.fetch(uid).catch(()=>null); if(fetched) name=fetched.username; }
-        } catch(_){}
-        const rank=n===0?"🥇":n===1?"🥈":n===2?"🥉":`**${String(n+1).padStart(2,"0")}.**`;
-        rows.push(`${rank} ${data?.species?.emoji||"🎲"} **${name}**  ·  <:reroll_dice:1558042108965822515> **${rolls}**`);
-      }
-      return interaction.editReply(buildStyledCardPayload("🏆 LOZ Leaderboard",0x0891b2,[
-        {heading:"🎲 Species Rolls",body:rows.length ? `*Top ${rows.length} players · Ranked by current rolls*\n\n${rows.join("\n")}\n\n*Earn rolls with \`/daily\` and verified votes.*` : "No unspent rolls to rank yet. Use `/daily` to earn Species Rolls."},
-      ]));
-    }
+    await interaction.deferReply({flags:MessageFlags.IsComponentsV2});
+    return interaction.editReply(await buildLeaderboardView("fights",guild));
   }
 
   // ── QUEST BOARD ───────────────────────────────────────────────
@@ -2051,8 +2187,8 @@ async function handleCommand(interaction) {
       else if (spname==="Slime Lord") ud.questSpecies.slimeLord={...(ud.questSpecies.slimeLord||{}),unlocked:true,equipped:false,godGranted:true};
       else if (spname==="Eclipsed Sovereign") ud.awakening.halfBlood={...(ud.awakening.halfBlood||{}),awakened:true};
        else if (spname==="True Dragon") ud.awakening.trueDragon={...(ud.awakening.trueDragon||{}),awakened:true,unlocked:true};
-      // God-given species becomes the new original species.
-      ud.originalSpecies=newSp;
+      // Chaos Creator is an equipable unlock, not a replacement for the player's original species.
+      if (spname!=="Chaos Creator") ud.originalSpecies=newSp;
       ud.species=newSp;
       const isExclusive=["Reaper","Archdemon","Mechangel","Slime Lord","Eclipsed Sovereign","Chaos Creator","True Dragon"].includes(spname);
       const saved=isExclusive
@@ -2173,6 +2309,23 @@ async function handleCommand(interaction) {
 // ==================== BUTTON HANDLER ====================
 async function handleButton(interaction) {
   const { customId, user, guild, channel, message } = interaction;
+  if (customId.startsWith("codes_view_")) {
+    if (user.id!==_state.ownerId) {
+      return safeReply(interaction,{content:"Only the primary LOZ owner can view redemption codes.",flags:64});
+    }
+    const parts=customId.slice("codes_view_".length).split("_");
+    const direction=parts[0], expectedUserId=parts[1], pageRaw=parts[2];
+    if (expectedUserId!==user.id || !["prev","next"].includes(direction)) {
+      return safeReply(interaction,{content:"This redemption-code page is invalid.",flags:64});
+    }
+    const currentPage=Math.max(0,Number(pageRaw)||0);
+    const nextPage=direction==="prev" ? currentPage-1 : currentPage+1;
+    await interaction.deferUpdate();
+    const result=await database.listRedeemCodes();
+    if (!result?.ok) return interaction.editReply(buildStyledCardPayload("Code List Unavailable",0xdc2626,[{body:"MongoDB could not load the code list. Please try again."}],true));
+    return interaction.editReply(buildCodesViewPayload(result.codes,nextPage,user.id));
+  }
+
   if(customId && customId.startsWith("ach:")) return achievementSystem.handleButton(interaction,_state,_client);
 
   if (customId.startsWith("switch_page_")) {
@@ -2967,7 +3120,15 @@ async function handleButton(interaction) {
 
 
 async function handleSelectMenu(interaction) {
-  const { customId, user } = interaction;
+  const { customId, user, guild } = interaction;
+  if (customId === "leaderboard_select") {
+    const selected=interaction.values?.[0];
+    if (!["fights","rolls","glory"].includes(selected)) {
+      return safeReply(interaction,{content:"Choose a valid leaderboard.",flags:64});
+    }
+    await interaction.deferUpdate();
+    return interaction.editReply(await buildLeaderboardView(selected,guild));
+  }
   if (!customId.startsWith("species_token_pick_")) return;
   const expectedUserId = customId.slice("species_token_pick_".length);
   if (user.id !== expectedUserId) return safeReply(interaction, { content:"This token menu belongs to another player.", flags:64 });
@@ -3006,14 +3167,20 @@ const commands = [
        .addStringOption(o=>o.setName("difficulty").setDescription("Bot difficulty").setRequired(true).addChoices({name:"🧸 Easy",value:"easy"},{name:"⚔️ Medium",value:"medium"},{name:"👹 Hard",value:"hard"},{name:"💀 Impossible",value:"impossible"},{name:"Brutal",value:"brutal"})))
      .addSubcommand(s=>s.setName("stats").setDescription("View combined PvP and bot battle stats").addUserOption(o=>o.setName("user").setDescription("Player to check"))),
    new SlashCommandBuilder().setName("history").setDescription("View fight history").addUserOption(o=>o.setName("user").setDescription("User to check")),
-new SlashCommandBuilder().setName("leaderboard").setDescription("View a player leaderboard")
-    .addStringOption(o=>o.setName("type").setDescription("Choose a leaderboard").setRequired(true)
-      .addChoices(
-        {name:"Fight Wins",value:"fights"},
-        {name:"Species Rolls",value:"rolls"},{name:"Glory",value:"glory"},
-      )),
+new SlashCommandBuilder().setName("leaderboard").setDescription("View the global player leaderboards"),
   new SlashCommandBuilder().setName("patchnotes").setDescription("View latest patch notes"),
   new SlashCommandBuilder().setName("alert").setDescription("View the current developer alert"),
+  new SlashCommandBuilder().setName("codes").setDescription("Redeem and manage LOZ codes")
+    .addSubcommand(s=>s.setName("redeem").setDescription("Redeem a limited-time reward code")
+      .addStringOption(o=>o.setName("code").setDescription("Redemption code").setRequired(true).setMinLength(3).setMaxLength(32)))
+    .addSubcommand(s=>s.setName("generate").setDescription("Primary-owner-only: generate a reward code")
+      .addStringOption(o=>o.setName("code").setDescription("Optional custom code; random if omitted").setRequired(false).setMaxLength(32))
+      .addStringOption(o=>o.setName("reward").setDescription("Reward type (defaults to Species Rolls)").setRequired(false)
+        .addChoices({name:"Species Rolls",value:"rolls"},{name:"Species Tokens",value:"tokens"}))
+      .addIntegerOption(o=>o.setName("amount").setDescription("Reward amount (defaults to 1)").setRequired(false).setMinValue(1).setMaxValue(1000000))
+      .addIntegerOption(o=>o.setName("expires-minutes").setDescription("Minutes until expiry (defaults to 30)").setRequired(false).setMinValue(1).setMaxValue(525600))
+      .addIntegerOption(o=>o.setName("max-claims").setDescription("Maximum users who can redeem it (defaults to 1)").setRequired(false).setMinValue(1).setMaxValue(100000)))
+    .addSubcommand(s=>s.setName("view").setDescription("Primary-owner-only: view available and expired codes")),
   new SlashCommandBuilder().setName("servers").setDescription("List LOZ servers with invite links"),
   new SlashCommandBuilder().setName("gift").setDescription("Gift species rolls to another player")
     .addUserOption(o=>o.setName("user").setDescription("Player to gift rolls to").setRequired(true))
