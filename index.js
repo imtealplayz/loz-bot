@@ -1,5 +1,5 @@
 const {
-  Client, GatewayIntentBits, REST, Routes,
+  Client, GatewayIntentBits, REST, Routes, AuditLogEvent,
   ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags,
 } = require("discord.js");
 const express = require("express");
@@ -321,7 +321,110 @@ function updatePresence() {
   });
 }
 
-client.on("guildCreate", updatePresence);
+const blacklistEnforcementInProgress = new Set();
+
+async function findRecentGuildJoinExecutor(guild) {
+  try {
+    const auditLogs=await guild.fetchAuditLogs({type:AuditLogEvent.BotAdd,limit:10});
+    const now=Date.now();
+    const entry=auditLogs.entries.find(item =>
+      String(item.target?.id||"")===String(client.user?.id||"")
+      && now-Number(item.createdTimestamp||0)>=0
+      && now-Number(item.createdTimestamp||0)<=5*60*1000
+      && item.executor?.id
+    );
+    return entry?.executor || null;
+  } catch(error) {
+    console.warn("[Server Blacklist] Could not identify who added LOZ in server "+String(guild.id)+": "+String(error?.message||error));
+    return null;
+  }
+}
+
+function buildBlacklistNotice(guild, {inviterKnown=false, ownerFallback=false}={}) {
+  const safeName=String(guild.name||"this server").replace(/[\\*_~|>]/g,"").slice(0,100)||"this server";
+  const card=new ContainerBuilder().setAccentColor(0xdc2626);
+  card.addTextDisplayComponents(new TextDisplayBuilder().setContent("## ⛔ LOZ Has Left This Server"));
+  card.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  let body;
+  if (inviterKnown) {
+    body="You added LOZ to **"+safeName+"**, but this server is on LOZ's server blacklist. LOZ has automatically left and will leave again if someone adds it while the server remains blacklisted.";
+  } else {
+    body="LOZ was added to **"+safeName+"**, but this server is on LOZ's server blacklist. LOZ has automatically left. "+(ownerFallback ? "We could not reliably identify who added LOZ, so this notice is being sent to the server owner." : "This server will remain blocked until the LOZ owner removes it from the blacklist.");
+  }
+  card.addTextDisplayComponents(new TextDisplayBuilder().setContent(body+"\n\n**Server ID:** "+String(guild.id)));
+  return {components:[card],flags:MessageFlags.IsComponentsV2,allowedMentions:{parse:[]}};
+}
+
+async function enforceBlacklistedGuild(guild, {joinEvent=false}={}) {
+  if (!guild?.id || blacklistEnforcementInProgress.has(String(guild.id))) return {ok:false,reason:"already_processing"};
+  blacklistEnforcementInProgress.add(String(guild.id));
+  try {
+    const lookup=await database.getBlacklistedGuild(guild.id);
+    if (!lookup?.ok) {
+      console.error("[Server Blacklist] Could not verify blacklist state for server "+String(guild.id)+". No automatic leave was attempted without a confirmed blacklist record.");
+      return {ok:false,reason:"database_unavailable"};
+    }
+    if (!lookup.entry) return {ok:true,blacklisted:false};
+
+    let inviter=null;
+    let inviterUser=null;
+    if (joinEvent) {
+      inviter=await findRecentGuildJoinExecutor(guild);
+      if (inviter && !inviter.bot) inviterUser=await client.users.fetch(inviter.id).catch(()=>null);
+    }
+
+    try {
+      await guild.leave();
+      console.warn("[Server Blacklist] LOZ left blacklisted server "+String(guild.id)+" ("+String(guild.name||"Unknown server")+").");
+    } catch(error) {
+      console.error("[Server Blacklist] Could not leave blacklisted server "+String(guild.id)+":",error?.stack||error);
+      return {ok:false,reason:"leave_failed"};
+    }
+
+    let dmSent=false;
+    if (inviterUser) {
+      try {
+        await inviterUser.send(buildBlacklistNotice(guild,{inviterKnown:true}));
+        dmSent=true;
+      } catch(error) {
+        console.warn("[Server Blacklist] Could not DM the user who added LOZ to "+String(guild.id)+": "+String(error?.message||error));
+      }
+    }
+
+    if (!dmSent && guild.ownerId && String(guild.ownerId)!==String(inviter?.id||"")) {
+      try {
+        const serverOwner=await client.users.fetch(guild.ownerId);
+        await serverOwner.send(buildBlacklistNotice(guild,{inviterKnown:false,ownerFallback:true}));
+        dmSent=true;
+      } catch(error) {
+        console.warn("[Server Blacklist] Could not DM the owner of blacklisted server "+String(guild.id)+": "+String(error?.message||error));
+      }
+    }
+    if (!dmSent) console.warn("[Server Blacklist] LOZ left server "+String(guild.id)+" but no notification DM could be delivered.");
+    return {ok:true,blacklisted:true,left:true,dmSent};
+  } finally {
+    blacklistEnforcementInProgress.delete(String(guild.id));
+  }
+}
+
+async function enforceExistingBlacklistedGuilds() {
+  const result=await database.listBlacklistedGuilds();
+  if (!result?.ok) {
+    console.error("[Server Blacklist] Could not check existing server memberships at startup.");
+    return;
+  }
+  const ids=new Set((result.entries||[]).map(entry=>String(entry.guildId)));
+  for (const guild of [...client.guilds.cache.values()]) {
+    if (ids.has(String(guild.id))) await enforceBlacklistedGuild(guild,{joinEvent:false});
+  }
+}
+
+client.on("guildCreate", guild => {
+  updatePresence();
+  void enforceBlacklistedGuild(guild,{joinEvent:true}).catch(error => {
+    console.error("[Server Blacklist] Join enforcement failed:",error?.stack||error);
+  });
+});
 client.on("guildDelete", updatePresence);
 
 // ==================== COMMAND REGISTRATION ====================
@@ -377,6 +480,9 @@ client.once("clientReady", async () => {
     console.error("❌ LOZ cannot start without MongoDB. Check MONGODB_URI in Railway and restart the service.");
     process.exit(1);
   }
+
+  // Enforce persistent server blacklists on current memberships after MongoDB is available.
+  await enforceExistingBlacklistedGuilds();
 
   for (const guild of client.guilds.cache.values()) {
     const sc = await database.loadDuelChannel(guild.id);
