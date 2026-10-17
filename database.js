@@ -128,6 +128,13 @@ const guildInviteRewardSchema = new mongoose.Schema({
   awardedAt:   { type:Date, default:Date.now },
 }, { minimize:false });
 
+const blacklistedGuildSchema = new mongoose.Schema({
+  guildId:      { type:String, required:true, unique:true },
+  guildName:    { type:String, default:"Unknown server" },
+  blacklistedBy:{ type:String, required:true },
+  blacklistedAt:{ type:Date, default:Date.now },
+}, { minimize:false });
+
 const fightLeaderboardSchema = new mongoose.Schema({
   userId: { type:String, required:true, unique:true },
   wins:   { type:Number, default:0 },
@@ -183,6 +190,7 @@ const QuestBoard       = mongoose.model("QuestBoard",       questBoardSchema);
 const DuelChannel      = mongoose.model("DuelChannel",      duelChannelSchema);
 const FightLeaderboard = mongoose.model("FightLeaderboard", fightLeaderboardSchema);
 const GuildInviteReward = mongoose.model("GuildInviteReward", guildInviteRewardSchema);
+const BlacklistedGuild = mongoose.model("BlacklistedGuild", blacklistedGuildSchema);
 const LeaderboardBadgeState = mongoose.model("LeaderboardBadgeState", leaderboardBadgeStateSchema);
 const AccessBan = mongoose.model("AccessBan", accessBanSchema);
 const RedemptionCode = mongoose.model("RedemptionCode", redemptionCodeSchema);
@@ -1028,6 +1036,57 @@ async function awardGuildInviteReward(guildId, inviterId, memberCount, maxMember
 }
 
 // ==================== LOAD FUNCTIONS ====================
+async function blacklistGuild(guildId, guildName, blacklistedBy) {
+  try {
+    if (!await connect()) return { ok:false, error:"Database unavailable" };
+    const id=String(guildId||"").trim();
+    const name=String(guildName||"Unknown server").slice(0,100);
+    const existing=await BlacklistedGuild.findOne({guildId:id}).lean();
+    const entry=await BlacklistedGuild.findOneAndUpdate(
+      {guildId:id},
+      {$set:{guildName:name},$setOnInsert:{guildId:id,blacklistedBy:String(blacklistedBy),blacklistedAt:new Date()}},
+      {upsert:true,new:true,runValidators:true,setDefaultsOnInsert:true}
+    ).lean();
+    return {ok:true,alreadyBlacklisted:Boolean(existing),entry};
+  } catch(error) {
+    console.error("[Server Blacklist] Could not save blacklist entry:",error?.message||error);
+    return {ok:false,error:error?.message||String(error)};
+  }
+}
+
+async function getBlacklistedGuild(guildId) {
+  try {
+    if (!await connect()) return {ok:false,entry:null};
+    const entry=await BlacklistedGuild.findOne({guildId:String(guildId||"").trim()}).lean();
+    return {ok:true,entry:entry||null};
+  } catch(error) {
+    console.error("[Server Blacklist] Could not check server blacklist:",error?.message||error);
+    return {ok:false,entry:null,error:error?.message||String(error)};
+  }
+}
+
+async function listBlacklistedGuilds() {
+  try {
+    if (!await connect()) return {ok:false,entries:null};
+    const entries=await BlacklistedGuild.find({}).sort({blacklistedAt:-1,guildId:1}).lean();
+    return {ok:true,entries};
+  } catch(error) {
+    console.error("[Server Blacklist] Could not list blacklisted servers:",error?.message||error);
+    return {ok:false,entries:null,error:error?.message||String(error)};
+  }
+}
+
+async function whitelistGuild(guildId) {
+  try {
+    if (!await connect()) return {ok:false,removed:false,error:"Database unavailable"};
+    const result=await BlacklistedGuild.deleteOne({guildId:String(guildId||"").trim()});
+    return {ok:true,removed:result.deletedCount===1};
+  } catch(error) {
+    console.error("[Server Blacklist] Could not remove server from blacklist:",error?.message||error);
+    return {ok:false,removed:false,error:error?.message||String(error)};
+  }
+}
+
 async function setAccessBan(userId, details) {
   try {
     if (!await connect()) return { ok:false, error:"Database unavailable" };
@@ -1848,4 +1907,5 @@ module.exports = {
   getGloryLeaderboardSnapshot, saveGloryLeaderboardSnapshot, claimLoz60RegistrationReward,
   getLoz60RewardDeliveryStatus, markLoz60RewardDmSent,
   setAccessBan, getActiveAccessBan, removeAccessBan,
+  blacklistGuild, getBlacklistedGuild, listBlacklistedGuilds, whitelistGuild,
 };
