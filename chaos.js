@@ -10,7 +10,7 @@ function setState(state) {
 function isChaosCreatorOwner(combatant) {
   return Boolean(
     combatant
-    && combatant.id === PRIMARY_OWNER_ID
+    && /^\d{17,20}$/.test(String(combatant.id || ""))
     && combatant.species?.name === "Chaos Creator"
   );
 }
@@ -28,9 +28,14 @@ async function askChaosReaction({
   confirmedText,
   declinedText,
   timeoutMs = 15000,
+  respondentId = null,
 }) {
   if (!fight || !channel || fight.pendingChaosReaction) {
     return { confirmed: false, timedOut: true, cancelled: false };
+  }
+  respondentId = String(respondentId || fight.playerId || fight.player1Id || fight.player2Id || "");
+  if (!/^\d{17,20}$/.test(respondentId)) {
+    return { confirmed:false, timedOut:true, cancelled:false };
   }
 
   let resolveResult;
@@ -40,6 +45,7 @@ async function askChaosReaction({
     timer: null,
     resolved: false,
     finish: null,
+    respondentId,
   };
   fight.pendingChaosReaction = pending;
 
@@ -79,9 +85,9 @@ async function askChaosReaction({
         .setStyle(ButtonStyle.Secondary),
     );
     pending.message = await channel.send({
-      content: "<@" + PRIMARY_OWNER_ID + "> " + question,
+      content: "<@" + respondentId + "> " + question,
       components: [row],
-      allowedMentions: { parse: [], users: [PRIMARY_OWNER_ID] },
+      allowedMentions: { parse: [], users: [respondentId] },
     });
     if (pending.resolved) {
       await pending.message.delete().catch(() => {});
@@ -103,19 +109,18 @@ async function askChaosReaction({
 async function handleReactionButton(interaction) {
   const parts = String(interaction.customId || "").split("_");
   if (parts[0] !== "chaosreact" || !["yes", "no"].includes(parts[1])) return false;
-  if (interaction.user?.id !== PRIMARY_OWNER_ID) {
-    await interaction.reply({
-      content: "Only the primary bot owner can respond to this Chaos Creator prompt.",
-      flags: 64,
-    }).catch(() => {});
-    return true;
-  }
-
   const fightId = parts.slice(2).join("_");
   const fight = findFight(fightId);
   const pending = fight?.pendingChaosReaction;
   if (!pending) {
     await interaction.deferUpdate().catch(() => {});
+    return true;
+  }
+  if (interaction.user?.id !== pending.respondentId) {
+    await interaction.reply({
+      content: "Only the player whose Chaos Creator triggered this prompt can respond.",
+      flags: 64,
+    }).catch(() => {});
     return true;
   }
 
