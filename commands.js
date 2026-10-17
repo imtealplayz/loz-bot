@@ -2008,7 +2008,7 @@ async function handleCommand(interaction) {
           }
         }
 
-        const status=saved.alreadyBlacklisted ? "This server was already on the blacklist." : "Server added to the persistent blacklist.";
+        return safeReply(interaction,{embeds:[createSuccessEmbed(status+"\n**Server:** "+serverName+"\n**Server ID:** "+serverId+"\n"+leaveNote)],flags:MessageFlags.Ephemeral});
         return safeReply(interaction,{embeds:[createSuccessEmbed(status+"\\n**Server:** "+serverName+"\\n**Server ID:** "+serverId+"\\n"+leaveNote)],flags:MessageFlags.Ephemeral});
       }
 
