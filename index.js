@@ -21,7 +21,7 @@ const TOKEN = (process.env.TOKEN || process.env.DISCORD_TOKEN || "").trim();
 
 const SUPPORT_SERVER_INVITE = "https://discord.gg/TKBYpjqnPC";
 // Bump only when intentionally queuing a one-time startup alert for a new release event.
-const DEVELOPER_ALERT_STARTUP_CYCLE = "loz-6.2-2026-10-17";
+const DEVELOPER_ALERT_STARTUP_CYCLE = "loz-6.2-code-alert-2026-10-17-v2";
 
 function buildAccessNoticePayload({ unavailable=false, ephemeral=false }={}) {
   const card=new ContainerBuilder().setAccentColor(unavailable ? 0xe0a020 : 0xdc2626);
