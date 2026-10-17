@@ -21,7 +21,7 @@ const TOKEN = (process.env.TOKEN || process.env.DISCORD_TOKEN || "").trim();
 
 const SUPPORT_SERVER_INVITE = "https://discord.gg/TKBYpjqnPC";
 // Bump only when intentionally queuing a one-time startup alert for a new release event.
-const DEVELOPER_ALERT_STARTUP_CYCLE = "loz-species-recovery-2026-10-17";
+const DEVELOPER_ALERT_STARTUP_CYCLE = "loz-6.2-2026-10-17";
 
 function buildAccessNoticePayload({ unavailable=false, ephemeral=false }={}) {
   const card=new ContainerBuilder().setAccentColor(unavailable ? 0xe0a020 : 0xdc2626);
@@ -390,8 +390,22 @@ client.once("clientReady", async () => {
   }
   questSystem.startScheduler();
 
-  // Queue the one-time startup alert for known LOZ players. It appears privately on
-  // each player's next command, because Discord ephemeral messages require an interaction.
+  // Create UPDATE6.2 only once. A restart must never extend its original 24-hour expiry.
+  const defaultCode = await database.ensureDefaultRedeemCode({
+    code:"UPDATE6.2",
+    rewardType:"rolls",
+    amount:3,
+    expiresMinutes:1440,
+    maxClaims:1000,
+    createdBy:ownerId,
+  });
+  if (defaultCode?.ok) {
+    console.log("[Codes] UPDATE6.2 " + (defaultCode.created ? "created" : "already exists") + ".");
+  } else {
+    console.error("[Codes] Could not verify the UPDATE6.2 reward code.");
+  }
+
+  // Queue the current release alert for known players; it no longer contains the retired species-recovery notice.
   const startupAlert = getCurrentDeveloperAlert();
   const startupQueue = await database.queueDeveloperAlertPrompts(
     [...state.userSpecies.keys()],
