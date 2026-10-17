@@ -1591,6 +1591,12 @@ async function handleCommand(interaction) {
 
   // ── FIGHT ─────────────────────────────────────────────────────
   if (commandName === "fight" && (fightSubcommand === "player" || legacyFightTarget)) {
+    if (!interaction.inGuild?.()) {
+      return safeReply(interaction, {
+        embeds:[createErrorEmbed("Player challenges must be started in a server channel so both players can see and accept the challenge. You can still use /fight bot in DMs.")],
+        flags:MessageFlags.Ephemeral,
+      });
+    }
     const target = fightSubcommand === "player" ? options.getUser("user") : legacyFightTarget;
     if (target.id===user.id) return safeReply(interaction,{embeds:[createErrorEmbed("You cannot fight yourself!")],flags:64});
     if (target.bot) return safeReply(interaction,{embeds:[createErrorEmbed("Use `/fight bot` to fight bots!")],flags:64});
