@@ -1,5 +1,16 @@
 const patchNotes = [
   {
+    version:"6.3", date:"2026-10-19", alertId:"6.3-update-2026-10-19",
+    changes:[
+      "LOZ mention help now triggers only when the bot mention starts the message, and the help card is shorter.",
+      "Thunder Dragon's ultimate paralyzes its opponent for two turns; Reaper instantly executes targets at or below 20% HP on activation.",
+      "Elemental Dragon awakening trials are sequential; the altar shows the current objective and Dragon Trial completion count.",
+      "Added a species dropdown to Species Achievements; species details open in a separate ephemeral response.",
+      "Redemption codes now support second rewards, 1s/1m/1h/1d/1w/1y durations, permanent expiry with 0, and unlimited uses with 0.",
+      "Added UPDATE6.3 for 3 Species Rolls, unlimited uses, and a 24-hour expiry; simplified the alert and announced the October 22 Halloween update.",
+    ],
+  },
+  {
     version:"6.2", date:"2026-10-17", alertId:"6.2-codes-2026-10-17",
     changes:[
       "Added codes. Use UPDATE6.2 to claim your reward.",

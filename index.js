@@ -21,7 +21,7 @@ const TOKEN = (process.env.TOKEN || process.env.DISCORD_TOKEN || "").trim();
 
 const SUPPORT_SERVER_INVITE = "https://discord.gg/TKBYpjqnPC";
 // Bump only when intentionally queuing a one-time startup alert for a new release event.
-const DEVELOPER_ALERT_STARTUP_CYCLE = "loz-6.2-code-alert-2026-10-17-v2";
+const DEVELOPER_ALERT_STARTUP_CYCLE = "loz-6.3-update-2026-10-19-v1";
 
 function buildAccessNoticePayload({ unavailable=false, ephemeral=false }={}) {
   const card=new ContainerBuilder().setAccentColor(unavailable ? 0xe0a020 : 0xdc2626);
@@ -522,6 +522,16 @@ client.once("clientReady", async () => {
     console.error("[Codes] Could not verify the UPDATE6.2 reward code.");
   }
 
+  // Insert only if absent; existing code claims and expiry are never reset.
+  const update63Code = await database.ensureDefaultRedeemCode({
+    code:"UPDATE6.3",rewardType:"rolls",amount:3,expiresMinutes:1440,maxClaims:0,createdBy:ownerId,
+  });
+  if (update63Code?.ok) {
+    console.log("[Codes] UPDATE6.3 " + (update63Code.created ? "created" : "already exists") + ".");
+  } else {
+    console.error("[Codes] Could not verify the UPDATE6.3 reward code.");
+  }
+
   // Queue the current release alert for known players; it no longer contains the retired species-recovery notice.
   const startupAlert = getCurrentDeveloperAlert();
   const startupQueue = await database.queueDeveloperAlertPrompts(
@@ -559,7 +569,15 @@ client.once("clientReady", async () => {
 // ==================== MESSAGE CREATE (mention help only; no Message Content intent) ====================
 client.on("messageCreate", async (message) => {
   try {
-    if (message.author.bot || !message.mentions.users.has(client.user.id)) return;
+    if (message.author.bot) return;
+    const botId=String(client.user.id);
+    const rawContent=String(message.content||"").trimStart();
+    const startsWithBotMention=rawContent.startsWith("<@"+botId+">")||rawContent.startsWith("<@!"+botId+">");
+    if (!startsWithBotMention || !message.mentions.users.has(botId)) return;
+    if (message.reference?.messageId && (
+      message.mentions.repliedUser?.id===botId
+      || (await message.fetchReference().catch(()=>null))?.author?.id===botId
+    )) return;
 
     if (!isAuthorizedLozOwner(message.author.id)) {
       const access = await database.getActiveAccessBan(message.author.id);
@@ -575,15 +593,11 @@ client.on("messageCreate", async (message) => {
 
     const mentionCard = new ContainerBuilder().setAccentColor(0x0891b2);
     mentionCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      "## Welcome to LOZ\nLegends of the Rift is a turn-based RPG where you roll species, complete quests, and battle players or bots."
+      "## Welcome to LOZ\nA turn-based RPG: roll species, complete quests, and battle players or bots."
     ));
     mentionCard.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
     mentionCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      "### Get Started\nRun **`/guide`** to learn the basics and earn your one-time tutorial roll."
-    ));
-    mentionCard.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-    mentionCard.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      "### Need More?\n[Open the full website guide](https://lozbot.vercel.app/)\nRun **`/help`** to browse all commands."
+      "### Start Here\nRun **`/guide`** for the basics and your one-time tutorial roll.\n\nRun **`/help`** for commands or [open the full guide](https://lozbot.vercel.app/)."
     ));
     const mentionReply = await message.reply({
       components: [mentionCard],

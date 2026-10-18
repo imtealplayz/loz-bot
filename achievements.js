@@ -2,7 +2,7 @@
 
 const {
   ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SectionBuilder,
-  ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, SeparatorSpacingSize,
+  ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, MessageFlags, SeparatorSpacingSize,
 } = require("discord.js");
 const database = require("./database.js");
 const {
@@ -206,10 +206,26 @@ function buildNormalPage(userId,state,profile,page,notice) {
   container.addActionRowComponents(new ActionRowBuilder().addComponents(nav));
   return {components:[container],flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral,allowedMentions:{parse:[]}};
 }
-function buildSpeciesListPage(userId,page,notice) {
+function buildSpeciesPicker(userId,cardPage,rosterPage=0) {
+  const pageSize=23,pageCount=Math.max(1,Math.ceil(SPECIES_ROSTER.length/pageSize));
+  const safeRosterPage=Math.max(0,Math.min(pageCount-1,Number(rosterPage)||0));
+  const menu=new StringSelectMenuBuilder().setCustomId("ach:species-select:"+userId+":"+cardPage+":"+safeRosterPage)
+    .setPlaceholder("Find a species...").setMinValues(1).setMaxValues(1);
+  const options=[];
+  if(safeRosterPage>0) options.push({label:"← Previous species",value:"__prev__",description:"View the previous group"});
+  SPECIES_ROSTER.slice(safeRosterPage*pageSize,safeRosterPage*pageSize+pageSize).forEach(function(entry){
+    options.push({label:(String(entry.emoji||"✨")+" "+entry.name).slice(0,100),value:slug(entry.name),description:String(entry.category||"Species").slice(0,100)});
+  });
+  if(safeRosterPage<pageCount-1) options.push({label:"Next species →",value:"__next__",description:"View the next group"});
+  menu.addOptions(options.slice(0,25));
+  return menu;
+}
+function buildSpeciesListPage(userId,page,notice,rosterPage=0) {
   const pages=Math.max(1,Math.ceil(SPECIES_ROSTER.length/4)),safePage=Math.max(0,Math.min(pages-1,Number(page)||0));
+  const rosterPages=Math.max(1,Math.ceil(SPECIES_ROSTER.length/23)),safeRosterPage=Math.max(0,Math.min(rosterPages-1,Number(rosterPage)||0));
   const container=new ContainerBuilder().setAccentColor(0x0891b2);
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🐉 SPECIES ACHIEVEMENTS\nSpecies are ordered from common to rare, followed by dragon awakenings, awakening forms, and secret species. Open a species to view its quests."+(notice?"\n\n✅ "+notice:"")));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🐉 SPECIES ACHIEVEMENTS\nChoose a species from the dropdown or browse the list below."+(notice?"\n\n✅ "+notice:"")));
+  container.addActionRowComponents(new ActionRowBuilder().addComponents(buildSpeciesPicker(userId,safePage,safeRosterPage)));
   divider(container);
   const visible=SPECIES_ROSTER.slice(safePage*4,safePage*4+4);
   visible.forEach(function(entry,visibleIndex){
@@ -219,12 +235,13 @@ function buildSpeciesListPage(userId,page,notice) {
     if(visibleIndex<visible.length-1) divider(container);
   });
   const nav=[];
-  if(safePage>0) nav.push(new ButtonBuilder().setCustomId("ach:species:"+userId+":"+(safePage-1)).setLabel("Previous").setStyle(ButtonStyle.Secondary));
+  if(safePage>0) nav.push(new ButtonBuilder().setCustomId("ach:species:"+userId+":"+(safePage-1)+":"+safeRosterPage).setLabel("Previous").setStyle(ButtonStyle.Secondary));
   nav.push(new ButtonBuilder().setCustomId("ach:home").setLabel("Back").setStyle(ButtonStyle.Secondary));
-  if((safePage+1)*4<SPECIES_ROSTER.length) nav.push(new ButtonBuilder().setCustomId("ach:species:"+userId+":"+(safePage+1)).setLabel("Next").setStyle(ButtonStyle.Primary));
+  if((safePage+1)*4<SPECIES_ROSTER.length) nav.push(new ButtonBuilder().setCustomId("ach:species:"+userId+":"+(safePage+1)+":"+safeRosterPage).setLabel("Next").setStyle(ButtonStyle.Primary));
   container.addActionRowComponents(new ActionRowBuilder().addComponents(nav));
   return {components:[container],flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral,allowedMentions:{parse:[]}};
 }
+
 function getEntry(speciesSlug) {
   return SPECIES_ROSTER.find(function(entry){return slug(entry.name)===speciesSlug;})||null;
 }
@@ -331,15 +348,16 @@ function buildSpeciesTasks(userId,state,profile,speciesSlug) {
       {title:"Elemental Conquest",metric:"wins",target:3,reward:2,description:"Win 3 battles with "+entry.name+"."},
       {title:"Elemental Mastery",metric:"ults",target:2,reward:2,description:"Use your ultimate twice with "+entry.name+"."},
     ];
-    dragonTasks.forEach(function(task,index){
-      const value=Math.max(0,Number(counters[task.metric])||0),isClaimed=claimed[String(index)]===true;
+    const nextDragonIndex=dragonTasks.findIndex(function(_task,index){return claimed[String(index)]!==true;});
+    if(nextDragonIndex>=0) {
+      const task=dragonTasks[nextDragonIndex],index=nextDragonIndex,value=Math.max(0,Number(counters[task.metric])||0);
       tasks.push({
         kind:"dragon",dragonSlug:key,taskIndex:index,title:task.title,description:task.description,
         metric:task.metric,value:value,target:task.target,reward:task.reward,
-        claimed:isClaimed,ready:!isClaimed&&value>=task.target,
+        claimed:false,ready:value>=task.target,
         customId:"ach:claim-dragon:"+userId+":"+key+":"+index,
       });
-    });
+    }
     const allTrialsClaimed=claimed["0"]===true&&claimed["1"]===true&&claimed["2"]===true;
     const awakened=dragonIsAwakened(profile,userData,dragonKey),gloryClaimed=profile.dragonAwakened[key]===true;
     tasks.push({
@@ -547,8 +565,8 @@ async function handleButton(interaction,state,client) {
   }
   if(parts[1]==="home") {await interaction.update(await renderHome(actor));return true;}
   if(parts[1]==="normal") {await interaction.update(await renderNormal(actor,state,Number(parts[3])||0));return true;}
-  if(parts[1]==="species") {await interaction.update(buildSpeciesListPage(actor,Number(parts[3])||0));return true;}
-  if(parts[1]==="open") {await interaction.update(await renderDetail(actor,state,parts[3],Number(parts[4])||0));return true;}
+  if(parts[1]==="species") {await interaction.update(buildSpeciesListPage(actor,Number(parts[3])||0,null,Number(parts[4])||0));return true;}
+  if(parts[1]==="open") {await interaction.reply(await renderDetail(actor,state,parts[3],Number(parts[4])||0));return true;}
   if(parts[1]==="leaderboard") {await interaction.update(await buildLeaderboardPayload(client));return true;}
   if(parts[1]==="claim-all-normal") {
     const requestedPage=Number(parts[3])||0,page=Math.max(0,Math.min(Math.ceil(NORMAL_ACHIEVEMENTS.length/4)-1,requestedPage));
@@ -721,6 +739,31 @@ async function handleButton(interaction,state,client) {
   }
   return true;
 }
+async function handleSelectMenu(interaction,state,client) {
+  const id=String(interaction.customId||"");
+  if(!id.startsWith("ach:species-select:")) return false;
+  const parts=id.split(":"),actor=String(interaction.user.id),owner=String(parts[2]||"");
+  const cardPage=Number(parts[3])||0,rosterPage=Number(parts[4])||0;
+  if(owner!==actor) {
+    await interaction.reply({content:"Only the user who opened this achievement panel can use this dropdown.",flags:MessageFlags.Ephemeral});
+    return true;
+  }
+  const selected=String(interaction.values?.[0]||"");
+  if(selected==="__prev__"||selected==="__next__") {
+    const maxPage=Math.max(0,Math.ceil(SPECIES_ROSTER.length/23)-1);
+    const nextPage=Math.max(0,Math.min(maxPage,rosterPage+(selected==="__next__"?1:-1)));
+    await interaction.update(buildSpeciesListPage(actor,cardPage,null,nextPage));
+    return true;
+  }
+  const entry=getEntry(selected);
+  if(!entry) {
+    await interaction.reply({content:"That species could not be found. Please reopen the achievements page and try again.",flags:MessageFlags.Ephemeral});
+    return true;
+  }
+  await interaction.reply(await renderDetail(actor,state,slug(entry.name),0));
+  return true;
+}
+
 let schedulerStarted=false,schedulerRunning=false;
 
 // One-time migration cleanup for Discord roles created by the retired Glory leaderboard feature.
@@ -800,6 +843,6 @@ async function startLeaderboardScheduler(client,state) {
   return true;
 }
 module.exports = {
-  open,handleButton,recordBattle,recordUltimate,recordDamage,recordDailyClaim,recordRollUsed,
+  open,handleButton,handleSelectMenu,recordBattle,recordUltimate,recordDamage,recordDailyClaim,recordRollUsed,
   buildLeaderboardPayload,formatLeaderboardRow,buildDragonAwakeningStatus,getDragonAwakeningStatus,startLeaderboardScheduler,getSpeciesRoster,removeLegacyGloryRoles,formatClaimSummary,makeClaimButton,getExtraSpeciesTrials,
 };

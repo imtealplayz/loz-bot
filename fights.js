@@ -244,7 +244,10 @@ async function runBotTurn(channel, fightId, turnToken) {
     healCooldown:fight.playerHealCooldown, ultCooldown:fight.playerUltCooldown, lastUltUsed:fight.playerLastUltUsed,
   };
 
-  if (botC.possession) {
+  if(botC.stunnedTurns>0) {
+    botC.stunnedTurns=Math.max(0,botC.stunnedTurns-1);
+    log.push("⚡ **PARALYZED!** "+botC.species.name+" loses this turn.");
+  } else if (botC.possession) {
     botC.possession=false;
     const selfHit=Math.floor(Math.random()*(botC.species.atkMax-botC.species.atkMin+1))+botC.species.atkMin;
     botC.currentHp=Math.max(0,botC.currentHp-selfHit);
@@ -401,7 +404,7 @@ async function runBotTurn(channel, fightId, turnToken) {
   fight.botBurn=botC.burn; fight.botBurnRounds=botC.burnRounds;
   fight.playerBlockHeal=playerC.blockHeal; fight.playerCurse=playerC.curse;
   fight.playerPossession=playerC.possession; fight.playerStunnedTurns=playerC.stunnedTurns||0;
-  fight.botPossession=botC.possession||false; fight.botCurse=botC.curse;
+  fight.botPossession=botC.possession||false; fight.botCurse=botC.curse; fight.botStunnedTurns=botC.stunnedTurns||0;
   fight.playerUltBuff=playerC.ultBuff;
   fight.playerSlimeMissStacks=playerC.slimeMissStacks||0;
   fight.botSlimeMissStacks=botC.slimeMissStacks||0;
@@ -417,6 +420,13 @@ async function runBotTurn(channel, fightId, turnToken) {
   // Ogre regen for bot
   if (fight.botSpecies.name==="Ogre") { fight.botHp=Math.min(fight.botMaxHp,fight.botHp+5); log.push("👹 Bot Regeneration +5"); }
 
+  const skipPlayerTurn=Number(playerC.stunnedTurns)>0;
+  if(skipPlayerTurn) {
+    playerC.stunnedTurns=Math.max(0,playerC.stunnedTurns-1);
+    fight.playerStunnedTurns=playerC.stunnedTurns;
+    log.push("⚡ **PARALYSIS!** You lose this turn.");
+  }
+
   // Bot's turn: tick bot's full cooldowns + player's ULT only
   fight.botHealCooldown=Math.max(0,(fight.botHealCooldown||0)-1);
   fight.botUltCooldown=Math.max(0,(fight.botUltCooldown||0)-1);
@@ -429,8 +439,12 @@ async function runBotTurn(channel, fightId, turnToken) {
   if (fight.botHp<=0)    { await endBotFight(channel,fightId,"player","bot",fight.difficulty); return; }
 
   if (!isCurrentBotTurn(fightId, fight, turnToken)) return;
-  await updateBotFightMessage(channel, fightId, fight, "playing");
+  await updateBotFightMessage(channel, fightId, fight, skipPlayerTurn ? "bot_thinking" : "playing");
   if (!isCurrentBotTurn(fightId, fight, turnToken)) return;
+  if(skipPlayerTurn) {
+    setTimeout(()=>doBotTurn(channel,fightId),personality.reactionDelay);
+    return;
+  }
   fight.timeout=setTimeout(()=>{
     if (_state.activeBotFights.get(fightId) === fight) {
       // The player owns this turn. Inactivity awards the bot, not the player.

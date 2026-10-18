@@ -138,7 +138,7 @@ function calculateDamage(attacker, defender) {
     const ub = attacker.ultBuff;
     // ── Reaper instant kill — own branch, NOT inside nextAttack ──────
     if (ub.type==="reaperKill") {
-      if (defender.currentHp<defender.maxHp*0.2) {
+      if (defender.currentHp<=defender.maxHp*0.2) {
         // Chaos Creator's passive prevents instant-kill damage from bypassing its reduction.
         if (defender.species.name === "Chaos Creator") {
           const reducedDamage = Math.ceil(defender.currentHp * 0.5);
@@ -344,9 +344,34 @@ function applyUltEffect(attacker, defender) {
     case "Angel":       requiresChoice=true; choiceType="angel"; msg="👼 **DIVINE BLESSING!**\nChoose your path:"; break;
     case "Ice Dragon":  requiresChoice=true; choiceType="ice_dragon"; msg="❄️ **GLACIAL SPIKE!**\nChoose your path:"; break;
     case "Earth Dragon":requiresChoice=true; choiceType="earth_dragon"; msg="🌍 **TERRA SHIELD!**\nChoose your path:"; break;
-    case "Reaper":      attacker.ultBuff={type:"reaperKill",multiplier:1.7}; msg="🌑 **DEATH'S JUDGMENT!**\nBelow 20%: Instant Kill | Above: 1.7×!"; break;
+    case "Reaper": {
+      if(defender.currentHp<=defender.maxHp*0.2) {
+        const killDamage=Math.max(0,Number(defender.currentHp)||0);
+        if(defender.species.name==="Chaos Creator") {
+          const reducedDamage=Math.ceil(killDamage*0.5);
+          defender.currentHp=Math.max(0,defender.currentHp-reducedDamage);
+          const lifeSteal=Math.floor(reducedDamage*0.5);
+          attacker.currentHp=Math.min(attacker.maxHp,attacker.currentHp+lifeSteal);
+          msg="🌀 **ABSOLUTE AUTHORITY!** Death's Judgment is reduced by 50% against Chaos Creator. -" + reducedDamage + " HP; +" + lifeSteal + " life steal.";
+        } else {
+          const assimilationLines=[],assimilation=absorbSlimeLordDamage(attacker,defender,killDamage,assimilationLines);
+          if(assimilation) msg="🌑 **DEATH'S JUDGMENT ABSORBED!** " + assimilationLines.join(" ");
+          else {
+            defender.currentHp=0;
+            const lifeSteal=Math.floor(killDamage*0.5);
+            attacker.currentHp=Math.min(attacker.maxHp,attacker.currentHp+lifeSteal);
+            msg="💀 **DEATH'S JUDGMENT — INSTANT KILL!** The target was at or below 20% HP and was executed immediately. +" + lifeSteal + " HP.";
+          }
+        }
+        attacker.ultBuff=null;
+      } else {
+        attacker.ultBuff={type:"reaperKill",multiplier:1.7};
+        msg="🌑 **DEATH'S JUDGMENT!**\nAbove 20% HP: 1.7× damage on your next attack.";
+      }
+      break;
+    }
     case "Fire Dragon": attacker.ultBuff={type:"nextAttack",multiplier:1.7,burn:10,burnRounds:2}; msg="🔥 **INFERNO BLAST!**\n1.7× + 10 burn 2 rounds!"; break;
-    case "Thunder Dragon": attacker.ultBuff={type:"thunderActive"}; msg="⚡ **THUNDER SURGE!**\n1.4× + paralyze!"; break;
+    case "Thunder Dragon": attacker.ultBuff={type:"thunderActive"}; defender.stunnedTurns=Math.max(2,Number(defender.stunnedTurns)||0); msg="⚡ **THUNDER SURGE!**\n1.4× + paralyzes the opponent for 2 turns, granting you two extra turns!"; break;
     case "Bot":         attacker.ultBuff={type:"nextAttack",multiplier:2,recoil:0.25}; msg="💻 **SYSTEM OVERLOAD!**\n2× + 25% recoil!"; break;
     case "Cyborg": {
       const h=Math.floor(attacker.maxHp*0.3);

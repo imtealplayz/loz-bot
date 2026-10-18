@@ -48,6 +48,21 @@ function commandMention(name) {
 }
 
 const SUPPORT_SERVER_INVITE = "https://discord.gg/TKBYpjqnPC";
+const GLORY_LEADERBOARD_EMOJI = "<:Glory:1559650326011711579>";
+
+function parseRedemptionCodeDuration(rawValue) {
+  const raw=String(rawValue===undefined||rawValue===null?"30m":rawValue).trim().toLowerCase();
+  if(raw==="0") return {ok:true,expiresAt:null,label:"Permanent"};
+  const match=raw.match(/^([1-9]\d*)(s|m|h|d|w|y)$/);
+  if(!match) return {ok:false,error:"Use `1s`, `1m`, `1h`, `1d`, `1w`, or `1y`; use `0` for permanent."};
+  const amount=Number(match[1]),unit=match[2];
+  const unitMs={s:1000,m:60000,h:3600000,d:86400000,w:604800000,y:31536000000}[unit];
+  const durationMs=amount*unitMs,expiresAtMs=Date.now()+durationMs;
+  if(!Number.isSafeInteger(amount)||!Number.isFinite(durationMs)||durationMs<=0||!Number.isFinite(expiresAtMs)||expiresAtMs>8640000000000000)
+    return {ok:false,error:"That duration is too large to represent safely."};
+  const expiresAt=new Date(expiresAtMs),unitName={s:"second",m:"minute",h:"hour",d:"day",w:"week",y:"year"}[unit];
+  return {ok:true,expiresAt,label:amount+" "+unitName+(amount===1?"":"s")};
+}
 
 function parseAccessBanDuration(rawValue) {
   const raw = String(rawValue || "").trim().toLowerCase();
@@ -125,22 +140,27 @@ function attachLeaderboardSelector(payload, selectedType) {
 }
 
 async function buildLeaderboardView(leaderboardType, guild) {
-  const type = ["fights","rolls","glory"].includes(leaderboardType) ? leaderboardType : "fights";
-  if (type === "glory") {
-    const entries = await database.getGloryLeaderboardTop(10);
-    let body = "No Glory has been earned yet. Open /achievements to begin.";
-    if (entries === null) body = "MongoDB could not load the Glory leaderboard. Please try again later.";
-    else if (entries.length) {
-      const rows = entries.map((entry,index) => {
-        const rank=index+1;
-        const id=String(entry?.userId || "");
-        const player=/^\d{17,20}$/.test(id) ? "<@"+id+">" : "Unknown Player";
-        const prefix=rank===1?"🥇":rank===2?"🥈":rank===3?"🥉":"**#"+String(rank).padStart(2,"0")+"**";
-        return prefix+" 🏆 **"+player+"** · **"+Math.max(0,Number(entry?.glory)||0).toLocaleString()+" Glory**";
-      });
+  const type=["fights","rolls","glory"].includes(leaderboardType)?leaderboardType:"fights";
+  if(type==="glory") {
+    const entries=await database.getGloryLeaderboardTop(10);
+    let body="No Glory has been earned yet. Open /achievements to begin.";
+    if(entries===null) body="MongoDB could not load the Glory leaderboard. Please try again later.";
+    else if(entries.length) {
+      const rows=[];
+      for(let index=0;index<entries.length;index++) {
+        const entry=entries[index],id=String(entry?.userId||"");
+        let name="Unknown";
+        try {
+          const member=guild?await guild.members.fetch(id).catch(()=>null):null;
+          if(member) name=member.displayName;
+          else {const fetched=await _client.users.fetch(id).catch(()=>null);if(fetched) name=fetched.username;}
+        } catch(_) {}
+        const rank=index+1,prefix=rank===1?"🥇":rank===2?"🥈":rank===3?"🥉":"**#"+String(rank).padStart(2,"0")+"**";
+        rows.push(prefix+" "+GLORY_LEADERBOARD_EMOJI+" **"+name+"** · **"+Math.max(0,Number(entry?.glory)||0).toLocaleString()+" Glory**");
+      }
       body="*Top "+rows.length+" players · Ranked by total Glory*\n\n"+rows.join("\n");
     }
-    return attachLeaderboardSelector(buildStyledCardPayload("🏆 LOZ Leaderboard",0x0891b2,[{heading:"🏆 Glory",body}]),type);
+    return attachLeaderboardSelector(buildStyledCardPayload("🏆 LOZ Leaderboard",0x0891b2,[{heading:GLORY_LEADERBOARD_EMOJI+" Glory",body}]),type);
   }
 
   if (type === "fights") {
@@ -186,62 +206,31 @@ async function buildLeaderboardView(leaderboardType, guild) {
 }
 
 function buildCodesViewPayload(records, requestedPage=0, userId=null) {
-  const list=Array.isArray(records) ? records : [];
-  const pageSize=15;
-  const pageCount=Math.max(1,Math.ceil(list.length/pageSize));
+  const list=Array.isArray(records)?records:[];
+  const pageSize=15,pageCount=Math.max(1,Math.ceil(list.length/pageSize));
   const page=Math.max(0,Math.min(pageCount-1,Math.floor(Number(requestedPage)||0)));
   const container=new ContainerBuilder().setAccentColor(0x0891b2);
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🎟️ Redemption Codes"));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
   const rows=list.slice(page*pageSize,page*pageSize+pageSize).map(record=>{
-    const expiry=new Date(record.expiresAt).getTime();
-    const claims=Math.max(0,Number(record.claimedCount)||0);
-    const maxClaims=Math.max(1,Number(record.maxClaims)||1);
-    const status=!Number.isFinite(expiry)||expiry<=Date.now() ? "EXPIRED" : claims>=maxClaims ? "EXHAUSTED" : "ACTIVE";
-    const reward=record.rewardType==="tokens" ? "Species Tokens" : "Species Rolls";
-    const expiryText=Number.isFinite(expiry) ? "<t:"+Math.floor(expiry/1000)+":R>" : "unknown";
-    return "\`"+String(record.code||"UNKNOWN")+"\` · "+reward+" ×"+(Number(record.amount)||1)+" · "+claims+"/"+maxClaims+" claims · expires "+expiryText+" · **"+status+"**";
+    const expiry=record.expiresAt==null?null:new Date(record.expiresAt).getTime();
+    const claims=Math.max(0,Number(record.claimedCount)||0),maxClaims=Number(record.maxClaims??1);
+    const active=(expiry===null||(Number.isFinite(expiry)&&expiry>Date.now()))&&(maxClaims===0||claims<maxClaims);
+    const reward=record.rewardType==="tokens"?"Species Token(s)":"Species Roll(s)";
+    const secondType=record.additionalRewardType;
+    const second=secondType==="tokens"?" + "+(Number(record.additionalAmount)||1)+" Species Token(s)":secondType==="rolls"?" + "+(Number(record.additionalAmount)||1)+" Species Roll(s)":"";
+    const status=active?"Active":expiry!==null&&Number.isFinite(expiry)&&expiry<=Date.now()?"Expired":"Exhausted";
+    const expiryText=expiry===null?"Permanent":Number.isFinite(expiry)?"<t:"+Math.floor(expiry/1000)+":R>":"unknown";
+    const claimsText=maxClaims===0?claims+" claims · unlimited uses":claims+"/"+maxClaims+" claims";
+    return "`"+String(record.code||"UNKNOWN")+"` · "+reward+" ×"+(Number(record.amount)||1)+second+" · "+claimsText+" · expires "+expiryText+" · **"+status+"**";
   });
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(rows.length ? rows.join("\n") : "No redemption codes have been generated yet."));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(rows.length?rows.join("\n"):"No redemption codes have been generated yet."));
   const components=[container];
-  if (pageCount>1) {
-    components.push(new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("codes_view_prev_"+userId+"_"+page).setLabel("Previous").setStyle(ButtonStyle.Secondary).setDisabled(page<=0),
-      new ButtonBuilder().setCustomId("codes_view_next_"+userId+"_"+page).setLabel("Next").setStyle(ButtonStyle.Secondary).setDisabled(page>=pageCount-1),
-    ));
-  }
+  if(pageCount>1) components.push(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("codes_view_prev_"+userId+"_"+page).setLabel("Previous").setStyle(ButtonStyle.Secondary).setDisabled(page<=0),
+    new ButtonBuilder().setCustomId("codes_view_next_"+userId+"_"+page).setLabel("Next").setStyle(ButtonStyle.Secondary).setDisabled(page>=pageCount-1),
+  ));
   return {components,flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral,allowedMentions:{parse:[]}};
-}
-
-async function handleAutocomplete(interaction) {
-  try {
-    const focused = interaction.options.getFocused(true);
-    const isSpeciesLookup = interaction.commandName === "species" && focused.name === "species";
-    const isOwnerSpeciesChange = interaction.commandName === "owner"
-      && interaction.options.getSubcommand(false) === "species-change"
-      && focused.name === "species";
-    if (!isSpeciesLookup && !isOwnerSpeciesChange) return interaction.respond([]);
-
-    const query = String(focused.value || "").trim().toLocaleLowerCase();
-    const includeChaosCreator = isOwnerSpeciesChange && interaction.user?.id === _state?.ownerId;
-    const entries = getSpeciesAutocompleteEntries(includeChaosCreator)
-      .filter(entry => !query || entry.value.toLocaleLowerCase().includes(query)
-        || entry.name.toLocaleLowerCase().includes(query))
-      .sort((a, b) => {
-        const aStarts = a.value.toLocaleLowerCase().startsWith(query);
-        const bStarts = b.value.toLocaleLowerCase().startsWith(query);
-        if (aStarts !== bStarts) return aStarts ? -1 : 1;
-        return a.value.localeCompare(b.value);
-      })
-      .slice(0, 25);
-
-    return await interaction.respond(entries);
-  } catch (error) {
-    if (error?.code !== 10062 && !error?.message?.includes("Unknown interaction")) {
-      console.error("[Species autocomplete] Failed to respond:", error?.stack || error);
-    }
-    return null;
-  }
 }
 
 function buildStyledCardPayload(title, color, sections = [], ephemeral = false) {
@@ -664,45 +653,35 @@ function getCurrentDeveloperAlert() {
 }
 
 function buildDeveloperAlertPayload(ephemeral = true, codeRecord = null) {
-  const alert = getCurrentDeveloperAlert();
-  const container = new ContainerBuilder().setAccentColor(0x0891b2);
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "## 🔔 LOZ Update " + alert.version + (alert.date ? " · " + alert.date : "")
-  ));
+  const alert=getCurrentDeveloperAlert(),container=new ContainerBuilder().setAccentColor(0x0891b2);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🔔 LOZ Update "+alert.version+(alert.date?" · "+alert.date:"")));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("### 📜 New Update\nThe latest update is live. Run "+commandMention("patchnotes")+" to read the full patch notes."));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "### 🧪 Build Your Own Species\nSubmit your species idea in the official LOZ server. The community-favorite submission will be added to LOZ, and its creator will receive that species permanently.\n\n**Official server:** " + SUPPORT_SERVER_INVITE
+    "### 🧪 Build Your Own Species\nSubmit your species idea in the official LOZ server. The community-favorite submission will be added to LOZ, and its creator will receive that species permanently.\n\n**Official server:** "+SUPPORT_SERVER_INVITE
   ));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-  let codeBody = "### 🎁 Limited-Time Reward Code\n**Code:** \`UPDATE6.2\`\nLOZ could not verify the code right now. Please retry shortly.";
-  if (codeRecord) {
-    const expiry = new Date(codeRecord.expiresAt).getTime();
-    const claims = Math.max(0, Number(codeRecord.claimedCount) || 0);
-    const maxClaims = Math.max(1, Number(codeRecord.maxClaims) || 1);
-    const active = Number.isFinite(expiry) && expiry > Date.now() && claims < maxClaims;
-    codeBody = active
-      ? "### 🎁 Limited-Time Reward Code\n**Code:** \`UPDATE6.2\`\n**Reward:** " + (Number(codeRecord.amount) || 3) + " Species Rolls\n**Expires:** <t:" + Math.floor(expiry / 1000) + ":F> (<t:" + Math.floor(expiry / 1000) + ":R>)\n**Claims:** " + claims + "/" + maxClaims + "\nRedeem with \`/codes redeem\`."
-      : "### 🎁 Limited-Time Reward Code\n\`UPDATE6.2\` has expired or reached its claim limit.";
+  let codeBody="### 🎁 Limited-Time Reward Code\n**Code:** `UPDATE6.3`\nLOZ could not verify the code right now. Please retry shortly.";
+  if(codeRecord) {
+    const expiry=codeRecord.expiresAt==null?null:new Date(codeRecord.expiresAt).getTime();
+    const claims=Math.max(0,Number(codeRecord.claimedCount)||0),maxClaims=Number(codeRecord.maxClaims??1);
+    const active=(expiry===null||(Number.isFinite(expiry)&&expiry>Date.now()))&&(maxClaims===0||claims<maxClaims);
+    codeBody=active
+      ? "### 🎁 Limited-Time Reward Code\n**Code:** `UPDATE6.3`\n**Reward:** <:reroll_dice:1558042108965822515> **3 Species Rolls**\n**Expires:** "+(expiry===null?"Never":"<t:"+Math.floor(expiry/1000)+":D>")
+      : "### 🎁 Reward Code\n`UPDATE6.3` is unavailable.";
   }
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(codeBody));
-  return {
-    components:[container],
-    flags:MessageFlags.IsComponentsV2 | (ephemeral ? MessageFlags.Ephemeral : 0),
-    allowedMentions:{parse:[]},
-  };
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("### 🎃 Halloween Update\nThe Halloween update arrives <t:1792607400:D>."));
+  return {components:[container],flags:MessageFlags.IsComponentsV2|(ephemeral?MessageFlags.Ephemeral:0),allowedMentions:{parse:[]}};
 }
-
 function buildDeveloperAlertReminderPayload() {
-  const alert = getCurrentDeveloperAlert();
-  const container = new ContainerBuilder().setAccentColor(0x0891b2);
+  const alert=getCurrentDeveloperAlert(),container=new ContainerBuilder().setAccentColor(0x0891b2);
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "## 🔔 LOZ " + alert.version + " Update\nThe latest update announcement is available. Run " + commandMention("alert") + " to view the Build Your Own Species details and check whether \`UPDATE6.2\` is still available."
+    "## 🔔 LOZ "+alert.version+" Update\nA new update is live. Run "+commandMention("patchnotes")+" for the changes, "+commandMention("alert")+" for Build Your Own Species and `UPDATE6.3`, and note that the Halloween update arrives <t:1792607400:D>."
   ));
-  return {
-    components:[container],
-    flags:MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
-    allowedMentions:{parse:[]},
-  };
+  return {components:[container],flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral,allowedMentions:{parse:[]}};
 }
 
 async function maybePromptForDeveloperAlert(interaction) {
@@ -1166,7 +1145,7 @@ async function handleCommand(interaction) {
     const alert = getCurrentDeveloperAlert();
     const saved = await database.markDeveloperAlertViewed(user.id, alert.id);
     if (!saved) console.warn("[Developer Alert] Alert displayed, but its viewed state could not be saved for " + user.id);
-    const codeRecord = await database.getRedeemCode("UPDATE6.2");
+    const codeRecord = await database.getRedeemCode("UPDATE6.3");
     return interaction.editReply(buildDeveloperAlertPayload(true, codeRecord));
   }
 
@@ -1550,33 +1529,27 @@ async function handleCommand(interaction) {
       try {
         const status=await achievementSystem.getDragonAwakeningStatus(user.id,_state,dragonType);
         if(!status.ok) return safeReply(interaction,{embeds:[createErrorEmbed(status.notice||"Dragon awakening progress is unavailable. Please try again.")],flags:64});
-        const trialLines=status.trials.map(function(trial){
-          const stateLabel=trial.claimed?"✅ Claimed":trial.ready?"🟡 Ready to claim":"⬜ In progress";
-          return (trial.claimed?"✅":trial.ready?"🟡":"▫️")+" **"+trial.title+"** — "+trial.value+"/"+trial.target+" · "+stateLabel;
-        });
-        let awakeningStatus;
-        if(status.awakened) {
-          awakeningStatus="✅ **Awakened.** This variant is permanently recorded as awakened.";
-        } else if(status.allTrialsClaimed) {
-          awakeningStatus="🌟 **Ready to awaken.** Open `/achievements` → Species Achievements → "+status.speciesName+" and claim **Awaken "+status.speciesName+"**.";
-        } else {
-          awakeningStatus="Complete each trial and claim its reward in `/achievements` → Species Achievements → "+status.speciesName+". Once all three are claimed, claim the awakening task on that species page.";
-        }
-        const variantLines=status.variants.map(function(variant){return (variant.awakened?"✅":"▫️")+" "+variant.name;}).join("\n");
         const colour={Fire:0xff4500,Thunder:0xffd700,Ice:0x1e90ff,Earth:0x8b4513}[dragonType]||0x1e90ff;
-        const description=[
-          "*Each elemental variant has its own awakening trials. Progress is kept separately for Fire, Thunder, Ice, and Earth.*",
-          "**Elemental Trials**",
-          trialLines.join("\n"),
-          "**Awakening Status**",
-          awakeningStatus,
-          "**True Dragon Progress:** "+status.awakenedCount+"/4 variants awakened"+(status.trueDragonUnlocked?" · ✅ True Dragon unlocked":""),
-          variantLines,
-        ].join("\n\n");
+        let description;
+        if(status.awakened) {
+          description="✅ **"+status.speciesName+" Awakening Complete**\n**Dragon Trials:** "+status.awakenedCount+"/4 completed"+(status.trueDragonUnlocked?"\n🐉 **True Dragon unlocked!**":"");
+        } else if(status.allTrialsClaimed) {
+          description="✅ **All 3 trials complete.**\nClaim **Awaken "+status.speciesName+"** from the achievements menu.\n**Dragon Trials:** "+status.awakenedCount+"/4 completed";
+        } else {
+          const trial=status.trials.find(function(item){return !item.claimed;});
+          const trialIndex=Number.isInteger(trial?.index)?trial.index:0;
+          const objectives=[
+            "Complete 5 battles while using "+status.speciesName+". Wins and losses count.",
+            "Win 3 battles while using "+status.speciesName+".",
+            "Use your ultimate twice while using "+status.speciesName+".",
+          ];
+          description="**Dragon Trial "+(trialIndex+1)+"/3 — "+(trial?.title||"Elemental Trial")+"**\n"+(objectives[trialIndex]||"Complete the current Dragon Trial.")+"\n**Progress:** "+(trial?.value||0)+"/"+(trial?.target||1)
+            +(trial?.ready?"\n✅ Complete. Claim this trial from achievements.":"")
+            +"\n\n**Dragon Trials:** "+status.awakenedCount+"/4 completed";
+        }
         return safeReply(interaction,{embeds:[new EmbedBuilder().setColor(colour)
           .setTitle((userData.species?.emoji||"🐉")+" AWAKENING ALTAR — "+dragonType.toUpperCase()+" DRAGON")
-          .setDescription(description)
-          .setFooter({text:"Use /achievements to claim elemental trials and the awakening reward."})],flags:64});
+          .setDescription(description)],flags:64});
       } catch(error) {
         console.error("[Dragon Awakening] Could not load status:",error?.stack||error);
         return safeReply(interaction,{embeds:[createErrorEmbed("Dragon awakening progress could not be loaded. Please try again.")],flags:64});
@@ -1746,9 +1719,8 @@ async function handleCommand(interaction) {
     const sub=options.getSubcommand();
     if (sub==="redeem") {
       await interaction.deferReply({flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral});
-      const inputCode=options.getString("code",true);
-      const result=await database.redeemCode(user.id,inputCode);
-      if (!result?.ok) {
+      const inputCode=options.getString("code",true),result=await database.redeemCode(user.id,inputCode);
+      if(!result?.ok) {
         const errors={
           "not-found":["Code Not Found","That code does not exist. Double-check the spelling and try again."],
           "expired":["Code Expired","This redemption code has expired."],
@@ -1757,27 +1729,26 @@ async function handleCommand(interaction) {
           "reward-pending":["Reward Still Processing","LOZ reserved your claim but couldn't yet confirm the reward. Retry this same code; it will not grant a duplicate reward."],
           "database-error":["Redemption Unavailable","LOZ couldn't confirm this redemption in MongoDB. No success is being reported. Please retry the same code shortly."],
         };
-        const [title,body]=errors[result?.status] || errors["database-error"];
+        const [title,body]=errors[result?.status]||errors["database-error"];
         return interaction.editReply(buildStyledCardPayload(title,0xdc2626,[{body}],true));
       }
-      if (result.alreadyRedeemed) {
-        return interaction.editReply(buildStyledCardPayload("Already Redeemed",0x808080,[{body:"You have already redeemed this code. No extra reward was granted."}],true));
-      }
+      if(result.alreadyRedeemed) return interaction.editReply(buildStyledCardPayload("Already Redeemed",0x808080,[{body:"You have already redeemed this code. No extra reward was granted."}],true));
       const ud=_state.userSpecies.get(user.id)||{
         species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,speciesTokens:0,
         requestsEnabled:true,lastSwitch:0,awakening:{},badges:[],
       };
-      if (result.rewardType==="tokens") ud.speciesTokens=Number(result.balance)||0;
+      if(result.balances) {
+        ud.rolls=Number(result.balances.rolls)||0; ud.speciesTokens=Number(result.balances.tokens)||0;
+      } else if(result.rewardType==="tokens") ud.speciesTokens=Number(result.balance)||0;
       else ud.rolls=Number(result.balance)||0;
       _state.userSpecies.set(user.id,ud);
-      const rewardLabel=result.rewardType==="tokens"
-        ? SPECIES_TOKEN_EMOJI+" **"+result.amount+" Species Token(s)**"
-        : "<:reroll_dice:1558042108965822515> **"+result.amount+" Species Roll(s)**";
-      const balanceLabel=result.rewardType==="tokens"
-        ? "New Species Token balance: **"+ud.speciesTokens+"**."
-        : "New Species Roll balance: **"+ud.rolls+"**.";
+      const rewardLabel=(type,amount)=>type==="tokens"
+        ? SPECIES_TOKEN_EMOJI+" **"+amount+" Species Token(s)**"
+        : "<:reroll_dice:1558042108965822515> **"+amount+" Species Roll(s)**";
+      const rewards=[rewardLabel(result.rewardType,result.amount)];
+      if(result.additionalRewardType) rewards.push(rewardLabel(result.additionalRewardType,result.additionalAmount));
       return interaction.editReply(buildStyledCardPayload("Code Redeemed",0x16a34a,[
-        {body:"Code \`"+String(inputCode).trim().toUpperCase()+"\` redeemed successfully.\n\nReceived "+rewardLabel+".\n"+balanceLabel},
+        {body:"Successfully redeemed `"+String(inputCode).trim().toUpperCase()+"`.\n\nYou received "+rewards.join(" and ")+"."},
       ],true));
     }
 
@@ -1790,13 +1761,17 @@ async function handleCommand(interaction) {
       const code=supplied ? supplied.trim().toUpperCase() : crypto.randomBytes(6).toString("hex").toUpperCase();
       const rewardType=options.getString("reward") || "rolls";
       const amount=options.getInteger("amount") ?? 1;
-      const expiresMinutes=options.getInteger("expires-minutes") ?? 30;
+      const duration=parseRedemptionCodeDuration(options.getString("duration") ?? "30m");
       const maxClaims=options.getInteger("max-claims") ?? 1;
+      const additionalRewardType=options.getString("additional-prize") || null;
+      const additionalAmount=additionalRewardType ? (options.getInteger("additional-amount") ?? amount) : null;
       if (!/^[A-Z0-9._-]{3,32}$/.test(code)) {
         return safeReply(interaction,{content:"Code must be 3–32 characters and contain only letters, numbers, hyphens, or underscores.",flags:64});
       }
+      if(!duration.ok) return safeReply(interaction,{content:duration.error,flags:64});
+      if(additionalRewardType&&additionalRewardType===rewardType) return safeReply(interaction,{content:"Choose a different type for the second reward.",flags:64});
       await interaction.deferReply({flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral});
-      const result=await database.createRedeemCode({code,rewardType,amount,expiresMinutes,maxClaims,createdBy:user.id});
+      const result=await database.createRedeemCode({code,rewardType,amount,expiresAt:duration.expiresAt,maxClaims,additionalRewardType,additionalAmount,createdBy:user.id});
       if (!result?.ok) {
         const error=result?.status==="code-exists" ? "That code already exists. Choose a different code."
           : result?.status==="invalid-values" ? "Amount, expiry, or claim limit is outside the allowed range."
@@ -1804,10 +1779,13 @@ async function handleCommand(interaction) {
         return interaction.editReply(buildStyledCardPayload("Code Not Created",0xdc2626,[{body:error}],true));
       }
       const record=result.code;
-      const expiry=Math.floor(new Date(record.expiresAt).getTime()/1000);
       const rewardName=record.rewardType==="tokens" ? "Species Token(s)" : "Species Roll(s)";
+      const secondName=record.additionalRewardType==="tokens" ? "Species Token(s)" : "Species Roll(s)";
+      const rewardText=record.amount+" "+rewardName+(record.additionalRewardType?" + "+(Number(record.additionalAmount)||1)+" "+secondName:"");
+      const expiry=record.expiresAt==null?"Permanent":"<t:"+Math.floor(new Date(record.expiresAt).getTime()/1000)+":F>";
+      const claims=Number(record.maxClaims??1)===0?"Unlimited":"Up to "+record.maxClaims+" user(s)";
       return interaction.editReply(buildStyledCardPayload("Redemption Code Created",0x16a34a,[
-        {body:"**Code:** \`"+record.code+"\`\n**Reward:** "+record.amount+" "+rewardName+"\n**Expires:** <t:"+expiry+":F> (<t:"+expiry+":R>)\n**Claim limit:** "+record.maxClaims+" user(s)"},
+        {body:"**Code:** `"+record.code+"`\n**Reward:** "+rewardText+"\n**Expires:** "+expiry+"\n**Claim limit:** "+claims},
       ],true));
     }
 
@@ -3224,6 +3202,11 @@ async function handleButton(interaction) {
     if (opponent.currentHp<=0) { await endFight(channel,fightId,user.id,opponent.id,finishReason); return; }
     if (player.currentHp<=0)   { await endFight(channel,fightId,opponent.id,user.id,"normal"); return; }
 
+    if(fight.currentTurn===opponent.id&&Number(opponent.stunnedTurns)>0) {
+      opponent.stunnedTurns=Math.max(0,Number(opponent.stunnedTurns)-1);
+      fight.currentTurn=player.id;
+      log.push("⚡ **PARALYSIS!** "+(opponent.displayName||opponent.species.name)+" loses a turn.");
+    }
     const nextTurnPlayer=fight.currentTurn===fight.player1Id?fight.player1:fight.player2;
     const msg2=_state.fightMessages.get(fightId);
     if (msg2) await msg2.edit({ content: null, embeds: null, ...buildFightMessagePayload(fight, log, "playing") }).catch(() => {});
@@ -3288,6 +3271,7 @@ async function handleSelectMenu(interaction) {
     await interaction.deferUpdate();
     return interaction.editReply(await buildLeaderboardView(selected,guild));
   }
+  if(customId.startsWith("ach:species-select:")) return achievementSystem.handleSelectMenu(interaction,_state,_client);
   if (!customId.startsWith("species_token_pick_")) return;
   const expectedUserId = customId.slice("species_token_pick_".length);
   if (user.id !== expectedUserId) return safeReply(interaction, { content:"This token menu belongs to another player.", flags:64 });
@@ -3334,11 +3318,14 @@ new SlashCommandBuilder().setName("leaderboard").setDescription("View the global
       .addStringOption(o=>o.setName("code").setDescription("Redemption code").setRequired(true).setMinLength(3).setMaxLength(32)))
     .addSubcommand(s=>s.setName("generate").setDescription("Primary-owner-only: generate a reward code")
       .addStringOption(o=>o.setName("code").setDescription("Optional custom code; random if omitted").setRequired(false).setMaxLength(32))
-      .addStringOption(o=>o.setName("reward").setDescription("Reward type (defaults to Species Rolls)").setRequired(false)
+      .addStringOption(o=>o.setName("reward").setDescription("Primary reward (defaults to Species Rolls)").setRequired(false)
         .addChoices({name:"Species Rolls",value:"rolls"},{name:"Species Tokens",value:"tokens"}))
-      .addIntegerOption(o=>o.setName("amount").setDescription("Reward amount (defaults to 1)").setRequired(false).setMinValue(1).setMaxValue(1000000))
-      .addIntegerOption(o=>o.setName("expires-minutes").setDescription("Minutes until expiry (defaults to 30)").setRequired(false).setMinValue(1).setMaxValue(525600))
-      .addIntegerOption(o=>o.setName("max-claims").setDescription("Maximum users who can redeem it (defaults to 1)").setRequired(false).setMinValue(1).setMaxValue(100000)))
+      .addIntegerOption(o=>o.setName("amount").setDescription("Primary reward amount (defaults to 1)").setRequired(false).setMinValue(1).setMaxValue(1000000))
+      .addStringOption(o=>o.setName("duration").setDescription("1s, 1m, 1h, 1d, 1w, or 1y; 0 = permanent (default 30m)").setRequired(false).setMaxLength(16))
+      .addIntegerOption(o=>o.setName("max-claims").setDescription("Maximum users; 0 = unlimited (defaults to 1)").setRequired(false).setMinValue(0).setMaxValue(100000))
+      .addStringOption(o=>o.setName("additional-prize").setDescription("Optional second reward type").setRequired(false)
+        .addChoices({name:"Species Rolls",value:"rolls"},{name:"Species Tokens",value:"tokens"}))
+      .addIntegerOption(o=>o.setName("additional-amount").setDescription("Second reward amount (defaults to primary amount)").setRequired(false).setMinValue(1).setMaxValue(1000000)))
     .addSubcommand(s=>s.setName("view").setDescription("Primary-owner-only: view available and expired codes")),
   new SlashCommandBuilder().setName("servers").setDescription("List LOZ servers with invite links"),
   new SlashCommandBuilder().setName("gift").setDescription("Gift species rolls to another player")
