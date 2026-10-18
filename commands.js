@@ -233,6 +233,38 @@ function buildCodesViewPayload(records, requestedPage=0, userId=null) {
   return {components,flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral,allowedMentions:{parse:[]}};
 }
 
+async function handleAutocomplete(interaction) {
+  try {
+    const focused = interaction.options.getFocused(true);
+    const isSpeciesLookup = interaction.commandName === "species" && focused.name === "species";
+    const isOwnerSpeciesChange = interaction.commandName === "owner"
+      && interaction.options.getSubcommand(false) === "species-change"
+      && focused.name === "species";
+    if (!isSpeciesLookup && !isOwnerSpeciesChange) return interaction.respond([]);
+
+    const query = String(focused.value || "").trim().toLocaleLowerCase();
+    const includeChaosCreator = isOwnerSpeciesChange && interaction.user?.id === _state?.ownerId;
+    const entries = getSpeciesAutocompleteEntries(includeChaosCreator)
+      .filter(entry => !query || entry.value.toLocaleLowerCase().includes(query)
+        || entry.name.toLocaleLowerCase().includes(query))
+      .sort((a, b) => {
+        const aStarts = a.value.toLocaleLowerCase().startsWith(query);
+        const bStarts = b.value.toLocaleLowerCase().startsWith(query);
+        if (aStarts !== bStarts) return aStarts ? -1 : 1;
+        return a.value.localeCompare(b.value);
+      })
+      .slice(0, 25);
+
+    return await interaction.respond(entries);
+  } catch (error) {
+    if (error?.code !== 10062 && !error?.message?.includes("Unknown interaction")) {
+      console.error("[Species autocomplete] Failed to respond:", error?.stack || error);
+    }
+    return null;
+  }
+}
+
+
 function buildStyledCardPayload(title, color, sections = [], ephemeral = false) {
   const container = new ContainerBuilder().setAccentColor(color || 0x0891b2);
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${title}`));
