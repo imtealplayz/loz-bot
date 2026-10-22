@@ -345,6 +345,7 @@ const critRates = {
   Archdemon:{"chance":18,"multiplier":1.6},
   Human:{"chance":5,"multiplier":1.5}, Bot:{"chance":10,"multiplier":1.5}, Kitsune:{"chance":25,"multiplier":1.5},
   "Slime Lord":{"chance":12,"multiplier":1.6}, "True Dragon":{"chance":18,"multiplier":1.5}, Werewolf:{"chance":14,"multiplier":1.6},
+  "Chaos Creator":{"chance":10,"multiplier":1.5},
 };
 
 const failChances = {
