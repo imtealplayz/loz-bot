@@ -210,6 +210,8 @@ const BattleRewardReceipt = mongoose.model("BattleRewardReceipt", new mongoose.S
   key:{type:String,required:true,unique:true,index:true},
   userId:{type:String,required:true,index:true},
   createdAt:{type:Date,default:Date.now},
+  kind:{type:String,default:"battle-reward"},
+  result:{type:Boolean,default:null},
 }, {minimize:false}));
 
 const EventShopState = mongoose.model("EventShopState", new mongoose.Schema({
@@ -2126,6 +2128,67 @@ async function claimPvpRewardWindow(userA,userB,fightId) {
   }
 }
 
+async function rollBossSpeciesUnlock(userId,speciesKey,fightId,chance) {
+  const uid=String(userId||""),species=String(speciesKey||""),fid=String(fightId||"");
+  const rate=Number(chance);
+  if(!/^\d{17,20}$/.test(uid)||!["slimeLord","werewolf"].includes(species)||!fid||fid.length>120||!Number.isFinite(rate)||rate<0||rate>1)
+    return {ok:false,status:"invalid"};
+  const receiptKey=uid+":boss-roll:"+species+":"+fid;
+  let session=null,outcome=null,duplicate=false;
+  try {
+    if(userRepairPromise) await userRepairPromise;
+    if(!await connect()) return {ok:false,status:"database-error"};
+    session=await mongoose.startSession();
+    await session.withTransaction(async()=>{
+      const existingReceipt=await BattleRewardReceipt.findOne({key:receiptKey}).session(session).lean();
+      if(existingReceipt) {
+        outcome=existingReceipt.result===true;
+        duplicate=true;
+        return;
+      }
+      const active={userId:uid,archivedForRepair:{$ne:true}};
+      const before=await User.find(active).select({userId:1}).session(session).lean();
+      if(!before.length) throw new Error("BOSS_DROP_NO_PROFILE");
+      outcome=Math.random()<rate;
+      await BattleRewardReceipt.create([{
+        key:receiptKey,userId:uid,kind:"boss-species-drop",result:outcome
+      }],{session});
+      if(outcome) {
+        const set={};
+        set["questSpecies."+species+".unlocked"]=true;
+        set["questSpecies."+species+".equipped"]=false;
+        set["questSpecies."+species+".source"]="boss";
+        await User.updateMany(active,{$set:set},{session});
+        const after=await User.find(active).select({questSpecies:1}).session(session).lean();
+        if(after.length!==before.length||!after.every(record=>record.questSpecies?.[species]?.unlocked===true))
+          throw new Error("BOSS_DROP_UNLOCK_VERIFY_FAILED");
+      }
+    });
+    return {ok:true,unlocked:outcome===true,duplicate};
+  } catch(error) {
+    const msg=String(error?.message||"");
+    if(error?.code===11000) {
+      try {
+        const receipt=await BattleRewardReceipt.findOne({key:receiptKey}).lean();
+        if(receipt&&typeof receipt.result==="boolean") {
+          if(receipt.result) {
+            const records=await User.find({userId:uid,archivedForRepair:{$ne:true}}).select({questSpecies:1}).lean();
+            if(!records.length||!records.every(record=>record.questSpecies?.[species]?.unlocked===true))
+              return {ok:false,status:"verification-failed"};
+          }
+          return {ok:true,unlocked:receipt.result,duplicate:true};
+        }
+      } catch(_) {}
+      return {ok:false,status:"duplicate-receipt"};
+    }
+    if(msg==="BOSS_DROP_NO_PROFILE") return {ok:false,status:"missing-user"};
+    console.error("[Boss Drop] Could not resolve "+species+" drop:",error?.stack||error);
+    return {ok:false,status:"database-error"};
+  } finally {
+    if(session) await session.endSession().catch(()=>{});
+  }
+}
+
 async function grantBossSpeciesUnlock(userId,speciesKey,fightId) {
   const uid=String(userId||""),key=String(speciesKey||""),fid=String(fightId||"");
   if(!/^\d{17,20}$/.test(uid)||!["slimeLord","werewolf"].includes(key)||!fid||fid.length>120) return {ok:false,status:"invalid"};
@@ -2169,7 +2232,7 @@ async function grantBossSpeciesUnlock(userId,speciesKey,fightId) {
 }
 
 module.exports = {
-  grantBossSpeciesUnlock, applyBattleLevelingReward, getHalloweenShopState, purchaseHalloweenItem, claimPvpRewardWindow,
+  rollBossSpeciesUnlock, grantBossSpeciesUnlock, applyBattleLevelingReward, getHalloweenShopState, purchaseHalloweenItem, claimPvpRewardWindow,
   saveUserSpecies, grantArchdemonUnlock, getArchdemonUnlockState, saveUserRolls, saveUserSpeciesFields, addSpeciesTokens, redeemSpeciesToken, awardGuideCompletionRoll, repairUserRecords,
   createRedeemCode, ensureDefaultRedeemCode, getRedeemCode, listRedeemCodes, redeemCode,
   saveLeaderboard, saveFightLeaderboard,
