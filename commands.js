@@ -163,7 +163,18 @@ async function buildLeaderboardView(leaderboardType,guild,scope="global") {
     return attachLeaderboardSelector(buildStyledCardPayload("Server Leaderboard",0x808080,[{heading:"Unavailable here",body:"Use the server leaderboard inside a Discord server. Global rankings are available in DMs."}]),type,selectedScope);
   }
   const candidateLimit=selectedScope==="server"?Number.MAX_SAFE_INTEGER:10;
-  const serverUserIds=selectedScope==="server"?Array.from(_state.userSpecies.keys()).map(String):null;
+  let serverMemberIds=null;
+  if(selectedScope==="server") {
+    try {
+      const members=await guild.members.fetch();
+      serverMemberIds=new Set(members.keys());
+    } catch(_) {
+      serverMemberIds=new Set(guild.members?.cache?.keys?.()||[]);
+    }
+  }
+  const serverUserIds=selectedScope==="server"
+    ?Array.from(_state.userSpecies.keys()).map(String).filter(uid=>serverMemberIds.has(uid))
+    :null;
   let candidates=[];
   if(type==="glory") {
     const entries=await database.getGloryLeaderboardTop(candidateLimit,serverUserIds);
@@ -194,10 +205,13 @@ async function buildLeaderboardView(leaderboardType,guild,scope="global") {
       .slice(0,candidateLimit);
   }
 
+  if(selectedScope==="server") candidates=candidates.filter(candidate=>serverMemberIds.has(String(candidate.uid)));
   const rows=[];
   for(const candidate of candidates) {
     if(rows.length>=10) break;
-    const resolved=await resolveLeaderboardName(candidate.uid,guild);
+    const resolved=selectedScope==="server"
+      ? (()=>{const member=guild.members.cache.get(String(candidate.uid));return {name:member?.displayName||member?.user?.username||"Unknown",member:Boolean(member)};})()
+      : await resolveLeaderboardName(candidate.uid,guild);
     if(selectedScope==="server"&&!resolved.member) continue;
     const rank=rows.length+1;
     const prefix=rank===1?"🥇":rank===2?"🥈":rank===3?"🥉":"**"+String(rank).padStart(2,"0")+".**";
@@ -289,13 +303,18 @@ function buildHalloweenShopPayload(userId,shop) {
         "### 🌑 Reaper\n2,250 Candies · "+shop.reaperStock+" / 50 global stock remaining\nPermanent unlock. The global supply never restocks."+
         (shop.reaperUnlocked?"\n**Already unlocked on your account.**":"")
       ))
-      .setButtonAccessory(new ButtonBuilder().setCustomId("hshop_buy_reaper_"+userId).setLabel("Unlock Reaper").setStyle(ButtonStyle.Danger).setDisabled(!eventActive||shop.reaperStock<1||shop.reaperUnlocked||shop.candies<2250))
+      .setButtonAccessory(new ButtonBuilder().setCustomId("hshop_buy_reaper_"+userId).setLabel("Unlock Reaper").setStyle(ButtonStyle.Danger).setDisabled(!eventActive||shop.reaperStock<1||shop.reaperUnlocked||shop.candies<2250)),
+    new SectionBuilder()
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        "### ⭐ Level Boost\n100 Candies for 100 XP (one level)\nGain level milestone rewards. Unavailable at Level 500."
+      ))
+      .setButtonAccessory(new ButtonBuilder().setCustomId("hshop_buy_xp_"+userId+"_"+Math.floor(Number(shop.candies)||0)).setLabel("Buy 100 XP").setStyle(ButtonStyle.Success).setDisabled(!eventActive||Number(shop.level)>=500||shop.candies<100))
   );
   return {components:[container],flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral,allowedMentions:{parse:[]}};
 }
 function buildHalloweenPurchaseConfirmation(userId,item,quantity,restockAt,shop) {
-  const costs={rolls:50,tokens:1000,reaper:2250};
-  const names={rolls:"Species Roll(s)",tokens:"Species Token(s)",reaper:"Reaper permanent unlock"};
+  const costs={rolls:50,tokens:1000,reaper:2250,xp:100};
+  const names={rolls:"Species Roll(s)",tokens:"Species Token(s)",reaper:"Reaper permanent unlock",xp:"100 XP (one level)"};
   const cost=costs[item]*quantity;
   const after=Math.max(0,Number(shop.candies||0)-cost);
   const container=new ContainerBuilder().setAccentColor(0xf97316);
@@ -307,7 +326,7 @@ function buildHalloweenPurchaseConfirmation(userId,item,quantity,restockAt,shop)
     "**Current Candies:** "+Number(shop.candies||0).toLocaleString()+"\n"+
     "**Total cost:** "+cost.toLocaleString()+" Candies\n"+
     "**After purchase:** "+after.toLocaleString()+" Candies\n\n"+
-    (item==="reaper"?"This uses one unit from the permanent global stock.":"This purchase uses your current hourly stock. If the restock expires before confirmation, the purchase will be rejected.")
+    (item==="reaper"?"This uses one unit from the permanent global stock.":item==="xp"?"This adds 100 XP and awards any level milestone rewards. It cannot be purchased at Level 500.":"This purchase uses your current hourly stock. If the restock expires before confirmation, the purchase will be rejected.")
   ));
   container.addActionRowComponents(new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId("hshop_confirm_"+item+"_"+quantity+"_"+(item==="reaper"?0:restockAt)+"_"+Math.floor(Number(shop.candies)||0)+"_"+userId).setLabel("Confirm Purchase").setStyle(ButtonStyle.Success),
