@@ -177,7 +177,8 @@ function calculateDamage(attacker, defender) {
       } else {
         // Above 20% — the shared nextAttack path applies ×1.7 exactly once.
         reaperUltHeal=true;
-        ub.type="nextAttack"; // let the shared nextAttack branch consume the multiplier once
+        ub.type="nextAttack";
+        ub.multiplier=1.7; // The shared nextAttack consumer applies the multiplier exactly once.
         specialLines.push("🌑 Reaper ULT ×1.7 + 50% life steal");
       }
     }
@@ -369,7 +370,7 @@ function applyUltEffect(attacker, defender) {
     }
     case "Angel":       requiresChoice=true; choiceType="angel"; msg="👼 **DIVINE BLESSING!**\nChoose your path:"; break;
     case "Ice Dragon":  requiresChoice=true; choiceType="ice_dragon"; msg="❄️ **GLACIAL SPIKE!**\nChoose your path:"; break;
-    case "Earth Dragon":requiresChoice=true; choiceType="earth_dragon"; msg="🌍 **TERRA SHIELD!**\nChoose your path:"; break;
+    case "Earth Dragon":requiresChoice=true; choiceType="earth_dragon"; msg="🌍 **TERRA SHIELD!**\nChoose Terra Strike (1.4× next attack) or Terra Shield (90% damage reduction for the next hit):"; break;
     case "Reaper": {
       if(defender.currentHp<=defender.maxHp*0.2) {
         const killDamage=Math.max(0,Number(defender.currentHp)||0);
@@ -539,7 +540,7 @@ function buildFightRow(fightId, player, phase = "playing") {
       new ButtonBuilder().setCustomId("pvp_choice_ice_heal_" + fightId).setLabel("Glacial Heal (+50%)").setStyle(ButtonStyle.Success));
   if (phase === "choice_earth_dragon")
     return new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("pvp_choice_earth_attack_" + fightId).setLabel("Terra Strike (1.2×)").setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId("pvp_choice_earth_attack_" + fightId).setLabel("Terra Strike (1.4×)").setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId("pvp_choice_earth_shield_" + fightId).setLabel("Terra Shield").setStyle(ButtonStyle.Primary));
   const healDisabled = player.healCooldown > 0 || player.currentHp >= player.maxHp * 0.8;
   const ultLabel = player.ultCooldown > 0 ? "Ultimate (" + player.ultCooldown + ")" : "Ultimate";
@@ -600,7 +601,7 @@ function buildBotFightRow(fightId, fight, phase = "playing") {
       new ButtonBuilder().setCustomId("botfight_choice_ice_heal_" + fightId).setLabel("Glacial Heal (+50%)").setStyle(ButtonStyle.Success));
   if (phase === "choice_earth_dragon")
     return new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("botfight_choice_earth_attack_" + fightId).setLabel("Terra Strike (1.2×)").setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId("botfight_choice_earth_attack_" + fightId).setLabel("Terra Strike (1.4×)").setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId("botfight_choice_earth_shield_" + fightId).setLabel("Terra Shield").setStyle(ButtonStyle.Primary));
   const healOk = fight.playerHealCooldown === 0 && fight.playerHp < fight.playerMaxHp * 0.8;
   const ultLabel = fight.playerUltCooldown > 0 ? "Ultimate (" + fight.playerUltCooldown + ")" : "Ultimate";
