@@ -1643,7 +1643,7 @@ async function getGloryLeaderboardTop(limit=25,userIds=null) {
       if(!ids.length) return [];
       filter.userId={$in:ids};
     }
-    const safeLimit=Math.max(1,Math.min(scoped?300:25,Number(limit)||25));
+    const safeLimit=Math.max(1,Math.min(scoped?5000:25,Number(limit)||25));
     const entries=await AchievementProfile.find(filter).sort({"data.glory":-1,userId:1}).limit(safeLimit).lean();
     return entries.map(entry=>({userId:String(entry.userId),glory:Math.max(0,Number(entry.data&&entry.data.glory)||0)}));
   } catch(error) {
