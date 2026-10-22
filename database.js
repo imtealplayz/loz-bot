@@ -1927,39 +1927,63 @@ async function redeemCode(userId, rawCode) {
 }
 
 // ==================== EXPORTS ====================
-async function applyBattleLevelingReward(userId,rewardKey,{level,xp,candiesDelta=0,rollsDelta=0,tokensDelta=0}={}) {
+function resolveStoredLevel(records) {
+  const safe=Array.isArray(records)?records:[];
+  const level=Math.max(1,...safe.map(record=>Math.max(1,Math.min(500,Math.floor(Number(record.level)||1)))));
+  if(level>=500) return {level:500,xp:0};
+  const same=safe.filter(record=>Math.max(1,Math.min(500,Math.floor(Number(record.level)||1)))===level);
+  const xp=same.length?Math.max(0,Math.min(99,...same.map(record=>Math.floor(Number(record.xp)||0)))):0;
+  return {level,xp};
+}
+function getLevelMilestones(fromLevel,toLevel) {
+  let rolls=0,tokens=0;
+  for(let level=fromLevel+1;level<=toLevel;level++) {
+    if(level%5===0) rolls++;
+    if(level%25===0) tokens++;
+  }
+  return {rolls,tokens};
+}
+function advanceLevel(levelState,xpDelta) {
+  const before=resolveStoredLevel([levelState||{}]);
+  const delta=Math.max(0,Math.floor(Number(xpDelta)||0));
+  if(before.level>=500) return {previousLevel:500,previousXp:0,level:500,xp:0,levelsGained:0};
+  const total=before.xp+delta;
+  const levelsGained=Math.min(500-before.level,Math.floor(total/100));
+  const level=before.level+levelsGained;
+  const xp=level>=500?0:Math.max(0,Math.min(99,total-levelsGained*100));
+  return {previousLevel:before.level,previousXp:before.xp,level,xp,levelsGained};
+}
+
+async function applyBattleLevelingReward(userId,rewardKey,{xpDelta=0,candiesDelta=0,candyPerLevel=0}={}) {
   const uid=String(userId||""),key=String(rewardKey||"");
   if(!/^\d{17,20}$/.test(uid)||!key||key.length>200) return {ok:false,status:"invalid"};
-  let session=null;
+  let session=null,result=null;
   try {
     if(userRepairPromise) await userRepairPromise;
     if(!await connect()) return {ok:false,status:"database-error"};
     session=await mongoose.startSession();
-    let result=null;
     await session.withTransaction(async()=>{
-      await BattleRewardReceipt.create([{key:uid+":"+key,userId:uid}],{session});
+      await BattleRewardReceipt.create([{key:uid+":"+key,userId:uid,kind:"battle-reward"}],{session});
       const active={userId:uid,archivedForRepair:{$ne:true}};
-      const existing=await User.find(active).select({userId:1}).session(session).lean();
-      if(!existing.length) throw new Error("LEVEL_NO_ACTIVE_PROFILE");
-      const nextLevel=Math.max(1,Math.min(500,Math.floor(Number(level)||1)));
-      const nextXP=nextLevel>=500?0:Math.max(0,Math.min(99,Math.floor(Number(xp)||0)));
-      const increments={candies:Math.max(0,Math.floor(Number(candiesDelta)||0)),rolls:Math.max(0,Math.floor(Number(rollsDelta)||0)),speciesTokens:Math.max(0,Math.floor(Number(tokensDelta)||0))};
-      const saved=await User.updateMany(active,{$set:{level:nextLevel,xp:nextXP},$inc:increments},{session});
+      const beforeRecords=await User.find(active).select({userId:1,level:1,xp:1}).session(session).lean();
+      if(!beforeRecords.length) throw new Error("LEVEL_NO_ACTIVE_PROFILE");
+      const old=resolveStoredLevel(beforeRecords);
+      const progress=advanceLevel(old,xpDelta);
+      const milestones=getLevelMilestones(progress.previousLevel,progress.level);
+      const candyReward=Math.max(0,Math.floor(Number(candiesDelta)||0))
+        + progress.levelsGained*Math.max(0,Math.floor(Number(candyPerLevel)||0));
+      const increments={candies:candyReward,rolls:milestones.rolls,speciesTokens:milestones.tokens};
+      const saved=await User.updateMany(active,{$set:{level:progress.level,xp:progress.xp},$inc:increments},{session});
       const matched=Number(saved.matchedCount??saved.n??saved.modifiedCount??0);
-      if(matched!==existing.length) throw new Error("LEVEL_PROFILE_WRITE_MISMATCH");
+      if(matched!==beforeRecords.length) throw new Error("LEVEL_PROFILE_WRITE_MISMATCH");
       const records=await User.find(active).select({level:1,xp:1,candies:1,rolls:1,speciesTokens:1}).session(session).lean();
-      if(records.length!==existing.length) throw new Error("LEVEL_PROFILE_VERIFY_FAILED");
+      if(records.length!==beforeRecords.length) throw new Error("LEVEL_PROFILE_VERIFY_FAILED");
+      const min=field=>Math.max(0,Math.min(...records.map(record=>Number(record[field])||0)));
       result={
-        level:Math.max(1,...records.map(record=>Math.min(500,Number(record.level)||1))),
-        xp:0,
-        candies:Math.max(0,Math.min(...records.map(record=>Number(record.candies)||0))),
-        rolls:Math.max(0,Math.min(...records.map(record=>Number(record.rolls)||0))),
-        speciesTokens:Math.max(0,Math.min(...records.map(record=>Number(record.speciesTokens)||0))),
+        previousLevel:progress.previousLevel,previousXp:progress.previousXp,levelsGained:progress.levelsGained,
+        level:progress.level,xp:progress.xp,candies:min("candies"),rolls:min("rolls"),speciesTokens:min("speciesTokens"),
+        rollsDelta:milestones.rolls,tokensDelta:milestones.tokens,candiesDelta:candyReward,
       };
-      if(result.level<500) {
-        const matching=records.filter(record=>Math.min(500,Number(record.level)||1)===result.level);
-        result.xp=Math.max(0,Math.min(99,...matching.map(record=>Number(record.xp)||0)));
-      }
     });
     return result?{ok:true,duplicate:false,user:result}:{ok:false,status:"database-error"};
   } catch(error) {
@@ -1968,6 +1992,54 @@ async function applyBattleLevelingReward(userId,rewardKey,{level,xp,candiesDelta
     if(message==="LEVEL_NO_ACTIVE_PROFILE") return {ok:false,status:"missing-user"};
     console.error("[Leveling] Could not persist battle progression:",error?.stack||error);
     return {ok:false,status:"database-error"};
+  } finally {
+    if(session) await session.endSession().catch(()=>{});
+  }
+}
+
+async function purchaseHalloweenXp(userId,expectedCandies) {
+  const uid=String(userId||""),expected=Number(expectedCandies);
+  if(!/^\d{17,20}$/.test(uid)||!Number.isSafeInteger(expected)||expected<0) return {ok:false,status:"invalid"};
+  if(Date.now()>=Date.parse("2026-11-01T00:00:00+05:30")) return {ok:false,status:"event-ended"};
+  if(expected<100) return {ok:false,status:"insufficient-candies"};
+  let session=null,result=null;
+  try {
+    if(userRepairPromise) await userRepairPromise;
+    if(!await connect()) return {ok:false,status:"database-error"};
+    session=await mongoose.startSession();
+    await session.withTransaction(async()=>{
+      const active={userId:uid,archivedForRepair:{$ne:true}};
+      const beforeRecords=await User.find(active).select({userId:1,level:1,xp:1,candies:1}).session(session).lean();
+      if(!beforeRecords.length) throw new Error("LEVEL_NO_ACTIVE_PROFILE");
+      const candies=Math.max(0,Math.min(...beforeRecords.map(record=>Number(record.candies)||0)));
+      if(candies!==expected) throw new Error("SHOP_BALANCE_CHANGED");
+      if(candies<100) throw new Error("SHOP_INSUFFICIENT");
+      const old=resolveStoredLevel(beforeRecords);
+      if(old.level>=500) throw new Error("LEVEL_ALREADY_MAXED");
+      const progress=advanceLevel(old,100);
+      const milestones=getLevelMilestones(progress.previousLevel,progress.level);
+      const saved=await User.updateMany({...active,candies:{$gte:100}},{
+        $set:{level:progress.level,xp:progress.xp},
+        $inc:{candies:-100,rolls:milestones.rolls,speciesTokens:milestones.tokens}
+      },{session});
+      const matched=Number(saved.matchedCount??saved.n??saved.modifiedCount??0);
+      if(matched!==beforeRecords.length) throw new Error("LEVEL_PROFILE_WRITE_MISMATCH");
+      const after=await User.find(active).select({level:1,xp:1,candies:1,rolls:1,speciesTokens:1}).session(session).lean();
+      if(after.length!==beforeRecords.length||after.some(record=>(Number(record.candies)||0)<0)) throw new Error("LEVEL_PROFILE_VERIFY_FAILED");
+      const min=field=>Math.max(0,Math.min(...after.map(record=>Number(record[field])||0)));
+      result={
+        ok:true,previousLevel:progress.previousLevel,level:progress.level,xp:progress.xp,levelsGained:progress.levelsGained,
+        candies:min("candies"),rolls:min("rolls"),tokens:min("speciesTokens"),rollsDelta:milestones.rolls,tokensDelta:milestones.tokens
+      };
+    });
+    return result||{ok:false,status:"database-error"};
+  } catch(error) {
+    const message=String(error?.message||"");
+    const status=message==="LEVEL_NO_ACTIVE_PROFILE"?"no-profile":
+      message==="SHOP_BALANCE_CHANGED"?"balance-changed":message==="SHOP_INSUFFICIENT"?"insufficient-candies":
+      message==="LEVEL_ALREADY_MAXED"?"max-level":message==="LEVEL_PROFILE_VERIFY_FAILED"?"verification-failed":"database-error";
+    if(status==="database-error"||status==="verification-failed") console.error("[Leveling] Candy-to-XP purchase failed:",error?.stack||error);
+    return {ok:false,status};
   } finally {
     if(session) await session.endSession().catch(()=>{});
   }
@@ -2236,7 +2308,7 @@ async function grantBossSpeciesUnlock(userId,speciesKey,fightId) {
 }
 
 module.exports = {
-  rollBossSpeciesUnlock, grantBossSpeciesUnlock, applyBattleLevelingReward, getHalloweenShopState, purchaseHalloweenItem, claimPvpRewardWindow,
+  rollBossSpeciesUnlock, grantBossSpeciesUnlock, applyBattleLevelingReward, purchaseHalloweenXp, getHalloweenShopState, purchaseHalloweenItem, claimPvpRewardWindow,
   saveUserSpecies, grantArchdemonUnlock, getArchdemonUnlockState, saveUserRolls, saveUserSpeciesFields, addSpeciesTokens, redeemSpeciesToken, awardGuideCompletionRoll, repairUserRecords,
   createRedeemCode, ensureDefaultRedeemCode, getRedeemCode, listRedeemCodes, redeemCode,
   saveLeaderboard, saveFightLeaderboard,
