@@ -562,21 +562,24 @@ async function finishSlimeLordBoss(channel,fight,winner,reason) {
   const speciesKey=isWerewolf?"werewolf":"slimeLord";
   const label=isWerewolf?"Werewolf":"Slime Lord";
   const unlockChance=isWerewolf?0.05:0.092;
+  const unlockEligible=won&&!["timeout","disintegration","judge","divine-intervention","chaos-disintegrate"].includes(String(reason));
   let unlocked=false,alreadyUnlocked=false,saveFailed=false,unlockMissed=false;
-  if(won && reason!=="timeout") {
+  if(unlockEligible) {
     const current=_state.userSpecies.get(fight.playerId)||{
       species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,speciesTokens:0,candies:0,
       level:1,xp:0,requestsEnabled:true,lastSwitch:0,awakening:{},badges:[]
     };
-    alreadyUnlocked=current.questSpecies?.[speciesKey]?.unlocked===true || current.originalSpecies?.name===label;
-    if(!alreadyUnlocked && Math.random()<unlockChance) {
-      const saved=await database.grantBossSpeciesUnlock(fight.playerId,speciesKey,fight.fightId);
-      if(saved?.ok) {
+    alreadyUnlocked=current.questSpecies?.[speciesKey]?.unlocked===true||current.originalSpecies?.name===label;
+    if(!alreadyUnlocked) {
+      // The result of each eligible boss-drop roll is saved, including a miss, so retries cannot reroll the same victory.
+      const roll=await database.rollBossSpeciesUnlock(fight.playerId,speciesKey,fight.fightId,unlockChance);
+      if(!roll?.ok) saveFailed=true;
+      else if(roll.unlocked) {
         current.questSpecies={...(current.questSpecies||{}),[speciesKey]:{...(current.questSpecies?.[speciesKey]||{}),unlocked:true,equipped:false,source:"boss"}};
         _state.userSpecies.set(fight.playerId,current);
         unlocked=true;
-      } else saveFailed=true;
-    } else if(!alreadyUnlocked) unlockMissed=true;
+      } else unlockMissed=true;
+    }
   }
   const playerMention="<@"+fight.playerId+">";
   const header=won?playerMention+" defeated the "+label+" boss!":playerMention+" was defeated by the "+label+" boss.";
@@ -585,8 +588,9 @@ async function finishSlimeLordBoss(channel,fight,winner,reason) {
   desc+="**Boss HP:** "+formatFightHealth(won?0:fight.botHp,fight.botMaxHp)+"\n\n";
   if(unlocked) desc+=(isWerewolf?"🐺 **Werewolf permanently unlocked!**":"🫧 **Slime Lord permanently unlocked!**")+" Use /switch to equip it.\n";
   else if(alreadyUnlocked) desc+="You already have "+label+" permanently unlocked.\n";
-  else if(saveFailed) desc+="The unlock roll succeeded, but MongoDB could not verify the save. The species was not reported as unlocked; please contact an owner to verify it.\n";
+  else if(saveFailed) desc+="LOZ could not verify the boss-drop result in MongoDB. Contact an owner before retrying; the result will not be rerolled automatically.\n";
   else if(unlockMissed) desc+="The "+label+" did not yield its essence this time. Unlock chance: **"+(unlockChance*100).toFixed(1)+"%**.\n";
+  else if(won&&!unlockEligible) desc+="This result does not qualify for a species-unlock roll.\n";
   else if(!won) desc+="Defeat the boss to roll for its permanent species unlock.\n";
   const msg=_state.fightMessages.get(fight.fightId);
   if(msg) await msg.edit({content:null,embeds:null,...buildFightResultPayload(header,desc,won?(isWerewolf?0x7c3aed:0x2dd4bf):0x8b0000,[])}).catch(()=>{});
