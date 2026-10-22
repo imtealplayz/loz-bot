@@ -1,5 +1,16 @@
 const patchNotes = [
   {
+    version:"7.0v", date:"2026-10-22", alertId:"7.0v-halloween-2026-10-22",
+    changes:[
+      "Added the Halloween Werewolf boss. Medium-or-higher bot victories have a 7.5% combined event-boss spawn chance; the selection is 60% Slime Lord and 40% Werewolf. Werewolf's stats scale by the triggering difficulty and its permanent unlock drop is 5%.",
+      "Added player levels capped at 500, a fixed 100 XP per level, round-sensitive battle rewards, rotating level-up messages, milestone Species Rolls, and one Species Token every 25 levels.",
+      "Added Halloween Candies from eligible battles and level-ups, the HALLOWEEN reward code, and /events shop with hourly personal roll/token restocks and finite global Reaper stock.",
+      "Added the Level leaderboard and global/server leaderboard scope. Repeated PvP XP and Candy rewards are limited per opponent pair per day.",
+      "Balanced Archdemon, Thunder Dragon, Earth Dragon, Ice Dragon, Half-Blood, True Dragon, Goblin, and God. Added missing critical-hit configurations, increased Reaper HP by 10, and enabled God for Species Tokens.",
+      "Halloween Candy earning and shop purchases end on November 1, 2026 at 12:00 AM IST. Player records are extended additively; no collection reset is required."
+    ],
+  },
+  {
     version:"6.3", date:"2026-10-19", alertId:"6.3-update-2026-10-19",
     changes:[
       "LOZ mention help now triggers only when the bot mention starts the message, and the help card is shorter.",
@@ -243,12 +254,12 @@ const speciesList = [
   { number:7,  name:"Kijin",      rarity:14, emoji:"🎭",    chance:"7.0%",  roleName:"Kijin",       color:0x9b59b6, hp:100, atkMin:12, atkMax:18, healMin:10, healMax:20, ultCooldown:8  },
   { number:8,  name:"High Orc",   rarity:18, emoji:"⚔️",   chance:"9.0%",  roleName:"High-Orc",    color:0xc0c0c0, hp:105, atkMin:14, atkMax:20, healMin:14, healMax:24, ultCooldown:10 },
   { number:9,  name:"Ogre",       rarity:24, emoji:"👹",    chance:"12.0%", roleName:"Ogre",        color:0x8b4513, hp:110, atkMin:10, atkMax:16, healMin:18, healMax:30, ultCooldown:9  },
-  { number:10, name:"Goblin",     rarity:36, emoji:"👺",    chance:"18.0%", roleName:"Goblin",      color:0x006400, hp:95,  atkMin:8,  atkMax:14, healMin:8,  healMax:16, ultCooldown:6  },
+  { number:10, name:"Goblin",     rarity:36, emoji:"👺",    chance:"18.0%", roleName:"Goblin",      color:0x006400, hp:95,  atkMin:10, atkMax:16, healMin:8,  healMax:16, ultCooldown:6  },
   { number:11, name:"Orc",        rarity:44, emoji:"🟢",    chance:"22.0%", roleName:"Orc",         color:0x00ff00, hp:100, atkMin:12, atkMax:18, healMin:12, healMax:20, ultCooldown:6  },
   { number:12, name:"Angel",      rarity:6,  emoji:"👼",    chance:"3.0%",  roleName:"Angel",       color:0xfff700, hp:100, atkMin:15, atkMax:23, healMin:15, healMax:32, ultCooldown:10 },
   { number:13, name:"Chimera",    rarity:4,  emoji:"🎭",    chance:"2.2%",  roleName:"Chimera",     color:0x9b59b6, hp:115, atkMin:16, atkMax:26, healMin:14, healMax:22, ultCooldown:15 },
   { number:14, name:"Cyborg",     rarity:14, emoji:"🤖",    chance:"7.0%",  roleName:"Cyborg",      color:0x00ffff, hp:125, atkMin:12, atkMax:19, healMin:8,  healMax:14, ultCooldown:7  },
-  { number:15, name:"Half-Blood", rarity:52, emoji:"🩸",    chance:"26.0%", roleName:"Half-Blood",  color:0x8b4513, hp:90,  atkMin:10, atkMax:16, healMin:10, healMax:18, ultCooldown:7  },
+  { number:15, name:"Half-Blood", rarity:52, emoji:"🩸",    chance:"26.0%", roleName:"Half-Blood",  color:0x8b4513, hp:95,  atkMin:10, atkMax:16, healMin:10, healMax:18, ultCooldown:7  },
   { number:16, name:"Mechangel",  rarity:0,  emoji:"⚡🤖",  chance:"—",     roleName:"Mechangel",   color:0x00ffff, hp:140, atkMin:15, atkMax:23, healMin:10, healMax:18, ultCooldown:9  },
 ];
 
@@ -257,7 +268,7 @@ const dragonSpecies = {
   types: [
     { type:"Fire",    emoji:"🔥", hp:125, atkMin:22, atkMax:32, healMin:8,  healMax:14, color:0xff4500, ultCooldown:11 },
     { type:"Thunder", emoji:"⚡", hp:115, atkMin:24, atkMax:34, healMin:6,  healMax:12, color:0xffd700, ultCooldown:12 },
-    { type:"Ice",     emoji:"❄️", hp:120, atkMin:18, atkMax:28, healMin:16, healMax:24, color:0x1e90ff, ultCooldown:10 },
+    { type:"Ice",     emoji:"❄️", hp:120, atkMin:20, atkMax:30, healMin:16, healMax:24, color:0x1e90ff, ultCooldown:10 },
     { type:"Earth",   emoji:"🌍", hp:135, atkMin:16, atkMax:26, healMin:10, healMax:18, color:0x8b4513, ultCooldown:11 },
   ],
 };
@@ -271,12 +282,13 @@ const botSpecies = {
 
 const godSpecies       = { number:0,  name:"God",      emoji:"👑✨", roleName:"God",      color:0xffffff, hp:140, atkMin:25, atkMax:35, healMin:25, healMax:45, ultCooldown:8, chance:"0.2%" };
 const humanSpecies     = { number:99, name:"Human",    emoji:"👤",   roleName:null,       color:0x808080, hp:50,  atkMin:5,  atkMax:10, healMin:5,  healMax:10, ultCooldown:0  };
-const reaperSpecies    = { number:18, name:"Reaper",   emoji:"🌑",   roleName:"Reaper",   color:0x2f4f4f, hp:110, atkMin:25, atkMax:38, healMin:8,  healMax:16, ultCooldown:12 };
-const archdemonSpecies = { number:19, name:"Archdemon",emoji:"👿",   roleName:"Archdemon",color:0x4a0404, hp:150, atkMin:28, atkMax:40, healMin:15, healMax:25, ultCooldown:10 };
+const reaperSpecies    = { number:18, name:"Reaper",   emoji:"🌑",   roleName:"Reaper",   color:0x2f4f4f, hp:120, atkMin:25, atkMax:38, healMin:8,  healMax:16, ultCooldown:12 };
+const archdemonSpecies = { number:19, name:"Archdemon",emoji:"👿",   roleName:"Archdemon",color:0x4a0404, hp:150, atkMin:16, atkMax:22, healMin:15, healMax:25, ultCooldown:10 };
 const slimeLordSpecies = { number:20, name:"Slime Lord",emoji:"🫧",roleName:"Slime-Lord",color:0x2dd4bf,hp:130,atkMin:18,atkMax:27,healMin:15,healMax:25,ultCooldown:9,chance:"Special boss unlock" };
 const eclipsedSovereignSpecies = { number:21, name:"Eclipsed Sovereign", emoji:"🌘", roleName:"Eclipsed-Sovereign", color:0x6f2da8, hp:115, atkMin:15, atkMax:22, healMin:14, healMax:22, ultCooldown:7, chance:"Special awakening" };
 const chaosCreatorSpecies = { number:22, name:"Chaos Creator", emoji:"🌀", roleName:null, color:0x18181b, hp:150, atkMin:20, atkMax:28, healMin:18, healMax:30, ultCooldown:2, chance:"Primary owner only" };
-const trueDragonSpecies = { number:23, name:"True Dragon", emoji:"🐉✨", roleName:"True-Dragon", color:0x6f2da8, hp:200, atkMin:32, atkMax:42, healMin:18, healMax:28, ultCooldown:9, chance:"Secret / Awakening" };
+const trueDragonSpecies = { number:23, name:"True Dragon", emoji:"🐉✨", roleName:"True-Dragon", color:0x6f2da8, hp:175, atkMin:32, atkMax:42, healMin:18, healMax:28, ultCooldown:9, chance:"Secret / Awakening" };
+const werewolfSpecies = { number:24, name:"Werewolf", emoji:"🐺", roleName:"Werewolf", color:0x7c3aed, hp:125, atkMin:24, atkMax:36, healMin:12, healMax:20, ultCooldown:10, chance:"Halloween boss · 5% unlock drop" };
 
 // ==================== BOT DIFFICULTY ====================
 const botSpeciesByDifficulty = {
@@ -331,6 +343,8 @@ const critRates = {
   "Earth Dragon":{"chance":5,"multiplier":2.0}, Cyborg:{"chance":10,"multiplier":1.6},
   "Half-Blood":{"chance":8,"multiplier":1.8}, "Eclipsed Sovereign":{"chance":12,"multiplier":1.8}, Mechangel:{"chance":15,"multiplier":1.5},
   Archdemon:{"chance":18,"multiplier":1.6},
+  Human:{"chance":5,"multiplier":1.5}, Bot:{"chance":10,"multiplier":1.5}, Kitsune:{"chance":25,"multiplier":1.5},
+  "Slime Lord":{"chance":12,"multiplier":1.6}, "True Dragon":{"chance":18,"multiplier":1.5}, Werewolf:{"chance":14,"multiplier":1.6},
 };
 
 const failChances = {
@@ -338,7 +352,7 @@ const failChances = {
   "Orc Lord":0.10, Oni:0.09, Demon:0.08, "Demon King":0.07, "Demon Lord":0.06,
   "Demi God":0.05, God:0.04, Angel:0.08, Chimera:0.07, Reaper:0.06,
   "Fire Dragon":0.07, "Thunder Dragon":0.06, "Ice Dragon":0.08, "Earth Dragon":0.09,
-  Cyborg:0.08, "Half-Blood":0.12, "Eclipsed Sovereign":0.05, Mechangel:0.05, Archdemon:0.03,
+  Cyborg:0.08, "Half-Blood":0.12, "Eclipsed Sovereign":0.05, Mechangel:0.05, Archdemon:0.03, Werewolf:0.07,
 };
 
 // ==================== AWAKENING REQUIREMENTS ====================
@@ -435,6 +449,7 @@ function getPassiveDescription(name) {
     "Slime Lord":"**Adaptive Momentum** — each miss or counter builds a next-attack multiplier: ×1.2, ×1.4, ×1.6, ×1.8, up to ×2.0; a successful hit consumes the bonus.",
     "Chaos Creator":"**Absolute Authority** — receives 50% less damage, cannot miss normal attacks, and counter attempts against its attacks are counter-countered.",
     "True Dragon":"**Dragon Spirit Haki** — takes 20% less incoming damage; Universal Perception sees through evasion.",
+    Werewolf:"**Blood Moon Frenzy** — once per fight at 50% HP or lower, its next 2 attacks deal ×1.25; missed attacks consume a charge.",
   };
   return passives[name] || "Unknown passive";
 }
@@ -452,15 +467,15 @@ function getActiveDescription(name) {
     "Demon King":"**Infernal Domain** — +30% dmg for 3 turns (CD: 15)",
     "Demon Lord":"**Hellfire** — 2× + 7 burn for 2 rounds (CD: 10)",
     "Demi God":"**Divine Wrath** — 2.5× next attack (CD: 12)",
-    God:"**Divine Judgment** — remove 40% enemy HP, heal 40% own HP (CD: 8)",
+    God:"**Divine Judgment** — damage equal to 50% of opponent max HP and heal 50% of own max HP (CD: 8)",
     Human:"None",
     Angel:"**Divine Blessing** — choose: 1.5× + 35% heal OR 60% heal (CD: 10)",
     Chimera:"**Mirror Realm** — copy opponent's last ULT (CD: 15)",
     Reaper:"**Death's Judgment** — below 20%: instant kill | above 20%: 1.7× + 50% life steal (CD: 12)",
     "Fire Dragon":"**Inferno Blast** — 1.7× + 10 burn 2 rounds (CD: 11)",
-    "Thunder Dragon":"**Thunder Surge** — 1.4× + paralyze (CD: 12)",
+    "Thunder Dragon":"**Thunder Surge** — paralyze for 2 turns (CD: 12)",
     "Ice Dragon":"**Glacial Spike** — choose: 1.9× OR +50% heal (CD: 10)",
-    "Earth Dragon":"**Terra Shield** — choose Terra Strike (1.2× next attack) OR Terra Shield (−60% damage from the next hit) (CD: 11)",
+    "Earth Dragon":"**Terra Shield** — choose Terra Strike (1.4× next attack) OR Terra Shield (−90% damage from the next hit) (CD: 11)",
     Cyborg:"**Self-Repair** — heal 30% max HP + 15% dmg reduction 2 turns (CD: 7)",
     "Half-Blood":"**Awakened Blood** — 1.4× + heal 10 HP (CD: 7)",
     "Eclipsed Sovereign":"**Bloodline Overdrive** — 1.8× next attack + heal 15 HP (CD: 7)",
@@ -468,6 +483,7 @@ function getActiveDescription(name) {
     "True Dragon":"**Fourfold Cataclysm** — 2× next attack, bypasses 10% of enemy damage reduction, and suppresses the opponent’s next attack by 20% (CD: 9)",
     Archdemon:"**Abyssal Gate** — 2× + 10 curse 3 turns (CD: 10)",
     "Slime Lord":"**Predatory Assimilation** — converts the next incoming damage hit into HP; any amount beyond max HP is reflected to the attacker (CD: 9).",
+    Werewolf:"**Lunar Rend** — ×1.8 next attack and 4 Bleed damage for 2 ticks (CD: 10).",
     "Chaos Creator":"**Disintegrate** — after primary-owner confirmation, instantly eliminates the current opponent. Victory rewards and stats are credited normally (CD: 2).",
   };
   return actives[name] || "Unknown active";
@@ -475,7 +491,7 @@ function getActiveDescription(name) {
 
 module.exports = {
   patchNotes, speciesList, dragonSpecies, botSpecies,
-  godSpecies, humanSpecies, reaperSpecies, archdemonSpecies, slimeLordSpecies, eclipsedSovereignSpecies, chaosCreatorSpecies, trueDragonSpecies,
+  godSpecies, humanSpecies, reaperSpecies, archdemonSpecies, slimeLordSpecies, eclipsedSovereignSpecies, chaosCreatorSpecies, trueDragonSpecies, werewolfSpecies,
   botSpeciesByDifficulty, botPersonalities,
   typeAdvantages, critRates, failChances, awakeningRequirements,
   disintegrationMessages, getPassiveDescription, getActiveDescription,
