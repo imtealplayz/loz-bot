@@ -2030,7 +2030,7 @@ async function getHalloweenShopState(userId) {
     return {ok:false,status:"database-error"};
   }
 }
-async function purchaseHalloweenItem(userId,item,quantity,expectedRestockAt) {
+async function purchaseHalloweenItem(userId,item,quantity,expectedRestockAt,expectedCandies) {
   const uid=String(userId||""),qty=Math.floor(Number(quantity));
   if(!/^\d{17,20}$/.test(uid)||!["rolls","tokens","reaper"].includes(item)||!Number.isSafeInteger(qty)||qty<1) return {ok:false,status:"invalid"};
   if((item==="rolls"&&qty>50)||(item==="tokens"&&qty>3)||(item==="reaper"&&qty!==1)) return {ok:false,status:"invalid"};
@@ -2040,6 +2040,8 @@ async function purchaseHalloweenItem(userId,item,quantity,expectedRestockAt) {
   const preview=await getHalloweenShopState(uid);
   if(!preview.ok) return preview;
   if(!preview.eventActive) return {ok:false,status:"event-ended"};
+  const expectedBalance=Number(expectedCandies);
+  if(!Number.isSafeInteger(expectedBalance)||expectedBalance<0||preview.candies!==expectedBalance) return {ok:false,status:"balance-changed"};
   if(item!=="reaper") {
     if(Number(preview.restockAt)!==Number(expectedRestockAt)) return {ok:false,status:"restocked"};
     const available=item==="rolls"?preview.rollsStock:preview.tokensStock;
@@ -2064,6 +2066,7 @@ async function purchaseHalloweenItem(userId,item,quantity,expectedRestockAt) {
       const active={userId:uid,archivedForRepair:{$ne:true}};
       const records=await User.find(active).select({candies:1,questSpecies:1,originalSpecies:1}).session(session).lean();
       if(!records.length) throw new Error("SHOP_NO_PROFILE");
+      if(records.some(record=>(Number(record.candies)||0)!==expectedBalance)) throw new Error("SHOP_BALANCE_CHANGED");
       if(records.some(record=>(Number(record.candies)||0)<cost)) throw new Error("SHOP_INSUFFICIENT");
       if(item==="reaper"&&records.some(record=>record.questSpecies?.reaper?.unlocked===true||record.originalSpecies?.name==="Reaper")) throw new Error("SHOP_ALREADY_UNLOCKED");
       const increments={candies:-cost};
@@ -2094,7 +2097,7 @@ async function purchaseHalloweenItem(userId,item,quantity,expectedRestockAt) {
   } catch(error) {
     const message=String(error?.message||"");
     const status=message==="SHOP_OUT_OF_STOCK"?"out-of-stock":message==="SHOP_NO_PROFILE"?"no-profile":
-      message==="SHOP_INSUFFICIENT"?"insufficient-candies":message==="SHOP_ALREADY_UNLOCKED"?"already-unlocked":
+      message==="SHOP_BALANCE_CHANGED"?"balance-changed":message==="SHOP_INSUFFICIENT"?"insufficient-candies":message==="SHOP_ALREADY_UNLOCKED"?"already-unlocked":
       message==="SHOP_RACE"?"retry":message==="SHOP_VERIFY"?"verification-failed":"database-error";
     if(status==="database-error"||status==="verification-failed") console.error("[Halloween Shop] Purchase failed:",error?.stack||error);
     return {ok:false,status};
