@@ -211,7 +211,7 @@ async function buildLeaderboardView(leaderboardType,guild,scope="global") {
     if(rows.length>=10) break;
     const resolved=selectedScope==="server"
       ? (()=>{const member=guild.members.cache.get(String(candidate.uid));return {name:member?.displayName||member?.user?.username||"Unknown",member:Boolean(member)};})()
-      : await resolveLeaderboardName(candidate.uid,guild);
+      : await resolveLeaderboardName(candidate.uid,null);
     if(selectedScope==="server"&&!resolved.member) continue;
     const rank=rows.length+1;
     const prefix=rank===1?"🥇":rank===2?"🥈":rank===3?"🥉":"**"+String(rank).padStart(2,"0")+".**";
@@ -792,7 +792,7 @@ function buildDeveloperAlertPayload(ephemeral=true,codeRecord=null) {
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🌕 The Veil Opens · LOZ "+alert.version+(alert.date?" · "+alert.date:"")));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "### 🐺 The Moonlit Hunter\nSomething old has stirred beyond the Rift. A hunter walks beneath the blood moon, and those brave enough to face the Halloween bosses may claim power that survives the season.\n\nPatch notes: "+commandMention("patchnotes")
+    "### 🐺 The Moonlit Hunter\nSomething old has stirred beyond the Rift. A hunter walks beneath the blood moon, and those brave enough to face the Halloween bosses may claim power that survives the season.\n\nPatch notes here: "+commandMention("patchnotes")
   ));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent("### 🎁 Halloween Reward Code\nCode: HALLOWEEN\nReward: 250 Candies and 5 Species Rolls.\nEach player may redeem it once before November 1, 2026 at 12:00 AM IST."));
@@ -1392,7 +1392,8 @@ async function handleCommand(interaction) {
           `**${sp.emoji} ${sp.name}**  ·  ${sp.chance}${sp.note ? " · Random element" : ""}`
         ).join("\n"),
       }));
-      sections.push({heading:"Special Unlocks",body:"🌑 **Reaper** · Quest unlock\n👿 **Archdemon** · Demon awakening\n⚡🤖 **Mechangel** · Cyborg awakening\n🫧 **Slime Lord** · 9.2% unlock chance after defeating its rare boss\n🌘 **Eclipsed Sovereign** · Half-Blood awakening\n🐉✨ **True Dragon** · Secret awakening after independently awakening Fire, Thunder, Ice, and Earth Dragons"});
+      sections.push({heading:"Special Unlocks",body:"🌑 **Reaper** · Halloween shop unlock for 2,250 Candies; 50 total global stock\n👿 **Archdemon** · Demon awakening\n⚡🤖 **Mechangel** · Cyborg awakening\n🌘 **Eclipsed Sovereign** · Half-Blood awakening\n🐉✨ **True Dragon** · Secret awakening after independently awakening Fire, Thunder, Ice, and Earth Dragons"});
+      sections.push({heading:"Halloween Bosses",body:"Combined boss spawn chance: **7.5%** after a genuine Medium-or-higher bot victory. A spawned boss is **Slime Lord (60%)** or **Werewolf (40%)**. Defeating Slime Lord has a **9.2%** permanent unlock chance; defeating Werewolf has a separate **5%** permanent unlock chance."});
       sections.push({heading:"Species Details",body:"Use `/species species:<name>` to view HP, attack, healing, ultimate cooldown, passive, ultimate, and type matchups."});
       return safeReply(interaction,buildStyledCardPayload("<:reroll_dice:1558042108965822515> Species Compendium",0x0891b2,sections));
     }
