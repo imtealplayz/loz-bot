@@ -764,34 +764,30 @@ function getCurrentDeveloperAlert() {
   };
 }
 
-function buildDeveloperAlertPayload(ephemeral = true, codeRecord = null) {
-  const alert=getCurrentDeveloperAlert(),container=new ContainerBuilder().setAccentColor(0x0891b2);
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🔔 LOZ Update "+alert.version+(alert.date?" · "+alert.date:"")));
-  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("### 📜 New Update\nThe latest update is live. Run "+commandMention("patchnotes")+" to read the full patch notes."));
+function buildDeveloperAlertPayload(ephemeral=true,codeRecord=null) {
+  const alert=getCurrentDeveloperAlert(),container=new ContainerBuilder().setAccentColor(0x7c3aed);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🌕 The Veil Opens · LOZ "+alert.version+(alert.date?" · "+alert.date:"")));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "### 🧪 Build Your Own Species\nSubmit your species idea in the official LOZ server. The community-favorite submission will be added to LOZ, and its creator will receive that species permanently.\n\n**Official server:** "+SUPPORT_SERVER_INVITE
+    "### 🐺 The Moonlit Hunter\\nSomething old has stirred beyond the Rift. A hunter walks beneath the blood moon, and those brave enough to face the Halloween bosses may claim power that survives the season.\\n\\nPatch notes: "+commandMention("patchnotes")
   ));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-  let codeBody="### 🎁 Limited-Time Reward Code\n**Code:** `UPDATE6.3`\nLOZ could not verify the code right now. Please retry shortly.";
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("### 🎁 Halloween Reward Code\\nCode: HALLOWEEN\\nReward: 250 Candies and 5 Species Rolls.\\nEach player may redeem it once before November 1, 2026 at 12:00 AM IST."));
   if(codeRecord) {
     const expiry=codeRecord.expiresAt==null?null:new Date(codeRecord.expiresAt).getTime();
-    const claims=Math.max(0,Number(codeRecord.claimedCount)||0),maxClaims=Number(codeRecord.maxClaims??1);
-    const active=(expiry===null||(Number.isFinite(expiry)&&expiry>Date.now()))&&(maxClaims===0||claims<maxClaims);
-    codeBody=active
-      ? "### 🎁 Limited-Time Reward Code\n**Code:** `UPDATE6.3`\n**Reward:** <:reroll_dice:1558042108965822515> **3 Species Rolls**\n**Expires:** "+(expiry===null?"Never":"<t:"+Math.floor(expiry/1000)+":D>")
-      : "### 🎁 Reward Code\n`UPDATE6.3` is unavailable.";
+    const active=(expiry===null||(Number.isFinite(expiry)&&expiry>Date.now()))&&(Number(codeRecord.maxClaims??1)===0||Number(codeRecord.claimedCount||0)<Number(codeRecord.maxClaims));
+    if(!active) container.addTextDisplayComponents(new TextDisplayBuilder().setContent("The HALLOWEEN code is no longer available."));
+  } else {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("LOZ could not verify the HALLOWEEN code right now. If redemption fails, retry later."));
   }
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(codeBody));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("### 🎃 Halloween Update\nThe Halloween update arrives <t:1792607400:D>."));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("The Slime Lord and Werewolf may emerge after eligible bot victories. Defeat Werewolf for a chance at its permanent species unlock. Keep your Candies for the Halloween shop."));
   return {components:[container],flags:MessageFlags.IsComponentsV2|(ephemeral?MessageFlags.Ephemeral:0),allowedMentions:{parse:[]}};
 }
 function buildDeveloperAlertReminderPayload() {
-  const alert=getCurrentDeveloperAlert(),container=new ContainerBuilder().setAccentColor(0x0891b2);
+  const alert=getCurrentDeveloperAlert(),container=new ContainerBuilder().setAccentColor(0x7c3aed);
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "## 🔔 LOZ "+alert.version+" Update\nA new update is live. Run "+commandMention("patchnotes")+" for the changes, "+commandMention("alert")+" for Build Your Own Species and `UPDATE6.3`, and note that the Halloween update arrives <t:1792607400:D>."
+    "## 🌕 LOZ "+alert.version+" · Halloween\\nThe veil has opened. Challenge the Halloween bosses, collect Candies, and check "+commandMention("patchnotes")+" for the full patch notes. Redeem HALLOWEEN for 250 Candies and 5 Species Rolls before November 1, 2026 at 12:00 AM IST."
   ));
   return {components:[container],flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral,allowedMentions:{parse:[]}};
 }
@@ -1257,7 +1253,7 @@ async function handleCommand(interaction) {
     const alert = getCurrentDeveloperAlert();
     const saved = await database.markDeveloperAlertViewed(user.id, alert.id);
     if (!saved) console.warn("[Developer Alert] Alert displayed, but its viewed state could not be saved for " + user.id);
-    const codeRecord = await database.getRedeemCode("UPDATE6.3");
+    const codeRecord = await database.getRedeemCode("HALLOWEEN");
     return interaction.editReply(buildDeveloperAlertPayload(true, codeRecord));
   }
 
@@ -1851,12 +1847,14 @@ async function handleCommand(interaction) {
         requestsEnabled:true,lastSwitch:0,awakening:{},badges:[],
       };
       if(result.balances) {
-        ud.rolls=Number(result.balances.rolls)||0; ud.speciesTokens=Number(result.balances.tokens)||0;
+        ud.rolls=Number(result.balances.rolls)||0; ud.speciesTokens=Number(result.balances.tokens)||0; ud.candies=Number(result.balances.candies)||0;
       } else if(result.rewardType==="tokens") ud.speciesTokens=Number(result.balance)||0;
+      else if(result.rewardType==="candies") ud.candies=Number(result.balance)||0;
       else ud.rolls=Number(result.balance)||0;
       _state.userSpecies.set(user.id,ud);
       const rewardLabel=(type,amount)=>type==="tokens"
         ? SPECIES_TOKEN_EMOJI+" **"+amount+" Species Token(s)**"
+        : type==="candies" ? "🍬 **"+amount+" Candies**"
         : "<:reroll_dice:1558042108965822515> **"+amount+" Species Roll(s)**";
       const rewards=[rewardLabel(result.rewardType,result.amount)];
       if(result.additionalRewardType) rewards.push(rewardLabel(result.additionalRewardType,result.additionalAmount));
