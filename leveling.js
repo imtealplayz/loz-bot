@@ -76,7 +76,7 @@ async function notifyLevelUp(state, channel, userId, fromLevel, toLevel, rewards
   if (rewards.tokens > 0) rows.push("• <:species_token:1558181624296771634> " + rewards.tokens + " Species Token(s)");
   const embed = new EmbedBuilder()
     .setColor(0xf97316)
-    .setTitle("Level up!")
+    .setTitle("Rift Milestone")
     .setDescription("**" + message + "**\n\n<@" + userId + "> leveled up from level **" + fromLevel + "** to **" + toLevel + "**.\n\n**Rewards**\n" + (rows.length ? rows.join("\n") : "• New level reached"))
     .setFooter({ text: "LOZ · Legends of the Rift" });
   const payload = { embeds: [embed], allowedMentions: { users: [String(userId)] } };
