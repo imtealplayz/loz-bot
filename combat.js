@@ -45,6 +45,15 @@ function absorbSlimeLordDamage(attacker, defender, incomingDamage, specialLines)
 function calculateDamage(attacker, defender) {
   const attackerMutations = { hpDelta: 0 };
   const specialLines = [];
+  // A one-shot ultimate is consumed by the next attack action even if it is dodged or misses.
+  const consumeMissedAttackUltimate = lines => {
+    const buff=attacker.ultBuff;
+    if(!buff || !["nextAttack","reaperKill","thunderActive"].includes(buff.type)) return;
+    attacker.ultBuff=null;
+    if(buff.type==="reaperKill") lines.push("🌑 Death's Judgment was consumed by the missed attack.");
+    else if(buff.bleed) lines.push("🐺 Lunar Rend missed; its empowered attack and Bleed were consumed.");
+    else lines.push("✨ The empowered attack was consumed by the miss.");
+  };
   if(attacker.species.name==="Werewolf" && !attacker.bloodMoonFrenzyUsed && attacker.currentHp<=attacker.maxHp*0.5) {
     attacker.bloodMoonFrenzyUsed=true;
     attacker.bloodMoonAttacks=2;
@@ -60,7 +69,9 @@ function calculateDamage(attacker, defender) {
   if (defender.ultBuff?.type === "clone" && defender.ultBuff.duration > 0) {
     defender.ultBuff.duration--;
     if (defender.ultBuff.duration <= 0) defender.ultBuff = null;
-    return { damage:0, baseDamage:0, specialLines:["🛡️ **SHADOW CLONE!** The clone absorbs the hit!"], attackerMutations };
+    const lines=["🛡️ **SHADOW CLONE!** The clone absorbs the hit!"];
+    consumeMissedAttackUltimate(lines);
+    return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
   }
   // Dodge buff
   if (defender.ultBuff?.type === "dodge" && attacker.species.name === "True Dragon") {
@@ -71,18 +82,21 @@ function calculateDamage(attacker, defender) {
     defender.ultBuff = null;
     const lines=["💨 **NIMBLE ESCAPE!** Attack dodged!"];
     recordSlimeLordMiss(attacker, lines);
+    consumeMissedAttackUltimate(lines);
     return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
   }
   // Goblin passive dodge
   if (defender.species.name === "Goblin" && attacker.species.name !== "Chaos Creator" && attacker.species.name !== "True Dragon" && Math.random() < 0.1) {
     const lines=["💨 **Speed Dodge!** Too slow!"];
     recordSlimeLordMiss(attacker, lines);
+    consumeMissedAttackUltimate(lines);
     return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
   }
   // Thunder Dragon paralyze
   if (defender.species.name === "Thunder Dragon" && attacker.species.name !== "Chaos Creator" && attacker.species.name !== "True Dragon" && Math.random() < 0.1) {
     const lines=["⚡ **Paralyzing Shock!** Attack fails!"];
     recordSlimeLordMiss(attacker, lines);
+    consumeMissedAttackUltimate(lines);
     return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
   }
   // Bot counter
@@ -94,6 +108,7 @@ function calculateDamage(attacker, defender) {
       attackerMutations.hpDelta -= ctr;
       const lines=[`🤖 **MACHINE LEARNING!** Bot counters for ${ctr}!`];
       recordSlimeLordMiss(attacker, lines);
+      consumeMissedAttackUltimate(lines);
       return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
     }
   }
@@ -109,10 +124,12 @@ function calculateDamage(attacker, defender) {
       attackerMutations.hpDelta -= ctr;
       const lines=[`💨 **MISS!** ${defender.species.emoji} **${defender.species.name}** counter-strikes for **${ctr}**!`];
       recordSlimeLordMiss(attacker, lines);
+      consumeMissedAttackUltimate(lines);
       return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
     }
     const lines=[`💨 **MISS!** The attack whiffed!`];
     recordSlimeLordMiss(attacker, lines);
+    consumeMissedAttackUltimate(lines);
     return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
   }
 
@@ -291,7 +308,8 @@ function processBurnTick(combatant) {
 
 function processBleedTick(combatant) {
   if(!combatant.bleed||combatant.bleed<=0||!combatant.bleedRounds||combatant.bleedRounds<=0) return {bled:0,lines:[]};
-  const damage=Math.max(0,Number(combatant.bleed)||0);
+  const rawDamage=Math.max(0,Number(combatant.bleed)||0);
+  const damage=combatant.species?.name==="Chaos Creator"?Math.ceil(rawDamage*0.5):rawDamage;
   combatant.currentHp=Math.max(0,combatant.currentHp-damage);
   combatant.bleedRounds=Math.max(0,Number(combatant.bleedRounds)-1);
   if(combatant.bleedRounds<=0) combatant.bleed=0;
