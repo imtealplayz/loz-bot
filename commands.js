@@ -310,7 +310,7 @@ function buildHalloweenPurchaseConfirmation(userId,item,quantity,restockAt,shop)
     (item==="reaper"?"This uses one unit from the permanent global stock.":"This purchase uses your current hourly stock. If the restock expires before confirmation, the purchase will be rejected.")
   ));
   container.addActionRowComponents(new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("hshop_confirm_"+item+"_"+quantity+"_"+(item==="reaper"?0:restockAt)+"_"+userId).setLabel("Confirm Purchase").setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId("hshop_confirm_"+item+"_"+quantity+"_"+(item==="reaper"?0:restockAt)+"_"+Math.floor(Number(shop.candies)||0)+"_"+userId).setLabel("Confirm Purchase").setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId("hshop_cancel_"+userId).setLabel("Cancel").setStyle(ButtonStyle.Secondary)
   ));
   return {components:[container],flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral,allowedMentions:{parse:[]}};
@@ -2605,17 +2605,18 @@ async function handleButton(interaction) {
   }
 
   if(customId.startsWith("hshop_confirm_")) {
-    const parts=customId.split("_"),item=parts[2],quantity=Number(parts[3]),restockAt=Number(parts[4]),expectedUserId=parts[5];
+    const parts=customId.split("_"),item=parts[2],quantity=Number(parts[3]),restockAt=Number(parts[4]),expectedCandies=Number(parts[5]),expectedUserId=parts[6];
     if(user.id!==expectedUserId) return safeReply(interaction,{content:"This purchase confirmation belongs to another player.",flags:MessageFlags.Ephemeral});
     if(!["rolls","tokens","reaper"].includes(item)||!Number.isSafeInteger(quantity)||quantity<1) return safeReply(interaction,{content:"Invalid purchase confirmation.",flags:MessageFlags.Ephemeral});
     await interaction.deferUpdate();
-    const result=await database.purchaseHalloweenItem(user.id,item,quantity,item==="reaper"?null:restockAt);
+    const result=await database.purchaseHalloweenItem(user.id,item,quantity,item==="reaper"?null:restockAt,expectedCandies);
     if(!result?.ok) {
       const messages={
         "event-ended":["Event Ended","Halloween purchases are closed."],
         "restocked":["Stock Refreshed","Your hourly stock changed. Reopen /events shop and try again."],
         "out-of-stock":["Out of Stock","The requested quantity is no longer available."],
         "insufficient-candies":["Not Enough Candies","Your current Candy balance is lower than this purchase cost."],
+        "balance-changed":["Candy Balance Changed","Your Candy balance changed after this confirmation was prepared. Reopen /events shop and confirm the purchase using the current balance."],
         "already-unlocked":["Already Unlocked","Reaper is already unlocked for your account."],
         "retry":["Stock Changed","Another purchase used some stock first. Reopen /events shop and try again."],
         "no-profile":["Profile Missing","LOZ couldn't find your active player record. No purchase was made."],
