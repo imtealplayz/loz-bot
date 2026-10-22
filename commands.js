@@ -6,12 +6,13 @@ const {
 } = require("discord.js");
 const {
   patchNotes, speciesList, dragonSpecies, humanSpecies, godSpecies,
-  reaperSpecies, archdemonSpecies, slimeLordSpecies, eclipsedSovereignSpecies, chaosCreatorSpecies, trueDragonSpecies,
+  reaperSpecies, archdemonSpecies, slimeLordSpecies, eclipsedSovereignSpecies, chaosCreatorSpecies, trueDragonSpecies, werewolfSpecies,
   botSpecies, botSpeciesByDifficulty, botPersonalities,
   typeAdvantages, disintegrationMessages,
   getPassiveDescription, getActiveDescription,
 } = require("./constants.js");
 const database = require("./database.js");
+const leveling = require("./leveling.js");
 const crypto = require("node:crypto");
 const {
   hpBar, createErrorEmbed, createSuccessEmbed, safeReply,
@@ -22,7 +23,7 @@ const {
   isCyborgReadyForAwakening, isDemonReadyForAwakening, updateReaperQuest,
   updateHalfBloodProgress, isHalfBloodReadyForAwakening,
 } = require("./helpers.js");
-const { buildFightMessagePayload, buildBotFightMessagePayload, makeCombatant, calculateDamage, applyUltEffect, tickCooldowns, tickBothUltCooldowns, applyOgreRegen, processCurseTick } = require("./combat.js");
+const { buildFightMessagePayload, buildBotFightMessagePayload, makeCombatant, calculateDamage, applyUltEffect, tickCooldowns, tickBothUltCooldowns, applyOgreRegen, processCurseTick, processBleedTick } = require("./combat.js");
 const chaosSystem = require("./chaos.js");
 const { startFight, endFight, doBotTurn, endBotFight } = require("./fights.js");
 const questSystem = require("./quest-system.js");
@@ -112,6 +113,7 @@ function getSpeciesAutocompleteEntries(includeChaosCreator = false) {
     slimeLordSpecies,
     eclipsedSovereignSpecies,
     trueDragonSpecies,
+    werewolfSpecies,
     ...(includeChaosCreator ? [chaosCreatorSpecies] : []),
   ];
   const seen = new Set();
@@ -328,6 +330,7 @@ function buildSpeciesSwitchPayload(userData, requestedPage=0, userId=null) {
     {id:"switch_slime_lord",name:"Slime Lord",emoji:"🫧",unlocked:userData.questSpecies?.slimeLord?.unlocked===true,style:ButtonStyle.Success},
     {id:"switch_eclipsed_sovereign",name:"Eclipsed Sovereign",emoji:"🌘",unlocked:userData.awakening?.halfBlood?.awakened===true,style:ButtonStyle.Primary},
     {id:"switch_true_dragon",name:"True Dragon",emoji:"🐉✨",unlocked:userData.awakening?.trueDragon?.unlocked===true||userData.awakening?.trueDragon?.awakened===true||userData.originalSpecies?.name==="True Dragon",style:ButtonStyle.Danger},
+    {id:"switch_werewolf",name:"Werewolf",emoji:"🐺",unlocked:userData.questSpecies?.werewolf?.unlocked===true||userData.originalSpecies?.name==="Werewolf",style:ButtonStyle.Danger},
   ];
   const specialNames=new Set(specialForms.map(form=>form.name));
   const forms=[];
@@ -738,7 +741,7 @@ const SPECIES_TOKEN_SPECIES_NAMES = [
   "Demi God", "Demon Lord", "Demon King", "Demon", "Oni", "Orc Lord",
   "Kijin", "High Orc", "Ogre", "Goblin", "Orc", "Angel", "Chimera",
   "Cyborg", "Half-Blood", "Fire Dragon", "Thunder Dragon", "Ice Dragon",
-  "Earth Dragon", "Human",
+  "Earth Dragon", "Human", "God",
 ];
 function isSpeciesTokenEligible(name) { return SPECIES_TOKEN_SPECIES_NAMES.includes(name); }
 function parseSpeciesTokenCustomId(customId, action) {
@@ -764,7 +767,7 @@ function buildSpeciesTokenSelectionPayload(userId, selectedName = null, tokenCou
       : `\n**Selected:** ${selectedSpecies.emoji} **${selectedSpecies.name}**`)
     : "\n**Selected:** None";
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    `## ${SPECIES_TOKEN_EMOJI} Species Token\nSpend **1 token** to change your species. Reaper, Archdemon, Mechangel, and God are not available.\n\n**Current species:** ${currentSpecies.emoji} **${currentSpecies.name}**\n**Your balance:** ${SPECIES_TOKEN_EMOJI} **${tokenCount}**${selectionNote}`
+    `## ${SPECIES_TOKEN_EMOJI} Species Token\nSpend **1 token** to change your species. Reaper, Archdemon, and Mechangel are not available.\n\n**Current species:** ${currentSpecies.emoji} **${currentSpecies.name}**\n**Your balance:** ${SPECIES_TOKEN_EMOJI} **${tokenCount}**${selectionNote}`
   ));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
   const options = SPECIES_TOKEN_SPECIES_NAMES.map(name => {
@@ -1347,8 +1350,8 @@ async function handleCommand(interaction) {
       if (displayBadge && !badges.includes(displayBadge)) badges.push(displayBadge);
     }
     const sections=[
-      {heading:"Current Species",body:`${sp.emoji} **${sp.name}**`},
-      {heading:"Inventory & Settings",body:`<:reroll_dice:1558042108965822515> **Species rolls:** ${td.rolls||0}\n${SPECIES_TOKEN_EMOJI} **Species tokens:** ${Number(td.speciesTokens)||0}\n🔘 **Challenge requests:** ${td.requestsEnabled?"Enabled":"Disabled"}`},
+      {heading:"Current Species",body:`${sp.emoji} **${sp.name}**\n\n${leveling.getProgressText(td)}`},
+      {heading:"Inventory & Settings",body:`<:reroll_dice:1558042108965822515> **Species rolls:** ${td.rolls||0}\n${SPECIES_TOKEN_EMOJI} **Species tokens:** ${Number(td.speciesTokens)||0}\n🍬 **Candies:** ${Number(td.candies)||0}\n🔘 **Challenge requests:** ${td.requestsEnabled?"Enabled":"Disabled"}`},
       {heading:"Fight Record",body:`🏆 **Wins:** ${fd.wins||0}  ·  💔 **Losses:** ${fd.losses||0}\n📊 **Win rate:** ${wr}%\n🔥 **Win streak:** ${fd.streak||0}`},
       {heading:"Member Since",body:`<t:${Math.floor((targetMember?.joinedTimestamp||Date.now())/1000)}:R>`},
     ];
@@ -2709,7 +2712,7 @@ async function handleButton(interaction) {
   }
 
   // ── SWITCH ────────────────────────────────────────────────────
-  if (customId==="switch_original"||customId==="switch_chaos_creator"||customId==="switch_reaper"||customId==="switch_archdemon"||customId==="switch_mechangel"||customId==="switch_slime_lord"||customId==="switch_eclipsed_sovereign"||customId==="switch_true_dragon") {
+  if (customId==="switch_original"||customId==="switch_chaos_creator"||customId==="switch_reaper"||customId==="switch_archdemon"||customId==="switch_mechangel"||customId==="switch_slime_lord"||customId==="switch_eclipsed_sovereign"||customId==="switch_true_dragon"||customId==="switch_werewolf") {
     const ud=_state.userSpecies.get(user.id);
     if (!ud) return interaction.update(buildStyledCardPayload("Switch Failed",0xff0000,[{body:"No species data was found."}]));
     const now=Date.now(), th=3*60*60*1000;
@@ -2746,6 +2749,7 @@ async function handleButton(interaction) {
       newSp=archdemonSpecies;
     }
     else if (customId==="switch_slime_lord") { if(ud.questSpecies?.slimeLord?.unlocked!==true && ud.originalSpecies?.name!=="Slime Lord") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Defeat the rare Slime Lord boss or ask God to permanently unlock this species."}])); newSp=getSpeciesByName("Slime Lord"); }
+    else if (customId==="switch_werewolf") { if(ud.questSpecies?.werewolf?.unlocked!==true && ud.originalSpecies?.name!=="Werewolf") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Defeat the Halloween Werewolf boss and receive the permanent unlock drop before equipping Werewolf."}])); newSp=werewolfSpecies; }
     else if (customId==="switch_eclipsed_sovereign") { if(ud.awakening?.halfBlood?.awakened!==true && ud.originalSpecies?.name!=="Eclipsed Sovereign") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Complete the Half-Blood awakening or ask God to permanently unlock this species."}])); newSp=getSpeciesByName("Eclipsed Sovereign"); }
     else if (customId==="switch_true_dragon") { if(ud.awakening?.trueDragon?.unlocked!==true && ud.awakening?.trueDragon?.awakened!==true && ud.originalSpecies?.name!=="True Dragon") return interaction.update(buildStyledCardPayload("Species Locked",0x808080,[{body:"Awaken Fire, Thunder, Ice, and Earth Dragons independently to unlock True Dragon."}])); newSp=trueDragonSpecies; }
     else {
