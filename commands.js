@@ -125,86 +125,101 @@ function getSpeciesAutocompleteEntries(includeChaosCreator = false) {
     }));
 }
 
-function attachLeaderboardSelector(payload, selectedType) {
-  const menu = new StringSelectMenuBuilder()
-    .setCustomId("leaderboard_select")
+function attachLeaderboardSelector(payload, selectedType, scope="global") {
+  const selected=["fights","rolls","glory","levels"].includes(selectedType)?selectedType:"fights";
+  const selectedScope=scope==="server"?"server":"global";
+  const menu=new StringSelectMenuBuilder()
+    .setCustomId("leaderboard_select_"+selectedScope)
     .setPlaceholder("Choose a leaderboard")
     .setMinValues(1)
     .setMaxValues(1)
     .addOptions(
-      {label:"Fight Wins",value:"fights",description:"Ranked by player fight wins",default:selectedType==="fights"},
-      {label:"Species Rolls",value:"rolls",description:"Ranked by unspent Species Rolls",default:selectedType==="rolls"},
-      {label:"Glory",value:"glory",description:"Ranked by total Glory",default:selectedType==="glory"},
+      {label:"Fight Wins",value:"fights",description:"Ranked by recorded fight wins",default:selected==="fights"},
+      {label:"Species Rolls",value:"rolls",description:"Ranked by current unspent rolls",default:selected==="rolls"},
+      {label:"Glory",value:"glory",description:"Ranked by total Glory",default:selected==="glory"},
+      {label:"Level",value:"levels",description:"Ranked by player level and XP",default:selected==="levels"}
     );
-  payload.components = [...(payload.components || []), new ActionRowBuilder().addComponents(menu)];
-  payload.allowedMentions = {parse:[]};
+  payload.components=[...(payload.components||[]),new ActionRowBuilder().addComponents(menu)];
+  payload.allowedMentions={parse:[]};
   return payload;
 }
 
-async function buildLeaderboardView(leaderboardType, guild) {
-  const type=["fights","rolls","glory"].includes(leaderboardType)?leaderboardType:"fights";
+async function resolveLeaderboardName(userId,guild) {
+  const uid=String(userId||"");
+  if(guild) {
+    let member=guild.members?.cache?.get(uid)||null;
+    if(!member) member=await guild.members.fetch(uid).catch(()=>null);
+    if(member) return {name:member.displayName||member.user?.username||"Unknown",member:true};
+  }
+  const fetched=_client?.users?await _client.users.fetch(uid).catch(()=>null):null;
+  return {name:fetched?.username||"Unknown",member:false};
+}
+
+async function buildLeaderboardView(leaderboardType,guild,scope="global") {
+  const type=["fights","rolls","glory","levels"].includes(leaderboardType)?leaderboardType:"fights";
+  const selectedScope=scope==="server"?"server":"global";
+  if(selectedScope==="server"&&!guild) {
+    return attachLeaderboardSelector(buildStyledCardPayload("Server Leaderboard",0x808080,[{heading:"Unavailable here",body:"Use the server leaderboard inside a Discord server. Global rankings are available in DMs."}]),type,selectedScope);
+  }
+  const candidateLimit=selectedScope==="server"?300:10;
+  let candidates=[];
   if(type==="glory") {
-    const entries=await database.getGloryLeaderboardTop(10);
-    let body="No Glory has been earned yet. Open /achievements to begin.";
-    if(entries===null) body="MongoDB could not load the Glory leaderboard. Please try again later.";
-    else if(entries.length) {
-      const rows=[];
-      for(let index=0;index<entries.length;index++) {
-        const entry=entries[index],id=String(entry?.userId||"");
-        let name="Unknown";
-        try {
-          const member=guild?await guild.members.fetch(id).catch(()=>null):null;
-          if(member) name=member.displayName;
-          else {const fetched=await _client.users.fetch(id).catch(()=>null);if(fetched) name=fetched.username;}
-        } catch(_) {}
-        const rank=index+1,prefix=rank===1?"🥇":rank===2?"🥈":rank===3?"🥉":"**#"+String(rank).padStart(2,"0")+"**";
-        rows.push(prefix+" "+GLORY_LEADERBOARD_EMOJI+" **"+name+"** · **"+Math.max(0,Number(entry?.glory)||0).toLocaleString()+" Glory**");
-      }
-      body="*Top "+rows.length+" players · Ranked by total Glory*\n\n"+rows.join("\n");
+    const entries=await database.getGloryLeaderboardTop(candidateLimit);
+    if(entries===null) {
+      return attachLeaderboardSelector(buildStyledCardPayload("LOZ Leaderboard",0x0891b2,[{heading:"Glory",body:"MongoDB could not load the Glory leaderboard. Please try again later."}]),type,selectedScope);
     }
-    return attachLeaderboardSelector(buildStyledCardPayload("🏆 LOZ Leaderboard",0x0891b2,[{heading:GLORY_LEADERBOARD_EMOJI+" Glory",body}]),type);
+    candidates=entries.map(entry=>({uid:String(entry?.userId||""),score:Math.max(0,Number(entry?.glory)||0),data:_state.userSpecies.get(String(entry?.userId||""))||{}}));
+  } else if(type==="fights") {
+    candidates=Array.from(_state.fightLeaderboard.entries())
+      .map(([uid,score])=>({uid:String(uid),score:Math.max(0,Number(score?.wins)||0),data:_state.userSpecies.get(String(uid))||{}}))
+      .filter(entry=>entry.score>0)
+      .sort((a,b)=>(b.score-a.score)||a.uid.localeCompare(b.uid))
+      .slice(0,candidateLimit);
+  } else if(type==="rolls") {
+    candidates=Array.from(_state.userSpecies.entries())
+      .map(([uid,data])=>({uid:String(uid),score:Math.max(0,Number(data?.rolls)||0),data}))
+      .filter(entry=>entry.score>0)
+      .sort((a,b)=>(b.score-a.score)||a.uid.localeCompare(b.uid))
+      .slice(0,candidateLimit);
+  } else {
+    candidates=Array.from(_state.userSpecies.entries())
+      .map(([uid,data])=>{
+        const progress=leveling.normalizeLevelData(data||{});
+        return {uid:String(uid),score:progress.level*100+progress.xp,level:progress.level,xp:progress.xp,data:data||{}};
+      })
+      .filter(entry=>entry.level>1||entry.xp>0)
+      .sort((a,b)=>(b.level-a.level)||(b.xp-a.xp)||a.uid.localeCompare(b.uid))
+      .slice(0,candidateLimit);
   }
 
-  if (type === "fights") {
-    const sorted=Array.from(_state.fightLeaderboard.entries())
-      .sort((a,b)=>((Number(b[1]?.wins)||0)-(Number(a[1]?.wins)||0))||String(a[0]).localeCompare(String(b[0])))
-      .slice(0,10);
-    const rows=[];
-    for (let index=0;index<sorted.length;index++) {
-      const [uid,score]=sorted[index];
-      let name="Unknown";
-      try {
-        const member=guild ? await guild.members.fetch(uid).catch(()=>null) : null;
-        if (member) name=member.displayName;
-        else { const fetched=await _client.users.fetch(uid).catch(()=>null); if(fetched) name=fetched.username; }
-      } catch(_){}
-      const species=_state.userSpecies.get(uid)?.species;
-      const rank=index===0?"🥇":index===1?"🥈":index===2?"🥉":"**"+String(index+1).padStart(2,"0")+".**";
-      rows.push(rank+" "+(species?.emoji||"⚔️")+" **"+name+"** · **"+(Number(score?.wins)||0)+" wins**");
-    }
-    const body=rows.length ? "*Top "+rows.length+" players · Ranked by wins*\n\n"+rows.join("\n")+"\n\n*Fight to climb the ranks.*" : "No fight records yet. Start battling to appear here.";
-    return attachLeaderboardSelector(buildStyledCardPayload("🏆 LOZ Leaderboard",0x0891b2,[{heading:"⚔️ Fight Wins",body}]),type);
-  }
-
-  const sorted=Array.from(_state.userSpecies.entries())
-    .map(([uid,data])=>({uid,data,rolls:Math.max(0,Number(data?.rolls)||0)}))
-    .filter(entry=>entry.rolls>0)
-    .sort((a,b)=>(b.rolls-a.rolls)||a.uid.localeCompare(b.uid))
-    .slice(0,10);
   const rows=[];
-  for (let index=0;index<sorted.length;index++) {
-    const {uid,data,rolls}=sorted[index];
-    let name="Unknown";
-    try {
-      const member=guild ? await guild.members.fetch(uid).catch(()=>null) : null;
-      if (member) name=member.displayName;
-      else { const fetched=await _client.users.fetch(uid).catch(()=>null); if(fetched) name=fetched.username; }
-    } catch(_){}
-    const rank=index===0?"🥇":index===1?"🥈":index===2?"🥉":"**"+String(index+1).padStart(2,"0")+".**";
-    rows.push(rank+" "+(data?.species?.emoji||"🎲")+" **"+name+"** · <:reroll_dice:1558042108965822515> **"+rolls+"**");
+  for(const candidate of candidates) {
+    if(rows.length>=10) break;
+    const resolved=await resolveLeaderboardName(candidate.uid,guild);
+    if(selectedScope==="server"&&!resolved.member) continue;
+    const rank=rows.length+1;
+    const prefix=rank===1?"🥇":rank===2?"🥈":rank===3?"🥉":"**"+String(rank).padStart(2,"0")+".**";
+    let identity=type==="glory"?GLORY_LEADERBOARD_EMOJI:(candidate.data?.species?.emoji||"⚔️");
+    let scoreText="";
+    if(type==="fights") scoreText=candidate.score.toLocaleString()+" wins";
+    else if(type==="rolls") { identity="<:reroll_dice:1558042108965822515>"; scoreText=candidate.score.toLocaleString()+" rolls"; }
+    else if(type==="glory") scoreText=candidate.score.toLocaleString()+" Glory";
+    else scoreText="Level "+candidate.level+" · "+candidate.xp+"/100 XP";
+    rows.push(prefix+" "+identity+" **"+resolved.name+"** · **"+scoreText+"**");
   }
-  const body=rows.length ? "*Top "+rows.length+" players · Ranked by current rolls*\n\n"+rows.join("\n")+"\n\n*Earn rolls with \`/daily\` and verified votes.*" : "No unspent rolls to rank yet. Use \`/daily\` to earn Species Rolls.";
-  return attachLeaderboardSelector(buildStyledCardPayload("🏆 LOZ Leaderboard",0x0891b2,[{heading:"🎲 Species Rolls",body}]),type);
+  const label=type==="fights"?"Fight Wins":type==="rolls"?"Species Rolls":type==="glory"?"Glory":"Player Level";
+  const title="LOZ Leaderboard · "+(selectedScope==="server"?(guild.name||"Server"):"Global");
+  let body;
+  if(rows.length) {
+    body="*Top "+rows.length+" "+(selectedScope==="server"?"members in this server":"players")+" · Ranked by "+label.toLowerCase()+"*\\n\\n"+rows.join("\\n");
+    if(selectedScope==="server") body+="\\n\\n*Server view filters player records to current server members.*";
+  } else if(selectedScope==="server") {
+    body="No ranked server members were found in the current candidate set. Earn progression or try the Global leaderboard.";
+  } else {
+    body=type==="glory"?"No Glory has been earned yet. Open /achievements to begin.":type==="fights"?"No fight records yet. Start battling to appear here.":type==="rolls"?"No unspent Species Rolls are available to rank yet.":"No player level progression has been recorded yet.";
+  }
+  const heading=type==="fights"?"⚔️ Fight Wins":type==="rolls"?"🎲 Species Rolls":type==="glory"?GLORY_LEADERBOARD_EMOJI+" Glory":"⭐ Player Level";
+  return attachLeaderboardSelector(buildStyledCardPayload(title,0x0891b2,[{heading,body}]),type,selectedScope);
 }
 
 function buildCodesViewPayload(records, requestedPage=0, userId=null) {
