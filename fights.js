@@ -155,6 +155,21 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
   chaosSystem.cancelChaosReaction(fight);
   const winner=fight.player1Id===winnerId?fight.player1:fight.player2;
   const loser =fight.player1Id===loserId ?fight.player1:fight.player2;
+  const progressionEligible=!["forfeit","timeout","disintegration","judge","divine-intervention","chaos-disintegrate"].includes(String(reason));
+  const pvpRewardEligible=progressionEligible
+    ? await database.claimPvpRewardWindow(fight.player1Id,fight.player2Id,fight.fightId)
+    : false;
+  await Promise.all([
+    leveling.awardFightProgress({
+      state:_state,channel,fight,userId:fight.player1Id,mode:"pvp",won:winnerId===fight.player1Id,
+      reason,pvpEligible:pvpRewardEligible
+    }),
+    leveling.awardFightProgress({
+      state:_state,channel,fight,userId:fight.player2Id,mode:"pvp",won:winnerId===fight.player2Id,
+      reason,pvpEligible:pvpRewardEligible
+    })
+  ]);
+
   // Forfeits still resolve ordinary W/L records and rewards, but never grant progression.
   if (reason!=="forfeit") {
     await Promise.all([
