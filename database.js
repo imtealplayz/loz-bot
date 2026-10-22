@@ -1637,7 +1637,7 @@ async function getGloryLeaderboardTop(limit=25,userIds=null) {
     const filter={"data.glory":{$gt:0}};
     const scoped=Array.isArray(userIds);
     if(scoped) {
-      const ids=[...new Set(userIds.map(id=>String(id||"")).filter(id=>/^\\d{17,20}$/.test(id)))].slice(0,5000);
+      const ids=[...new Set(userIds.map(id=>String(id||"")).filter(id=>/^\d{17,20}$/.test(id)))].slice(0,5000);
       if(!ids.length) return [];
       filter.userId={$in:ids};
     }
