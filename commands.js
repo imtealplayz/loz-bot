@@ -1674,11 +1674,12 @@ async function handleCommand(interaction) {
       fightId, playerId:user.id, playerSpecies:playerData.species,
       playerHp:(playerData.species||humanSpecies).hp, playerMaxHp:(playerData.species||humanSpecies).hp,
       playerHealCooldown:0, playerUltCooldown:0, playerUltBuff:null,
-      playerAdaptiveStacks:0, playerAttackCounter:0, playerSlimeMissStacks:0, playerBurn:0, playerBurnRounds:0,
+      playerAdaptiveStacks:0, playerAttackCounter:0, playerSlimeMissStacks:0, playerBloodMoonFrenzyUsed:false, playerBloodMoonAttacks:0,
+      playerBurn:0, playerBurnRounds:0, playerBleed:0, playerBleedRounds:0,
       playerCurse:0, playerBlockHeal:false, playerPossession:false, playerStunnedTurns:0, playerLastUltUsed:null,
       botSpecies:bSpecies, botHp:bSpecies.hp, botMaxHp:bSpecies.hp,
-      botHealCooldown:0, botUltCooldown:0, botUltBuff:null, botAdaptiveStacks:0, botAttackCounter:0, botSlimeMissStacks:0,
-      botBurn:0, botBurnRounds:0, botCurse:0, botPossession:false, botBlockHeal:false, botStunnedTurns:0, botLastUltUsed:null,
+      botHealCooldown:0, botUltCooldown:0, botUltBuff:null, botAdaptiveStacks:0, botAttackCounter:0, botSlimeMissStacks:0, botBloodMoonFrenzyUsed:false, botBloodMoonAttacks:0,
+      botBurn:0, botBurnRounds:0, botBleed:0, botBleedRounds:0, botCurse:0, botPossession:false, botBlockHeal:false, botStunnedTurns:0, botLastUltUsed:null,
       round:1, difficulty, botPersonality:personality, timeout:null, log:[], playerName:user.displayName||user.username,
     };
     _state.activeBotFights.set(fightId,fight); _state.activeBotFights.set(user.id,fightId);
@@ -2888,8 +2889,8 @@ async function handleButton(interaction) {
 
     if (action==="forfeit") { await endBotFight(channel,fightId,"bot","player",fight.difficulty); return; }
 
-    const playerC={id:fight.playerId,species:fight.playerSpecies,currentHp:fight.playerHp,maxHp:fight.playerMaxHp,ultBuff:fight.playerUltBuff,adaptiveStacks:fight.playerAdaptiveStacks||0,attackCounter:fight.playerAttackCounter||0,slimeMissStacks:fight.playerSlimeMissStacks||0,burn:fight.playerBurn||0,burnRounds:fight.playerBurnRounds||0,curse:fight.playerCurse||0,blockHeal:fight.playerBlockHeal||false,possession:fight.playerPossession||false,stunnedTurns:fight.playerStunnedTurns||0,healCooldown:fight.playerHealCooldown,ultCooldown:fight.playerUltCooldown,lastUltUsed:fight.playerLastUltUsed};
-    const botC={id:"BOT",species:fight.botSpecies,currentHp:fight.botHp,maxHp:fight.botMaxHp,ultBuff:fight.botUltBuff,adaptiveStacks:fight.botAdaptiveStacks||0,attackCounter:fight.botAttackCounter||0,slimeMissStacks:fight.botSlimeMissStacks||0,burn:fight.botBurn||0,burnRounds:fight.botBurnRounds||0,curse:fight.botCurse||0,blockHeal:fight.botBlockHeal||false,possession:fight.botPossession||false,stunnedTurns:fight.botStunnedTurns||0,healCooldown:fight.botHealCooldown,ultCooldown:fight.botUltCooldown,lastUltUsed:fight.botLastUltUsed};
+    const playerC={id:fight.playerId,species:fight.playerSpecies,currentHp:fight.playerHp,maxHp:fight.playerMaxHp,ultBuff:fight.playerUltBuff,adaptiveStacks:fight.playerAdaptiveStacks||0,attackCounter:fight.playerAttackCounter||0,slimeMissStacks:fight.playerSlimeMissStacks||0,bloodMoonFrenzyUsed:fight.playerBloodMoonFrenzyUsed||false,bloodMoonAttacks:fight.playerBloodMoonAttacks||0,burn:fight.playerBurn||0,burnRounds:fight.playerBurnRounds||0,bleed:fight.playerBleed||0,bleedRounds:fight.playerBleedRounds||0,curse:fight.playerCurse||0,blockHeal:fight.playerBlockHeal||false,possession:fight.playerPossession||false,stunnedTurns:fight.playerStunnedTurns||0,healCooldown:fight.playerHealCooldown,ultCooldown:fight.playerUltCooldown,lastUltUsed:fight.playerLastUltUsed};
+    const botC={id:"BOT",species:fight.botSpecies,currentHp:fight.botHp,maxHp:fight.botMaxHp,ultBuff:fight.botUltBuff,adaptiveStacks:fight.botAdaptiveStacks||0,attackCounter:fight.botAttackCounter||0,slimeMissStacks:fight.botSlimeMissStacks||0,bloodMoonFrenzyUsed:fight.botBloodMoonFrenzyUsed||false,bloodMoonAttacks:fight.botBloodMoonAttacks||0,burn:fight.botBurn||0,burnRounds:fight.botBurnRounds||0,bleed:fight.botBleed||0,bleedRounds:fight.botBleedRounds||0,curse:fight.botCurse||0,blockHeal:fight.botBlockHeal||false,possession:fight.botPossession||false,stunnedTurns:fight.botStunnedTurns||0,healCooldown:fight.botHealCooldown,ultCooldown:fight.botUltCooldown,lastUltUsed:fight.botLastUltUsed};
 
     // Oni possession consumes the target's next action.
     if (playerC.possession) action="possessed";
@@ -2997,6 +2998,7 @@ async function handleButton(interaction) {
 
     // Burn tick on bot
     if (botC.burn>0) { const bd=botC.burn; botC.currentHp=Math.max(0,botC.currentHp-bd); botC.burnRounds--; if(botC.burnRounds<=0){botC.burn=0;botC.burnRounds=0;} log.push(`🔥 Bot takes ${bd} burn!`); }
+    if(botC.bleed>0) { const tick=processBleedTick(botC); if(tick.bled>0) log.push(...tick.lines); }
     // Ogre regen for player
     const or=applyOgreRegen(playerC); if(or) log.push(or);
     // Sync freshly-set cooldown back to combatant object BEFORE ticking
@@ -3012,13 +3014,15 @@ async function handleButton(interaction) {
     // Sync back — including BOTH cooldowns after tickBothUltCooldowns
     fight.playerHp=Math.max(0,playerC.currentHp); fight.botHp=Math.max(0,botC.currentHp);
     fight.playerUltBuff=playerC.ultBuff; fight.playerHealCooldown=playerC.healCooldown; fight.playerUltCooldown=playerC.ultCooldown;
-    fight.playerBurn=playerC.burn; fight.playerBurnRounds=playerC.burnRounds; fight.playerCurse=playerC.curse;
+    fight.playerBurn=playerC.burn; fight.playerBurnRounds=playerC.burnRounds; fight.playerBleed=playerC.bleed; fight.playerBleedRounds=playerC.bleedRounds; fight.playerCurse=playerC.curse;
+    fight.playerBloodMoonFrenzyUsed=playerC.bloodMoonFrenzyUsed||false; fight.playerBloodMoonAttacks=playerC.bloodMoonAttacks||0;
     fight.playerUltBuff=playerC.ultBuff;
     fight.playerBlockHeal=playerC.blockHeal; fight.playerAdaptiveStacks=playerC.adaptiveStacks; fight.playerAttackCounter=playerC.attackCounter;
     fight.playerPossession=playerC.possession||false;
     // FIX: sync bot ULT cooldown after tick (was being lost)
     fight.botUltCooldown=botC.ultCooldown;
-    fight.botUltBuff=botC.ultBuff; fight.botBurn=botC.burn; fight.botBurnRounds=botC.burnRounds;
+    fight.botUltBuff=botC.ultBuff; fight.botBurn=botC.burn; fight.botBurnRounds=botC.burnRounds; fight.botBleed=botC.bleed; fight.botBleedRounds=botC.bleedRounds;
+    fight.botBloodMoonFrenzyUsed=botC.bloodMoonFrenzyUsed||false; fight.botBloodMoonAttacks=botC.bloodMoonAttacks||0;
     fight.botCurse=botC.curse; fight.botPossession=botC.possession||false;
     fight.botBlockHeal=botC.blockHeal; fight.botAdaptiveStacks=botC.adaptiveStacks; fight.botAttackCounter=botC.attackCounter; fight.botSlimeMissStacks=botC.slimeMissStacks||0; fight.playerSlimeMissStacks=playerC.slimeMissStacks||0; fight.botStunnedTurns=botC.stunnedTurns||0;
     fight.log=log.slice(-3);
@@ -3241,8 +3245,9 @@ async function handleButton(interaction) {
       }
     }
 
-    // Burn tick on opponent
+    // Burn and Bleed tick on the opponent
     if (opponent.burn>0) { const rawBurn=opponent.burn; const bd=opponent.species.name==="Chaos Creator"?Math.ceil(rawBurn*0.5):rawBurn; opponent.currentHp=Math.max(0,opponent.currentHp-bd); opponent.burnRounds--; if(opponent.burnRounds<=0){opponent.burn=0;opponent.burnRounds=0;} log.push(`🔥 ${opponent.species.name} takes ${bd} burn!`); }
+    const bleedTick=processBleedTick(opponent); if(bleedTick.bled>0) log.push(...bleedTick.lines);
     const or=applyOgreRegen(player); if(or) log.push(or);
     // FIX: tick BOTH players ULT cooldown every round
     tickBothUltCooldowns(player, opponent);
