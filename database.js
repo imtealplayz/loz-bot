@@ -2038,7 +2038,7 @@ async function purchaseHalloweenXp(userId,expectedCandies) {
     return result||{ok:false,status:"database-error"};
   } catch(error) {
     const message=String(error?.message||"");
-    const status=message==="LEVEL_NO_ACTIVE_PROFILE"?"no-profile":
+    const status=message==="SHOP_EVENT_ENDED"?"event-ended":message==="LEVEL_NO_ACTIVE_PROFILE"?"no-profile":
       message==="SHOP_BALANCE_CHANGED"?"balance-changed":message==="SHOP_INSUFFICIENT"?"insufficient-candies":
       message==="LEVEL_ALREADY_MAXED"?"max-level":message==="LEVEL_PROFILE_VERIFY_FAILED"?"verification-failed":"database-error";
     if(status==="database-error"||status==="verification-failed") console.error("[Leveling] Candy-to-XP purchase failed:",error?.stack||error);
