@@ -2066,8 +2066,9 @@ async function purchaseHalloweenItem(userId,item,quantity,expectedRestockAt,expe
       const active={userId:uid,archivedForRepair:{$ne:true}};
       const records=await User.find(active).select({candies:1,questSpecies:1,originalSpecies:1}).session(session).lean();
       if(!records.length) throw new Error("SHOP_NO_PROFILE");
-      if(records.some(record=>(Number(record.candies)||0)!==expectedBalance)) throw new Error("SHOP_BALANCE_CHANGED");
-      if(records.some(record=>(Number(record.candies)||0)<cost)) throw new Error("SHOP_INSUFFICIENT");
+      const effectiveBalance=Math.max(0,Math.min(...records.map(record=>Number(record.candies)||0)));
+      if(effectiveBalance!==expectedBalance) throw new Error("SHOP_BALANCE_CHANGED");
+      if(effectiveBalance<cost) throw new Error("SHOP_INSUFFICIENT");
       if(item==="reaper"&&records.some(record=>record.questSpecies?.reaper?.unlocked===true||record.originalSpecies?.name==="Reaper")) throw new Error("SHOP_ALREADY_UNLOCKED");
       const increments={candies:-cost};
       if(item==="rolls") increments.rolls=qty;
