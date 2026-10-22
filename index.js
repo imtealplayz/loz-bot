@@ -8,7 +8,7 @@ const database = require("./database.js"); // MongoDB
 const state    = require("./state.js");
 const { setState: setHelperState } = require("./helpers.js");
 const { setState: setFightState }   = require("./fights.js");
-const { setState: setCommandState, setClient, setRegisteredCommandIds, getCurrentDeveloperAlert, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForDeveloperAlert, commands } = require("./commands.js");
+const { setState: setCommandState, setClient, setRegisteredCommandIds, getCurrentDeveloperAlert, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, handleModalSubmit, maybePromptForDeveloperAlert, commands } = require("./commands.js");
 const questSystem = require("./quest-system.js");
 const chaosSystem = require("./chaos.js");
 const leaderboardBadgeSystem = require("./leaderboard-badges.js");
@@ -21,7 +21,7 @@ const TOKEN = (process.env.TOKEN || process.env.DISCORD_TOKEN || "").trim();
 
 const SUPPORT_SERVER_INVITE = "https://discord.gg/TKBYpjqnPC";
 // Bump only when intentionally queuing a one-time startup alert for a new release event.
-const DEVELOPER_ALERT_STARTUP_CYCLE = "loz-6.3-update-2026-10-19-v1";
+const DEVELOPER_ALERT_STARTUP_CYCLE = "loz-7.0v-halloween-2026-10-22-v1";
 
 function buildAccessNoticePayload({ unavailable=false, ephemeral=false }={}) {
   const card=new ContainerBuilder().setAccentColor(unavailable ? 0xe0a020 : 0xdc2626);
@@ -532,7 +532,20 @@ client.once("clientReady", async () => {
     console.error("[Codes] Could not verify the UPDATE6.3 reward code.");
   }
 
-  // Queue the current release alert for known players; it no longer contains the retired species-recovery notice.
+  // Create HALLOWEEN only if absent: one player may claim 250 Candies and 5 Species Rolls.
+  // An existing code's claims or expiry is never rewritten on restart.
+  const halloweenCode = await database.ensureDefaultRedeemCode({
+    code:"HALLOWEEN",rewardType:"candies",amount:250,
+    expiresAt:new Date("2026-11-01T00:00:00+05:30"),maxClaims:0,
+    additionalRewardType:"rolls",additionalAmount:5,createdBy:ownerId,
+  });
+  if (halloweenCode?.ok) {
+    console.log("[Codes] HALLOWEEN " + (halloweenCode.created ? "created" : "already exists") + ".");
+  } else {
+    console.error("[Codes] Could not verify the HALLOWEEN reward code.");
+  }
+
+  // Queue the current release alert for known players; it contains Halloween lore and the reward code.
   const startupAlert = getCurrentDeveloperAlert();
   const startupQueue = await database.queueDeveloperAlertPrompts(
     [...state.userSpecies.keys()],
@@ -627,14 +640,14 @@ client.on("interactionCreate", async (interaction) => {
     }
 
     // Never let startup-time commands write fallback/default state over saved records.
-    if (!databaseReady && (interaction.isCommand() || interaction.isButton() || interaction.isStringSelectMenu())) {
+    if (!databaseReady && (interaction.isCommand() || interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit())) {
       return interaction.reply({
         content: "LOZ is loading saved player data after a restart. Please try again in a few seconds.",
         flags: 64,
       }).catch(() => {});
     }
 
-    if ((interaction.isCommand() || interaction.isButton() || interaction.isStringSelectMenu())
+    if ((interaction.isCommand() || interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit())
       && interaction.user && !isAuthorizedLozOwner(interaction.user.id)) {
       const access = await database.getActiveAccessBan(interaction.user.id);
       if (!access?.ok) {
@@ -655,7 +668,7 @@ client.on("interactionCreate", async (interaction) => {
     const channelToggleCommand = interaction.isCommand()
       && ["disable-all", "enable-all"].includes(interaction.commandName);
     if (state.disabledChannels.has(interaction.channelId) && !channelToggleCommand) {
-      if (interaction.isCommand() || interaction.isButton() || interaction.isStringSelectMenu()) {
+      if (interaction.isCommand() || interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit()) {
         return interaction.reply({ content: "🔒 LOZ commands are disabled in this channel.", ephemeral: true }).catch(()=>{});
       }
     }
@@ -667,6 +680,7 @@ client.on("interactionCreate", async (interaction) => {
       const questHandled = await questSystem.handleButton(interaction);
       if (!questHandled) await handleButton(interaction);
     } else if (interaction.isStringSelectMenu()) await handleSelectMenu(interaction);
+    else if (interaction.isModalSubmit()) await handleModalSubmit(interaction);
   } catch (e) {
     if (e.code === 10062 || e.message?.includes("Unknown interaction")) return;
     console.error("Interaction error:", e);
