@@ -250,6 +250,68 @@ function buildCodesViewPayload(records, requestedPage=0, userId=null) {
   return {components,flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral,allowedMentions:{parse:[]}};
 }
 
+function halloweenShopErrorPayload(title,body) {
+  return {components:[new ContainerBuilder().setAccentColor(0xdc2626)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent("## "+title+"\n"+body))],
+    flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral,allowedMentions:{parse:[]}};
+}
+function buildHalloweenShopPayload(userId,shop) {
+  const container=new ContainerBuilder().setAccentColor(0x7c3aed);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🎃 Halloween Candy Shop"));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  if(!shop?.ok) {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("The shop couldn't verify your balances or stock in MongoDB. No purchase was made. Please try again."));
+    return {components:[container],flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral,allowedMentions:{parse:[]}};
+  }
+  const eventActive=shop.eventActive!==false;
+  const restock=Number(shop.restockAt)||Date.now()+3600000;
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    "**Your balance:** 🍬 "+Number(shop.candies||0).toLocaleString()+" Candies\n"+
+    "**Personal restock:** <t:"+Math.floor(restock/1000)+":R>\n"+
+    (eventActive?"Purchases close November 1, 2026 at 12:00 AM IST.":"**The Halloween shop is closed.** No more purchases can be made.")
+  ));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    "### 🎲 Species Rolls\n50 Candies each · "+shop.rollsStock+" currently in stock\nStock restocks hourly for each player, with a random quantity from 5 to 50."
+  ));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    "### <:species_token:1558181624296771634> Species Token\n1,000 Candies each · "+shop.tokensStock+" currently in stock\nEach hourly restock has a 15% chance to stock 1–3 tokens."
+  ));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    "### 🌑 Reaper\n2,250 Candies · "+shop.reaperStock+" / 50 global stock remaining\nPermanent unlock. The global supply never restocks."+
+    (shop.reaperUnlocked?"\n**Already unlocked on your account.**":"")
+  ));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  container.addActionRowComponents(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("hshop_buy_rolls_"+userId+"_"+restock).setLabel("Buy Rolls").setStyle(ButtonStyle.Primary).setDisabled(!eventActive||shop.rollsStock<1||shop.candies<50),
+    new ButtonBuilder().setCustomId("hshop_buy_tokens_"+userId+"_"+restock).setLabel("Buy Token").setStyle(ButtonStyle.Secondary).setDisabled(!eventActive||shop.tokensStock<1||shop.candies<1000),
+    new ButtonBuilder().setCustomId("hshop_buy_reaper_"+userId).setLabel("Unlock Reaper").setStyle(ButtonStyle.Danger).setDisabled(!eventActive||shop.reaperStock<1||shop.reaperUnlocked||shop.candies<2250)
+  ));
+  return {components:[container],flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral,allowedMentions:{parse:[]}};
+}
+function buildHalloweenPurchaseConfirmation(userId,item,quantity,restockAt,shop) {
+  const costs={rolls:50,tokens:1000,reaper:2250};
+  const names={rolls:"Species Roll(s)",tokens:"Species Token(s)",reaper:"Reaper permanent unlock"};
+  const cost=costs[item]*quantity;
+  const after=Math.max(0,Number(shop.candies||0)-cost);
+  const container=new ContainerBuilder().setAccentColor(0xf97316);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## Confirm Halloween Purchase"));
+  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    "**Item:** "+names[item]+"\n"+
+    "**Quantity:** "+quantity+"\n"+
+    "**Current Candies:** "+Number(shop.candies||0).toLocaleString()+"\n"+
+    "**Total cost:** "+cost.toLocaleString()+" Candies\n"+
+    "**After purchase:** "+after.toLocaleString()+" Candies\n\n"+
+    (item==="reaper"?"This uses one unit from the permanent global stock.":"This purchase uses your current hourly stock. If the restock expires before confirmation, the purchase will be rejected.")
+  ));
+  container.addActionRowComponents(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("hshop_confirm_"+item+"_"+quantity+"_"+(item==="reaper"?0:restockAt)+"_"+userId).setLabel("Confirm Purchase").setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId("hshop_cancel_"+userId).setLabel("Cancel").setStyle(ButtonStyle.Secondary)
+  ));
+  return {components:[container],flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral,allowedMentions:{parse:[]}};
+}
+
 async function handleAutocomplete(interaction) {
   try {
     const focused = interaction.options.getFocused(true);
