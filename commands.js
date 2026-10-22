@@ -1,6 +1,6 @@
 const {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder,
-  SlashCommandBuilder, REST, Routes,
+  SlashCommandBuilder, REST, Routes, ModalBuilder, TextInputBuilder, TextInputStyle,
   ContainerBuilder, TextDisplayBuilder, SeparatorBuilder,
   SeparatorSpacingSize, MessageFlags, PermissionsBitField,
 } = require("discord.js");
@@ -233,9 +233,9 @@ function buildCodesViewPayload(records, requestedPage=0, userId=null) {
     const expiry=record.expiresAt==null?null:new Date(record.expiresAt).getTime();
     const claims=Math.max(0,Number(record.claimedCount)||0),maxClaims=Number(record.maxClaims??1);
     const active=(expiry===null||(Number.isFinite(expiry)&&expiry>Date.now()))&&(maxClaims===0||claims<maxClaims);
-    const reward=record.rewardType==="tokens"?"Species Token(s)":"Species Roll(s)";
+    const reward=record.rewardType==="tokens"?"Species Token(s)":record.rewardType==="candies"?"Candies":"Species Roll(s)";
     const secondType=record.additionalRewardType;
-    const second=secondType==="tokens"?" + "+(Number(record.additionalAmount)||1)+" Species Token(s)":secondType==="rolls"?" + "+(Number(record.additionalAmount)||1)+" Species Roll(s)":"";
+    const second=secondType==="tokens"?" + "+(Number(record.additionalAmount)||1)+" Species Token(s)":secondType==="candies"?" + "+(Number(record.additionalAmount)||1)+" Candies":secondType==="rolls"?" + "+(Number(record.additionalAmount)||1)+" Species Roll(s)":"";
     const status=active?"Active":expiry!==null&&Number.isFinite(expiry)&&expiry<=Date.now()?"Expired":"Exhausted";
     const expiryText=expiry===null?"Permanent":Number.isFinite(expiry)?"<t:"+Math.floor(expiry/1000)+":R>":"unknown";
     const claimsText=maxClaims===0?claims+" claims · unlimited uses":claims+"/"+maxClaims+" claims";
@@ -1830,8 +1830,8 @@ async function handleCommand(interaction) {
         return interaction.editReply(buildStyledCardPayload("Code Not Created",0xdc2626,[{body:error}],true));
       }
       const record=result.code;
-      const rewardName=record.rewardType==="tokens" ? "Species Token(s)" : "Species Roll(s)";
-      const secondName=record.additionalRewardType==="tokens" ? "Species Token(s)" : "Species Roll(s)";
+      const rewardName=record.rewardType==="tokens" ? "Species Token(s)" : record.rewardType==="candies" ? "Candies" : "Species Roll(s)";
+      const secondName=record.additionalRewardType==="tokens" ? "Species Token(s)" : record.additionalRewardType==="candies" ? "Candies" : "Species Roll(s)";
       const rewardText=record.amount+" "+rewardName+(record.additionalRewardType?" + "+(Number(record.additionalAmount)||1)+" "+secondName:"");
       const expiry=record.expiresAt==null?"Permanent":"<t:"+Math.floor(new Date(record.expiresAt).getTime()/1000)+":F>";
       const claims=Number(record.maxClaims??1)===0?"Unlimited":"Up to "+record.maxClaims+" user(s)";
@@ -1850,8 +1850,23 @@ async function handleCommand(interaction) {
 
   // ── LEADERBOARD ────────────────────────────────────────────────
   if (commandName === "leaderboard") {
+    const scope=options.getString("leaderboard")||"global";
     await interaction.deferReply({flags:MessageFlags.IsComponentsV2});
-    return interaction.editReply(await buildLeaderboardView("fights",guild));
+    return interaction.editReply(await buildLeaderboardView("fights",guild,scope));
+  }
+
+  if (commandName === "level") {
+    const target=options.getUser("user")||user;
+    const data=_state.userSpecies.get(target.id)||{level:1,xp:0,candies:0,rolls:0,speciesTokens:0};
+    const payload=leveling.getLevelCard(data);
+    payload.flags=MessageFlags.Ephemeral;
+    return safeReply(interaction,payload);
+  }
+
+  if (commandName === "events" && options.getSubcommand(false)==="shop") {
+    await interaction.deferReply({flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral});
+    const shop=await database.getHalloweenShopState(user.id);
+    return interaction.editReply(buildHalloweenShopPayload(user.id,shop));
   }
 
   // ── QUEST BOARD ───────────────────────────────────────────────
@@ -3319,13 +3334,14 @@ async function handleButton(interaction) {
 
 async function handleSelectMenu(interaction) {
   const { customId, user, guild } = interaction;
-  if (customId === "leaderboard_select") {
+  if (customId.startsWith("leaderboard_select_")) {
     const selected=interaction.values?.[0];
-    if (!["fights","rolls","glory"].includes(selected)) {
+    const scope=customId.endsWith("_server")?"server":"global";
+    if (!["fights","rolls","glory","levels"].includes(selected)) {
       return safeReply(interaction,{content:"Choose a valid leaderboard.",flags:64});
     }
     await interaction.deferUpdate();
-    return interaction.editReply(await buildLeaderboardView(selected,guild));
+    return interaction.editReply(await buildLeaderboardView(selected,guild,scope));
   }
   if(customId.startsWith("ach:species-select:")) return achievementSystem.handleSelectMenu(interaction,_state,_client);
   if (!customId.startsWith("species_token_pick_")) return;
@@ -3366,7 +3382,9 @@ const commands = [
        .addStringOption(o=>o.setName("difficulty").setDescription("Bot difficulty").setRequired(true).addChoices({name:"🧸 Easy",value:"easy"},{name:"⚔️ Medium",value:"medium"},{name:"👹 Hard",value:"hard"},{name:"💀 Impossible",value:"impossible"},{name:"Brutal",value:"brutal"})))
      .addSubcommand(s=>s.setName("stats").setDescription("View combined PvP and bot battle stats").addUserOption(o=>o.setName("user").setDescription("Player to check"))),
    new SlashCommandBuilder().setName("history").setDescription("View fight history").addUserOption(o=>o.setName("user").setDescription("User to check")),
-new SlashCommandBuilder().setName("leaderboard").setDescription("View the global player leaderboards"),
+new SlashCommandBuilder().setName("leaderboard").setDescription("View player leaderboards").addStringOption(o=>o.setName("leaderboard").setDescription("Choose global or this server").setRequired(false).addChoices({name:"Global",value:"global"},{name:"Server",value:"server"})),
+  new SlashCommandBuilder().setName("level").setDescription("View player level and XP progress").addUserOption(o=>o.setName("user").setDescription("Player to check")),
+  new SlashCommandBuilder().setName("events").setDescription("Halloween event features").addSubcommand(s=>s.setName("shop").setDescription("Open the Halloween Candy shop")),
   new SlashCommandBuilder().setName("patchnotes").setDescription("View latest patch notes"),
   new SlashCommandBuilder().setName("alert").setDescription("View the current developer alert"),
   new SlashCommandBuilder().setName("codes").setDescription("Redeem and manage LOZ codes")
@@ -3375,12 +3393,12 @@ new SlashCommandBuilder().setName("leaderboard").setDescription("View the global
     .addSubcommand(s=>s.setName("generate").setDescription("Primary-owner-only: generate a reward code")
       .addStringOption(o=>o.setName("code").setDescription("Optional custom code; random if omitted").setRequired(false).setMaxLength(32))
       .addStringOption(o=>o.setName("reward").setDescription("Primary reward (defaults to Species Rolls)").setRequired(false)
-        .addChoices({name:"Species Rolls",value:"rolls"},{name:"Species Tokens",value:"tokens"}))
+        .addChoices({name:"Species Rolls",value:"rolls"},{name:"Species Tokens",value:"tokens"},{name:"Candies",value:"candies"}))
       .addIntegerOption(o=>o.setName("amount").setDescription("Primary reward amount (defaults to 1)").setRequired(false).setMinValue(1).setMaxValue(1000000))
       .addStringOption(o=>o.setName("duration").setDescription("1s, 1m, 1h, 1d, 1w, or 1y; 0 = permanent (default 30m)").setRequired(false).setMaxLength(16))
       .addIntegerOption(o=>o.setName("max-claims").setDescription("Maximum users; 0 = unlimited (defaults to 1)").setRequired(false).setMinValue(0).setMaxValue(100000))
       .addStringOption(o=>o.setName("additional-prize").setDescription("Optional second reward type").setRequired(false)
-        .addChoices({name:"Species Rolls",value:"rolls"},{name:"Species Tokens",value:"tokens"}))
+        .addChoices({name:"Species Rolls",value:"rolls"},{name:"Species Tokens",value:"tokens"},{name:"Candies",value:"candies"}))
       .addIntegerOption(o=>o.setName("additional-amount").setDescription("Second reward amount (defaults to primary amount)").setRequired(false).setMinValue(1).setMaxValue(1000000)))
     .addSubcommand(s=>s.setName("view").setDescription("Primary-owner-only: view available and expired codes")),
   new SlashCommandBuilder().setName("servers").setDescription("List LOZ servers with invite links"),
