@@ -2,12 +2,15 @@ const patchNotes = [
   {
     version:"7.0v", date:"2026-10-22", alertId:"7.0v-halloween-2026-10-22",
     changes:[
-      "Added the Halloween Werewolf boss. Medium-or-higher bot victories have a 7.5% combined event-boss spawn chance; the selection is 60% Slime Lord and 40% Werewolf. Werewolf's stats scale by the triggering difficulty and its permanent unlock drop is 5%.",
-      "Added player levels capped at 500, a fixed 100 XP per level, round-sensitive battle rewards, rotating level-up messages, milestone Species Rolls, and one Species Token every 25 levels.",
-      "Added Halloween Candies from eligible battles and level-ups, the HALLOWEEN reward code, /events shop with hourly personal roll/token restocks and finite global Reaper stock, plus a 100-Candy exchange for 100 XP.",
-      "Added the Level leaderboard and global/server leaderboard scope. Repeated PvP XP and Candy rewards are limited per opponent pair per day.",
-      "Balanced Archdemon, Thunder Dragon, Earth Dragon, Ice Dragon, Half-Blood, True Dragon, Goblin, and God. Added missing critical-hit configurations, increased Reaper HP by 10, and enabled God for Species Tokens.",
-      "Halloween Candy earning and shop purchases end on November 1, 2026 at 12:00 AM IST. Player records are extended additively; no collection reset is required."
+      "**Leveling:** Added persistent player levels capped at 500, with exactly 100 XP required per level. Eligible bot and PvP results grant XP based on difficulty, result, and battle length. The profile displays a level progress bar, and /level shows current progress and balances.",
+      "**Level-up rewards:** Added 15 rotating level-up messages, sent by DM with a battle-channel fallback. Every fifth level awards a Species Roll, every 25th level awards a Species Token, and level-ups award 5 Halloween Candies while the event is active.",
+      "**Halloween bosses:** A win on Medium-or-higher bot difficulty has a 7.5% combined boss-spawn chance. After a successful roll, Slime Lord is selected 60% of the time and Werewolf 40%. Werewolf uses difficulty-scaled boss stats and has a separate 5% permanent-unlock drop on a confirmed victory.",
+      "**Werewolf species:** Added the playable Halloween species with 125 HP, 24–36 ATK, 12–20 HEAL, 14% crit chance, ×1.6 crit damage, and a 7% miss chance. Blood Moon Frenzy empowers two attacks at or below 50% HP; Lunar Rend applies a ×1.8 attack and 4 Bleed damage for two ticks.",
+      "**Candies and shop:** Eligible battles award Halloween Candies. /events shop offers Species Rolls at 50 Candies, Species Tokens at 1,000 Candies, and Reaper at 2,250 Candies from a finite global stock of 50. Roll/token stock is personal and restocks hourly; 100 Candies can also be exchanged for 100 XP. Purchases require confirmation.",
+      "**HALLOWEEN code:** Added a once-per-player code for 250 Candies and 5 Species Rolls, available until November 1, 2026 at 12:00 AM IST.",
+      "**Leaderboards and safeguards:** Added the Player Level leaderboard and Global/Server scope. PvP progression rewards are limited to three eligible fights per opponent pair per day. Persistent reward receipts prevent duplicate battle rewards, and changes to player data are additive.",
+      "**Combat balance:** Reduced Archdemon ATK to 16–22; removed Thunder Dragon's 1.4× ultimate damage multiplier while retaining its two-turn paralysis; increased Earth Dragon's Terra Strike to 1.4× and Terra Shield to 90%; added 5 HP to Half-Blood, buffed Ice Dragon ATK to 20–30, reduced True Dragon to 175 HP, and increased Goblin ATK to 10–16. Added missing crit profiles, changed God's ultimate to 50% of maximum HP for damage/healing, made God token-eligible, and increased Reaper HP by 10 while fixing its ultimate life-steal.",
+      "**Event and compatibility:** Candy earnings and Halloween shop purchases end on November 1, 2026 at 12:00 AM IST. Existing Slime Lord difficulty stats and historical patch notes are retained; no database reset is required."
     ],
   },
   {
