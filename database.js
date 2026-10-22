@@ -2018,9 +2018,10 @@ async function purchaseHalloweenXp(userId,expectedCandies) {
       if(old.level>=500) throw new Error("LEVEL_ALREADY_MAXED");
       const progress=advanceLevel(old,100);
       const milestones=getLevelMilestones(progress.previousLevel,progress.level);
+      const levelCandyReward=Date.now()<Date.parse("2026-11-01T00:00:00+05:30")?progress.levelsGained*5:0;
       const saved=await User.updateMany({...active,candies:{$gte:100}},{
         $set:{level:progress.level,xp:progress.xp},
-        $inc:{candies:-100,rolls:milestones.rolls,speciesTokens:milestones.tokens}
+        $inc:{candies:-100+levelCandyReward,rolls:milestones.rolls,speciesTokens:milestones.tokens}
       },{session});
       const matched=Number(saved.matchedCount??saved.n??saved.modifiedCount??0);
       if(matched!==beforeRecords.length) throw new Error("LEVEL_PROFILE_WRITE_MISMATCH");
