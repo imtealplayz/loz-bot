@@ -1920,7 +1920,7 @@ async function redeemCode(userId, rawCode) {
 // ==================== EXPORTS ====================
 async function applyBattleLevelingReward(userId,rewardKey,{level,xp,candiesDelta=0,rollsDelta=0,tokensDelta=0}={}) {
   const uid=String(userId||""),key=String(rewardKey||"");
-  if(!/^\\d{17,20}$/.test(uid)||!key||key.length>200) return {ok:false,status:"invalid"};
+  if(!/^\d{17,20}$/.test(uid)||!key||key.length>200) return {ok:false,status:"invalid"};
   let session=null;
   try {
     if(userRepairPromise) await userRepairPromise;
@@ -1977,7 +1977,7 @@ async function getHalloweenShopState(userId) {
     if(userRepairPromise) await userRepairPromise;
     if(!await connect()) return {ok:false,status:"database-error"};
     const uid=String(userId||"");
-    if(!/^\\d{17,20}$/.test(uid)) return {ok:false,status:"invalid-user"};
+    if(!/^\d{17,20}$/.test(uid)) return {ok:false,status:"invalid-user"};
     const now=Date.now(),userKey="user:"+uid;
     let document=await EventShopState.findOne({key:userKey}).lean();
     if(!document) {
@@ -2023,7 +2023,7 @@ async function getHalloweenShopState(userId) {
 }
 async function purchaseHalloweenItem(userId,item,quantity,expectedRestockAt) {
   const uid=String(userId||""),qty=Math.floor(Number(quantity));
-  if(!/^\\d{17,20}$/.test(uid)||!["rolls","tokens","reaper"].includes(item)||!Number.isSafeInteger(qty)||qty<1||qty>25) return {ok:false,status:"invalid"};
+  if(!/^\d{17,20}$/.test(uid)||!["rolls","tokens","reaper"].includes(item)||!Number.isSafeInteger(qty)||qty<1||qty>25) return {ok:false,status:"invalid"};
   if(Date.now()>=Date.parse("2026-11-01T00:00:00+05:30")) return {ok:false,status:"event-ended"};
   if(item==="reaper"&&qty!==1) return {ok:false,status:"invalid"};
   if(item==="tokens"&&qty>3) return {ok:false,status:"invalid"};
@@ -2094,7 +2094,7 @@ async function purchaseHalloweenItem(userId,item,quantity,expectedRestockAt) {
 }
 async function claimPvpRewardWindow(userA,userB,fightId) {
   const a=String(userA||""),b=String(userB||""),fid=String(fightId||"");
-  if(!/^\\d{17,20}$/.test(a)||!/^\\d{17,20}$/.test(b)||a===b||!fid) return false;
+  if(!/^\d{17,20}$/.test(a)||!/^\d{17,20}$/.test(b)||a===b||!fid) return false;
   try {
     if(!await connect()) return false;
     const ids=[a,b].sort();
@@ -2118,8 +2118,50 @@ async function claimPvpRewardWindow(userA,userB,fightId) {
   }
 }
 
+async function grantBossSpeciesUnlock(userId,speciesKey,fightId) {
+  const uid=String(userId||""),key=String(speciesKey||""),fid=String(fightId||"");
+  if(!/^\d{17,20}$/.test(uid)||!["slimeLord","werewolf"].includes(key)||!fid||fid.length>120) return {ok:false,status:"invalid"};
+  const receiptKey=uid+":boss:"+key+":"+fid;
+  let session=null;
+  try {
+    if(userRepairPromise) await userRepairPromise;
+    if(!await connect()) return {ok:false,status:"database-error"};
+    session=await mongoose.startSession();
+    let verified=false;
+    await session.withTransaction(async()=>{
+      await BattleRewardReceipt.create([{key:receiptKey,userId:uid}],{session});
+      const active={userId:uid,archivedForRepair:{$ne:true}};
+      const before=await User.find(active).select({userId:1}).session(session).lean();
+      if(!before.length) throw new Error("BOSS_UNLOCK_NO_PROFILE");
+      const set={};
+      set["questSpecies."+key+".unlocked"]=true;
+      set["questSpecies."+key+".equipped"]=false;
+      set["questSpecies."+key+".source"]="boss";
+      await User.updateMany(active,{$set:set},{session});
+      const after=await User.find(active).select({questSpecies:1}).session(session).lean();
+      verified=after.length===before.length&&after.every(record=>record.questSpecies?.[key]?.unlocked===true);
+      if(!verified) throw new Error("BOSS_UNLOCK_VERIFY_FAILED");
+    });
+    return verified?{ok:true,unlocked:true,duplicate:false}:{ok:false,status:"verification-failed"};
+  } catch(error) {
+    if(error?.code===11000) {
+      try {
+        const records=await User.find({userId:uid,archivedForRepair:{$ne:true}}).select({questSpecies:1}).lean();
+        if(records.length&&records.every(record=>record.questSpecies?.[key]?.unlocked===true)) return {ok:true,unlocked:true,duplicate:true};
+      } catch(_) {}
+      return {ok:false,status:"duplicate-receipt"};
+    }
+    const message=String(error?.message||"");
+    if(message==="BOSS_UNLOCK_NO_PROFILE") return {ok:false,status:"missing-user"};
+    console.error("[Boss Unlock] Could not save "+key+" unlock:",error?.stack||error);
+    return {ok:false,status:"database-error"};
+  } finally {
+    if(session) await session.endSession().catch(()=>{});
+  }
+}
+
 module.exports = {
-  applyBattleLevelingReward, getHalloweenShopState, purchaseHalloweenItem, claimPvpRewardWindow,
+  grantBossSpeciesUnlock, applyBattleLevelingReward, getHalloweenShopState, purchaseHalloweenItem, claimPvpRewardWindow,
   saveUserSpecies, grantArchdemonUnlock, getArchdemonUnlockState, saveUserRolls, saveUserSpeciesFields, addSpeciesTokens, redeemSpeciesToken, awardGuideCompletionRoll, repairUserRecords,
   createRedeemCode, ensureDefaultRedeemCode, getRedeemCode, listRedeemCodes, redeemCode,
   saveLeaderboard, saveFightLeaderboard,
