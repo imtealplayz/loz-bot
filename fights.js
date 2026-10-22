@@ -159,7 +159,7 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
   const pvpRewardEligible=progressionEligible
     ? await database.claimPvpRewardWindow(fight.player1Id,fight.player2Id,fight.fightId)
     : false;
-  await Promise.all([
+  const progressionResults=await Promise.all([
     leveling.awardFightProgress({
       state:_state,channel,fight,userId:fight.player1Id,mode:"pvp",won:winnerId===fight.player1Id,
       reason,pvpEligible:pvpRewardEligible
@@ -216,6 +216,12 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
   if (reason === "divine-intervention") desc += "Disintegrated by divine intervention.\n";
   desc += "⚔️ Leaderboard: +" + winPoints + "\n";
   if (rollEarned) desc += "<:reroll_dice:1558042108965822515> Species Rolls: +1\n";
+  const p1Progress=progressionResults[0],p2Progress=progressionResults[1];
+  if(p1Progress?.ok||p2Progress?.ok) {
+    desc+="\n**Battle Progress**\n";
+    if(p1Progress?.ok) desc+="<@"+fight.player1Id+"> · +"+p1Progress.xp+" XP"+(p1Progress.candies>0?" · <:Candies:1562536882561224734> +"+p1Progress.candies+" Candies":"")+"\n";
+    if(p2Progress?.ok) desc+="<@"+fight.player2Id+"> · +"+p2Progress.xp+" XP"+(p2Progress.candies>0?" · <:Candies:1562536882561224734> +"+p2Progress.candies+" Candies":"")+"\n";
+  }
   const resultPayload = buildFightResultPayload("<@" + winnerId + "> wins the fight", desc, 0x2ecc71, []);
   const msg = _state.fightMessages.get(fightId);
   if (msg) await msg.edit({ content: null, embeds: null, ...resultPayload }).catch(() => {});
@@ -585,7 +591,12 @@ async function finishSlimeLordBoss(channel,fight,winner,reason) {
   const header=won?playerMention+" defeated the "+label+" boss!":playerMention+" was defeated by the "+label+" boss.";
   let desc="**Difficulty:** "+String(fight.difficulty).toUpperCase()+"\n";
   desc+="**Your HP:** "+formatFightHealth(won?fight.playerHp:0,fight.playerMaxHp)+"\n";
-  desc+="**Boss HP:** "+formatFightHealth(won?0:fight.botHp,fight.botMaxHp)+"\n\n";
+  desc+="**Boss HP:** "+formatFightHealth(won?0:fight.botHp,fight.botMaxHp)+"\n";
+  if(fight.progressionResult?.ok) {
+    desc+="**Progress:** Level "+fight.progressionResult.level+" · "+fight.progressionResult.xpProgress+"/100 XP (+"+fight.progressionResult.xp+" XP)\n";
+    if(fight.progressionResult.candies>0) desc+="<:Candies:1562536882561224734> Candies: +"+fight.progressionResult.candies+"\n";
+  }
+  desc+="\n";
   if(unlocked) desc+=(isWerewolf?"🐺 **Werewolf permanently unlocked!**":"🫧 **Slime Lord permanently unlocked!**")+" Use /switch to equip it.\n";
   else if(alreadyUnlocked) desc+="You already have "+label+" permanently unlocked.\n";
   else if(saveFailed) desc+="LOZ could not verify the boss-drop result in MongoDB. Contact an owner before retrying; the result will not be rerolled automatically.\n";
@@ -623,6 +634,7 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
     if (difficulty==="brutal") await questSystem.trackProgress(fight.playerId,"brutalWins",1);
   }
   if (fight.isEventBoss) {
+    fight.progressionResult=progressionResult;
     await finishSlimeLordBoss(channel,fight,winner,reason);
     return;
   }
@@ -658,7 +670,10 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
   } else {
     desc += reason==="timeout" ? "No progression rewards earned." : "Level progression and event rewards recorded.";
   }
-  if(progressionResult?.ok) desc += "\n⭐ Level progression recorded.";
+  if(progressionResult?.ok) {
+    desc += "\n⭐ Level "+progressionResult.level+" · "+progressionResult.xpProgress+"/100 XP (+"+progressionResult.xp+" XP)";
+    if(progressionResult.candies>0) desc += "\n<:Candies:1562536882561224734> Candies: +"+progressionResult.candies;
+  }
   const resultPayload = buildFightResultPayload(header, desc, won ? 0x2ecc71 : 0xe74c3c, []);
   const msg = _state.fightMessages.get(fightId);
   if (msg) await msg.edit({ content: null, embeds: null, ...resultPayload }).catch(() => {});
