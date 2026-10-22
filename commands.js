@@ -2594,7 +2594,7 @@ async function handleButton(interaction) {
   if(customId.startsWith("hshop_buy_")) {
     const parts=customId.split("_"),item=parts[2],expectedUserId=parts[3];
     if(user.id!==expectedUserId) return safeReply(interaction,{content:"This shop button belongs to another player.",flags:MessageFlags.Ephemeral});
-    if(!["rolls","tokens","reaper"].includes(item)) return safeReply(interaction,{content:"Invalid shop item.",flags:MessageFlags.Ephemeral});
+    if(!["rolls","tokens","reaper","xp"].includes(item)) return safeReply(interaction,{content:"Invalid shop item.",flags:MessageFlags.Ephemeral});
     if(item==="reaper") {
       await interaction.deferReply({flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral});
       const shop=await database.getHalloweenShopState(user.id);
@@ -2604,6 +2604,17 @@ async function handleButton(interaction) {
       if(shop.reaperStock<1) return interaction.editReply(halloweenShopErrorPayload("Out of Stock","The global Reaper stock is sold out and never restocks."));
       if(shop.candies<2250) return interaction.editReply(halloweenShopErrorPayload("Not Enough Candies","You have "+shop.candies+" Candies; Reaper costs 2,250."));
       return interaction.editReply(buildHalloweenPurchaseConfirmation(user.id,"reaper",1,0,shop));
+    }
+    if(item==="xp") {
+      const expectedCandies=Number(parts[4]);
+      await interaction.deferReply({flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral});
+      const shop=await database.getHalloweenShopState(user.id);
+      if(!shop?.ok) return interaction.editReply(halloweenShopErrorPayload("Shop Unavailable","LOZ couldn't verify your level or Candy balance. No purchase was made."));
+      if(!shop.eventActive) return interaction.editReply(halloweenShopErrorPayload("Event Ended","Halloween purchases are closed."));
+      if(!Number.isSafeInteger(expectedCandies)||shop.candies!==expectedCandies) return interaction.editReply(halloweenShopErrorPayload("Candy Balance Changed","Your balance changed. Reopen /events shop and try again."));
+      if(shop.level>=500) return interaction.editReply(halloweenShopErrorPayload("Maximum Level","You have already reached Level 500."));
+      if(shop.candies<100) return interaction.editReply(halloweenShopErrorPayload("Not Enough Candies","You need 100 Candies to buy 100 XP."));
+      return interaction.editReply(buildHalloweenPurchaseConfirmation(user.id,"xp",1,0,shop));
     }
     const expectedRestockAt=Number(parts[4]);
     if(!Number.isFinite(expectedRestockAt)||expectedRestockAt<=0) return safeReply(interaction,{content:"The hourly stock reference is invalid. Reopen /events shop.",flags:MessageFlags.Ephemeral});
@@ -2626,15 +2637,18 @@ async function handleButton(interaction) {
   if(customId.startsWith("hshop_confirm_")) {
     const parts=customId.split("_"),item=parts[2],quantity=Number(parts[3]),restockAt=Number(parts[4]),expectedCandies=Number(parts[5]),expectedUserId=parts[6];
     if(user.id!==expectedUserId) return safeReply(interaction,{content:"This purchase confirmation belongs to another player.",flags:MessageFlags.Ephemeral});
-    if(!["rolls","tokens","reaper"].includes(item)||!Number.isSafeInteger(quantity)||quantity<1) return safeReply(interaction,{content:"Invalid purchase confirmation.",flags:MessageFlags.Ephemeral});
+    if(!["rolls","tokens","reaper","xp"].includes(item)||!Number.isSafeInteger(quantity)||quantity<1||(item==="xp"&&quantity!==1)) return safeReply(interaction,{content:"Invalid purchase confirmation.",flags:MessageFlags.Ephemeral});
     await interaction.deferUpdate();
-    const result=await database.purchaseHalloweenItem(user.id,item,quantity,item==="reaper"?null:restockAt,expectedCandies);
+    const result=item==="xp"
+      ?await database.purchaseHalloweenXp(user.id,expectedCandies)
+      :await database.purchaseHalloweenItem(user.id,item,quantity,item==="reaper"?null:restockAt,expectedCandies);
     if(!result?.ok) {
       const messages={
         "event-ended":["Event Ended","Halloween purchases are closed."],
         "restocked":["Stock Refreshed","Your hourly stock changed. Reopen /events shop and try again."],
         "out-of-stock":["Out of Stock","The requested quantity is no longer available."],
         "insufficient-candies":["Not Enough Candies","Your current Candy balance is lower than this purchase cost."],
+        "max-level":["Maximum Level","Level 500 is the current cap. You cannot purchase more XP."],
         "balance-changed":["Candy Balance Changed","Your Candy balance changed after this confirmation was prepared. Reopen /events shop and confirm the purchase using the current balance."],
         "already-unlocked":["Already Unlocked","Reaper is already unlocked for your account."],
         "retry":["Stock Changed","Another purchase used some stock first. Reopen /events shop and try again."],
@@ -2649,15 +2663,24 @@ async function handleButton(interaction) {
     data.candies=result.candies;
     data.rolls=result.rolls;
     data.speciesTokens=result.tokens;
+    if(item==="xp") { data.level=result.level; data.xp=result.xp; }
     if(item==="reaper") data.questSpecies={...(data.questSpecies||{}),reaper:{...(data.questSpecies?.reaper||{}),unlocked:true,equipped:false,source:"halloween-shop"}};
     _state.userSpecies.set(user.id,data);
+    if(item==="xp") {
+      for(let level=result.previousLevel+1;level<=result.level;level++) {
+        await leveling.notifyLevelUp(_state,channel,user.id,level-1,level,{
+          candies:5,rolls:level%5===0?1:0,tokens:level%25===0?1:0
+        });
+      }
+    }
     const lines=[
-      "Purchased "+quantity+" "+(item==="rolls"?"Species Roll(s)":item==="tokens"?"Species Token(s)":"Reaper permanent unlock")+".",
+      item==="xp"?"Purchased 100 XP for 100 Candies.":"Purchased "+quantity+" "+(item==="rolls"?"Species Roll(s)":item==="tokens"?"Species Token(s)":"Reaper permanent unlock")+".",
       "Candies remaining: "+result.candies.toLocaleString(),
       "Species Rolls: "+result.rolls.toLocaleString(),
       "Species Tokens: "+result.tokens.toLocaleString()
     ];
     if(item==="reaper") lines.push("Global Reaper stock remaining: "+result.reaperStock+". Reaper is permanently unlocked; use /switch to equip it.");
+    else if(item==="xp") lines.push("New progress: Level "+result.level+" · "+result.xp+"/100 XP. Any milestone Species Rolls/Tokens were added.");
     else lines.push("Remaining personal stock: "+(item==="rolls"?result.rollsStock:result.tokensStock)+".");
     return interaction.editReply(buildStyledCardPayload("Purchase Complete",0x16a34a,[{body:lines.join("\n")}],true));
   }
