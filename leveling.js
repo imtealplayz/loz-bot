@@ -5,6 +5,7 @@ const database = require("./database.js");
 
 const MAX_LEVEL = 500;
 const XP_PER_LEVEL = 100;
+const CANDIES_EMOJI = "<:Candies:1562536882561224734>";
 const HALLOWEEN_END = Date.parse("2026-11-01T00:00:00+05:30");
 const LEVEL_UP_MESSAGES = [
   "Look at you go! You're getting stronger with every milestone.",
@@ -46,7 +47,7 @@ function getLevelCard(data = {}) {
     ? "## ⭐ Level 500\nYou have reached the current level cap. Further battles won't increase your level."
     : "## ⭐ Level " + progress.level + "\n" + progressBar(progress.xp, XP_PER_LEVEL) + "\n**" + progress.xp + " / " + XP_PER_LEVEL + " XP** toward Level " + (progress.level + 1) + ".");
   embed.addFields(
-    { name: "Candies", value: String(Math.max(0, Number(data.candies) || 0)), inline: true },
+    { name: CANDIES_EMOJI + " Candies", value: String(Math.max(0, Number(data.candies) || 0)), inline: true },
     { name: "Species Rolls", value: String(Math.max(0, Number(data.rolls) || 0)), inline: true },
     { name: "Species Tokens", value: String(Math.max(0, Number(data.speciesTokens) || 0)), inline: true }
   );
@@ -70,7 +71,7 @@ function calculateBattleReward({ mode = "bot", difficulty = "easy", won = false,
 async function notifyLevelUp(state, channel, userId, fromLevel, toLevel, rewards) {
   const message = LEVEL_UP_MESSAGES[(toLevel - 2) % LEVEL_UP_MESSAGES.length];
   const rows = [];
-  if (rewards.candies > 0) rows.push("• 🍬 " + rewards.candies + " Candies");
+  if (rewards.candies > 0) rows.push("• " + CANDIES_EMOJI + " " + rewards.candies + " Candies");
   if (rewards.rolls > 0) rows.push("• <:reroll_dice:1558042108965822515> " + rewards.rolls + " Species Roll(s)");
   if (rewards.tokens > 0) rows.push("• <:species_token:1558181624296771634> " + rewards.tokens + " Species Token(s)");
   const embed = new EmbedBuilder()
