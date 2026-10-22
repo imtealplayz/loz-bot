@@ -362,7 +362,7 @@ async function runBotTurn(channel, fightId, turnToken) {
             if (botC.currentHp<botC.maxHp*0.4) { const h=Math.floor(playerC.currentHp*0.6); botC.currentHp=Math.min(botC.maxHp,botC.currentHp+h); fight.botHp=botC.currentHp; log.push(`👼 Bot PRAYER — heals ${h} HP!`); }
             else { botC.ultBuff={type:"nextAttack",multiplier:1.5,angelHeal:true}; log.push("👼 Bot SMITE — 1.5×!"); }
           } else if (botC.species.name==="Ice Dragon") { botC.ultBuff={type:"nextAttack",multiplier:1.9}; log.push("❄️ Bot GLACIAL SPIKE — 1.9×!"); }
-          else if (botC.species.name==="Earth Dragon") { botC.ultBuff={type:"nextAttack",multiplier:1.2}; log.push("🌍 Bot TERRA STRIKE — 1.2×!"); }
+          else if (botC.species.name==="Earth Dragon") { botC.ultBuff={type:"nextAttack",multiplier:1.4}; log.push("🌍 Bot TERRA STRIKE — 1.4×!"); }
         } else {
           log.push(`✨ Bot uses ULT! ${um}`);
           if (["God","Mechangel","Cyborg"].includes(botC.species.name)) { fight.botHp=botC.currentHp; fight.playerHp=playerC.currentHp; }
@@ -494,13 +494,24 @@ const SLIME_LORD_BOSS_STATS = {
   brutal:     { hp:210, atkMin:25, atkMax:35, healMin:18, healMax:26, ultCooldown:7 },
 };
 
+// Werewolf is tuned as the damage-focused event boss. It follows the same
+// difficulty mapping as Slime Lord but has a separate stat curve and weaker sustain.
+const WEREWOLF_BOSS_STATS = {
+  easy:       { hp:115, atkMin:16, atkMax:23, healMin:4,  healMax:8,  ultCooldown:10 },
+  medium:     { hp:135, atkMin:19, atkMax:27, healMin:5,  healMax:9,  ultCooldown:9 },
+  hard:       { hp:160, atkMin:22, atkMax:31, healMin:6,  healMax:10, ultCooldown:8 },
+  impossible: { hp:190, atkMin:25, atkMax:35, healMin:7,  healMax:11, ultCooldown:8 },
+  brutal:     { hp:225, atkMin:29, atkMax:40, healMin:8,  healMax:12, ultCooldown:7 },
+};
+
 async function startSlimeLordBoss(channel, previousFight, bossType="slimeLord") {
   const playerId=String(previousFight.playerId);
   if (_state.activeBotFights.has(playerId)) return;
   const difficulty=previousFight.difficulty;
   const isWerewolf=bossType==="werewolf";
   const baseSpecies=isWerewolf?werewolfSpecies:slimeLordSpecies;
-  const bossStats=SLIME_LORD_BOSS_STATS[difficulty] || SLIME_LORD_BOSS_STATS.medium;
+  const statsByDifficulty=isWerewolf?WEREWOLF_BOSS_STATS:SLIME_LORD_BOSS_STATS;
+  const bossStats=statsByDifficulty[difficulty] || statsByDifficulty.medium;
   const bossSpecies={...baseSpecies,...bossStats};
   const playerSpecies=previousFight.playerSpecies || _state.userSpecies.get(playerId)?.species || humanSpecies;
   const playerMaxHp=playerSpecies.hp || humanSpecies.hp;
@@ -557,7 +568,7 @@ async function finishSlimeLordBoss(channel,fight,winner,reason) {
       species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,speciesTokens:0,candies:0,
       level:1,xp:0,requestsEnabled:true,lastSwitch:0,awakening:{},badges:[]
     };
-    alreadyUnlocked=current.questSpecies?.[speciesKey]?.unlocked===true;
+    alreadyUnlocked=current.questSpecies?.[speciesKey]?.unlocked===true || current.originalSpecies?.name===label;
     if(!alreadyUnlocked && Math.random()<unlockChance) {
       const saved=await database.grantBossSpeciesUnlock(fight.playerId,speciesKey,fight.fightId);
       if(saved?.ok) {
@@ -652,7 +663,8 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
   _state.fightMessages.delete(fightId);
 
   // Only genuine wins against regular bots can trigger the rare boss encounter.
-  if (won && !fight.isEventBoss && reason!=="timeout" && ["medium","hard","impossible","brutal"].includes(difficulty) && Math.random()<0.075) {
+  const bossSpawnEligibleReason=!["timeout","disintegration","judge","divine-intervention","chaos-disintegrate"].includes(String(reason));
+  if (won && !fight.isEventBoss && bossSpawnEligibleReason && ["medium","hard","impossible","brutal"].includes(difficulty) && Math.random()<0.075) {
     const selectedBoss=Math.random()<0.6?"slimeLord":"werewolf";
     await startSlimeLordBoss(channel,fight,selectedBoss);
   }
