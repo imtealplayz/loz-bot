@@ -1,7 +1,7 @@
 const {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder,
   SlashCommandBuilder, REST, Routes, ModalBuilder, TextInputBuilder, TextInputStyle,
-  ContainerBuilder, TextDisplayBuilder, SeparatorBuilder,
+  ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SectionBuilder,
   SeparatorSpacingSize, MessageFlags, PermissionsBitField,
 } = require("discord.js");
 const {
@@ -12,6 +12,7 @@ const {
   getPassiveDescription, getActiveDescription,
 } = require("./constants.js");
 const database = require("./database.js");
+const CANDIES_EMOJI = "<:Candies:1562536882561224734>";
 const leveling = require("./leveling.js");
 const crypto = require("node:crypto");
 const {
@@ -161,10 +162,11 @@ async function buildLeaderboardView(leaderboardType,guild,scope="global") {
   if(selectedScope==="server"&&!guild) {
     return attachLeaderboardSelector(buildStyledCardPayload("Server Leaderboard",0x808080,[{heading:"Unavailable here",body:"Use the server leaderboard inside a Discord server. Global rankings are available in DMs."}]),type,selectedScope);
   }
-  const candidateLimit=selectedScope==="server"?300:10;
+  const candidateLimit=selectedScope==="server"?Number.MAX_SAFE_INTEGER:10;
+  const serverUserIds=selectedScope==="server"?Array.from(_state.userSpecies.keys()).map(String):null;
   let candidates=[];
   if(type==="glory") {
-    const entries=await database.getGloryLeaderboardTop(candidateLimit);
+    const entries=await database.getGloryLeaderboardTop(candidateLimit,serverUserIds);
     if(entries===null) {
       return attachLeaderboardSelector(buildStyledCardPayload("LOZ Leaderboard",0x0891b2,[{heading:"Glory",body:"MongoDB could not load the Glory leaderboard. Please try again later."}]),type,selectedScope);
     }
@@ -211,8 +213,8 @@ async function buildLeaderboardView(leaderboardType,guild,scope="global") {
   const title="LOZ Leaderboard · "+(selectedScope==="server"?(guild.name||"Server"):"Global");
   let body;
   if(rows.length) {
-    body="*Top "+rows.length+" "+(selectedScope==="server"?"members in this server":"players")+" · Ranked by "+label.toLowerCase()+"*\\n\\n"+rows.join("\\n");
-    if(selectedScope==="server") body+="\\n\\n*Server view filters player records to current server members.*";
+    body="*Top "+rows.length+" "+(selectedScope==="server"?"members in this server":"players")+" · Ranked by "+label.toLowerCase()+"*\n\n"+rows.join("\n");
+    if(selectedScope==="server") body+="\n\n*Server view filters player records to current server members.*";
   } else if(selectedScope==="server") {
     body="No ranked server members were found in the current candidate set. Earn progression or try the Global leaderboard.";
   } else {
@@ -266,27 +268,29 @@ function buildHalloweenShopPayload(userId,shop) {
   const eventActive=shop.eventActive!==false;
   const restock=Number(shop.restockAt)||Date.now()+3600000;
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "**Your balance:** 🍬 "+Number(shop.candies||0).toLocaleString()+" Candies\n"+
+    "**Your balance:** "+CANDIES_EMOJI+" "+Number(shop.candies||0).toLocaleString()+" Candies\n"+
     "**Personal restock:** <t:"+Math.floor(restock/1000)+":R>\n"+
     (eventActive?"Purchases close November 1, 2026 at 12:00 AM IST.":"**The Halloween shop is closed.** No more purchases can be made.")
   ));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "### 🎲 Species Rolls\n50 Candies each · "+shop.rollsStock+" currently in stock\nStock restocks hourly for each player, with a random quantity from 5 to 50."
-  ));
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "### <:species_token:1558181624296771634> Species Token\n1,000 Candies each · "+shop.tokensStock+" currently in stock\nEach hourly restock has a 15% chance to stock 1–3 tokens."
-  ));
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "### 🌑 Reaper\n2,250 Candies · "+shop.reaperStock+" / 50 global stock remaining\nPermanent unlock. The global supply never restocks."+
-    (shop.reaperUnlocked?"\n**Already unlocked on your account.**":"")
-  ));
-  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-  container.addActionRowComponents(new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("hshop_buy_rolls_"+userId+"_"+restock).setLabel("Buy Rolls").setStyle(ButtonStyle.Primary).setDisabled(!eventActive||shop.rollsStock<1||shop.candies<50),
-    new ButtonBuilder().setCustomId("hshop_buy_tokens_"+userId+"_"+restock).setLabel("Buy Token").setStyle(ButtonStyle.Secondary).setDisabled(!eventActive||shop.tokensStock<1||shop.candies<1000),
-    new ButtonBuilder().setCustomId("hshop_buy_reaper_"+userId).setLabel("Unlock Reaper").setStyle(ButtonStyle.Danger).setDisabled(!eventActive||shop.reaperStock<1||shop.reaperUnlocked||shop.candies<2250)
-  ));
+  container.addSectionComponents(
+    new SectionBuilder()
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        "### 🎲 Species Rolls\n50 Candies each · "+shop.rollsStock+" currently in stock\nStock restocks hourly for each player, with a random quantity from 5 to 50."
+      ))
+      .setButtonAccessory(new ButtonBuilder().setCustomId("hshop_buy_rolls_"+userId+"_"+restock).setLabel("Buy Rolls").setStyle(ButtonStyle.Primary).setDisabled(!eventActive||shop.rollsStock<1||shop.candies<50)),
+    new SectionBuilder()
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        "### <:species_token:1558181624296771634> Species Token\n1,000 Candies each · "+shop.tokensStock+" currently in stock\nEach hourly restock has a 15% chance to stock 1–3 tokens."
+      ))
+      .setButtonAccessory(new ButtonBuilder().setCustomId("hshop_buy_tokens_"+userId+"_"+restock).setLabel("Buy Token").setStyle(ButtonStyle.Secondary).setDisabled(!eventActive||shop.tokensStock<1||shop.candies<1000)),
+    new SectionBuilder()
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        "### 🌑 Reaper\n2,250 Candies · "+shop.reaperStock+" / 50 global stock remaining\nPermanent unlock. The global supply never restocks."+
+        (shop.reaperUnlocked?"\n**Already unlocked on your account.**":"")
+      ))
+      .setButtonAccessory(new ButtonBuilder().setCustomId("hshop_buy_reaper_"+userId).setLabel("Unlock Reaper").setStyle(ButtonStyle.Danger).setDisabled(!eventActive||shop.reaperStock<1||shop.reaperUnlocked||shop.candies<2250))
+  );
   return {components:[container],flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral,allowedMentions:{parse:[]}};
 }
 function buildHalloweenPurchaseConfirmation(userId,item,quantity,restockAt,shop) {
@@ -769,10 +773,10 @@ function buildDeveloperAlertPayload(ephemeral=true,codeRecord=null) {
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🌕 The Veil Opens · LOZ "+alert.version+(alert.date?" · "+alert.date:"")));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "### 🐺 The Moonlit Hunter\\nSomething old has stirred beyond the Rift. A hunter walks beneath the blood moon, and those brave enough to face the Halloween bosses may claim power that survives the season.\\n\\nPatch notes: "+commandMention("patchnotes")
+    "### 🐺 The Moonlit Hunter\nSomething old has stirred beyond the Rift. A hunter walks beneath the blood moon, and those brave enough to face the Halloween bosses may claim power that survives the season.\n\nPatch notes: "+commandMention("patchnotes")
   ));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("### 🎁 Halloween Reward Code\\nCode: HALLOWEEN\\nReward: 250 Candies and 5 Species Rolls.\\nEach player may redeem it once before November 1, 2026 at 12:00 AM IST."));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("### 🎁 Halloween Reward Code\nCode: HALLOWEEN\nReward: 250 Candies and 5 Species Rolls.\nEach player may redeem it once before November 1, 2026 at 12:00 AM IST."));
   if(codeRecord) {
     const expiry=codeRecord.expiresAt==null?null:new Date(codeRecord.expiresAt).getTime();
     const active=(expiry===null||(Number.isFinite(expiry)&&expiry>Date.now()))&&(Number(codeRecord.maxClaims??1)===0||Number(codeRecord.claimedCount||0)<Number(codeRecord.maxClaims));
@@ -787,7 +791,7 @@ function buildDeveloperAlertPayload(ephemeral=true,codeRecord=null) {
 function buildDeveloperAlertReminderPayload() {
   const alert=getCurrentDeveloperAlert(),container=new ContainerBuilder().setAccentColor(0x7c3aed);
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "## 🌕 LOZ "+alert.version+" · Halloween\\nThe veil has opened. Challenge the Halloween bosses, collect Candies, and check "+commandMention("patchnotes")+" for the full patch notes. Redeem HALLOWEEN for 250 Candies and 5 Species Rolls before November 1, 2026 at 12:00 AM IST."
+    "## 🌕 LOZ "+alert.version+" · Halloween\nThe veil has opened. Challenge the Halloween bosses, collect Candies, and check "+commandMention("patchnotes")+" for the full patch notes. Redeem HALLOWEEN for 250 Candies and 5 Species Rolls before November 1, 2026 at 12:00 AM IST."
   ));
   return {components:[container],flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral,allowedMentions:{parse:[]}};
 }
@@ -840,7 +844,7 @@ function buildSpeciesTokenSelectionPayload(userId, selectedName = null, tokenCou
       : `\n**Selected:** ${selectedSpecies.emoji} **${selectedSpecies.name}**`)
     : "\n**Selected:** None";
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    `## ${SPECIES_TOKEN_EMOJI} Species Token\nSpend **1 token** to change your species. Reaper, Archdemon, and Mechangel are not available.\n\n**Current species:** ${currentSpecies.emoji} **${currentSpecies.name}**\n**Your balance:** ${SPECIES_TOKEN_EMOJI} **${tokenCount}**${selectionNote}`
+    `## ${SPECIES_TOKEN_EMOJI} Species Token\nSpend **1 token** to change your species. God is now token-eligible; Reaper, Archdemon, and Mechangel are not available.\n\n**Current species:** ${currentSpecies.emoji} **${currentSpecies.name}**\n**Your balance:** ${SPECIES_TOKEN_EMOJI} **${tokenCount}**${selectionNote}`
   ));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
   const options = SPECIES_TOKEN_SPECIES_NAMES.map(name => {
@@ -1424,7 +1428,7 @@ async function handleCommand(interaction) {
     }
     const sections=[
       {heading:"Current Species",body:`${sp.emoji} **${sp.name}**\n\n${leveling.getProgressText(td)}`},
-      {heading:"Inventory & Settings",body:`<:reroll_dice:1558042108965822515> **Species rolls:** ${td.rolls||0}\n${SPECIES_TOKEN_EMOJI} **Species tokens:** ${Number(td.speciesTokens)||0}\n🍬 **Candies:** ${Number(td.candies)||0}\n🔘 **Challenge requests:** ${td.requestsEnabled?"Enabled":"Disabled"}`},
+      {heading:"Inventory & Settings",body:`<:reroll_dice:1558042108965822515> **Species rolls:** ${td.rolls||0}\n${SPECIES_TOKEN_EMOJI} **Species tokens:** ${Number(td.speciesTokens)||0}\n${CANDIES_EMOJI} **Candies:** ${Number(td.candies)||0}\n🔘 **Challenge requests:** ${td.requestsEnabled?"Enabled":"Disabled"}`},
       {heading:"Fight Record",body:`🏆 **Wins:** ${fd.wins||0}  ·  💔 **Losses:** ${fd.losses||0}\n📊 **Win rate:** ${wr}%\n🔥 **Win streak:** ${fd.streak||0}`},
       {heading:"Member Since",body:`<t:${Math.floor((targetMember?.joinedTimestamp||Date.now())/1000)}:R>`},
     ];
@@ -2635,7 +2639,7 @@ async function handleButton(interaction) {
     ];
     if(item==="reaper") lines.push("Global Reaper stock remaining: "+result.reaperStock+". Reaper is permanently unlocked; use /switch to equip it.");
     else lines.push("Remaining personal stock: "+(item==="rolls"?result.rollsStock:result.tokensStock)+".");
-    return interaction.editReply(buildStyledCardPayload("Purchase Complete",0x16a34a,[{body:lines.join("\\n")}],true));
+    return interaction.editReply(buildStyledCardPayload("Purchase Complete",0x16a34a,[{body:lines.join("\n")}],true));
   }
 
   if(customId.startsWith("hshop_cancel_")) {
