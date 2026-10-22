@@ -136,4 +136,4 @@ async function awardFightProgress({ state, channel, fight, userId, mode = "bot",
   }
 }
 
-module.exports = { MAX_LEVEL, XP_PER_LEVEL, HALLOWEEN_END, normalizeLevelData, progressBar, getProgressText, getLevelCard, calculateBattleReward, awardFightProgress };
+module.exports = { MAX_LEVEL, XP_PER_LEVEL, HALLOWEEN_END, normalizeLevelData, progressBar, getProgressText, getLevelCard, calculateBattleReward, notifyLevelUp, awardFightProgress };
