@@ -177,7 +177,7 @@ async function buildLeaderboardView(leaderboardType,guild,scope="global") {
     :null;
   let candidates=[];
   if(type==="glory") {
-    const entries=await database.getGloryLeaderboardTop(candidateLimit,serverUserIds);
+    const entries=await database.getGloryLeaderboardTop(selectedScope==="server"?10:candidateLimit,serverUserIds);
     if(entries===null) {
       return attachLeaderboardSelector(buildStyledCardPayload("LOZ Leaderboard",0x0891b2,[{heading:"Glory",body:"MongoDB could not load the Glory leaderboard. Please try again later."}]),type,selectedScope);
     }
@@ -316,7 +316,7 @@ function buildHalloweenPurchaseConfirmation(userId,item,quantity,restockAt,shop)
   const costs={rolls:50,tokens:1000,reaper:2250,xp:100};
   const names={rolls:"Species Roll(s)",tokens:"Species Token(s)",reaper:"Reaper permanent unlock",xp:"100 XP (one level)"};
   const cost=costs[item]*quantity;
-  const after=Math.max(0,Number(shop.candies||0)-cost);
+  const after=Math.max(0,Number(shop.candies||0)-cost+(item==="xp"&&shop.eventActive?5:0));
   const container=new ContainerBuilder().setAccentColor(0xf97316);
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## Confirm Halloween Purchase"));
   container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
@@ -326,7 +326,7 @@ function buildHalloweenPurchaseConfirmation(userId,item,quantity,restockAt,shop)
     "**Current Candies:** "+Number(shop.candies||0).toLocaleString()+"\n"+
     "**Total cost:** "+cost.toLocaleString()+" Candies\n"+
     "**After purchase:** "+after.toLocaleString()+" Candies\n\n"+
-    (item==="reaper"?"This uses one unit from the permanent global stock.":item==="xp"?"This adds 100 XP and awards any level milestone rewards. It cannot be purchased at Level 500.":"This purchase uses your current hourly stock. If the restock expires before confirmation, the purchase will be rejected.")
+    (item==="reaper"?"This uses one unit from the permanent global stock.":item==="xp"?"This adds 100 XP, grants the normal 5-Candy Halloween level-up reward plus milestone rewards, and cannot be purchased at Level 500.":"This purchase uses your current hourly stock. If the restock expires before confirmation, the purchase will be rejected.")
   ));
   container.addActionRowComponents(new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId("hshop_confirm_"+item+"_"+quantity+"_"+(item==="reaper"?0:restockAt)+"_"+Math.floor(Number(shop.candies)||0)+"_"+userId).setLabel("Confirm Purchase").setStyle(ButtonStyle.Success),
