@@ -3543,7 +3543,7 @@ async function handleModalSubmit(interaction) {
 
 async function handleSelectMenu(interaction) {
   const { customId, user, guild } = interaction;
-  if (customId.startsWith("leaderboard_select_")) {
+  if (customId==="leaderboard_select" || customId.startsWith("leaderboard_select_")) {
     const selected=interaction.values?.[0];
     const scope=customId.endsWith("_server")?"server":"global";
     if (!["fights","rolls","glory","levels"].includes(selected)) {
