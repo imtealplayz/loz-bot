@@ -1,7 +1,8 @@
-const { botPersonalities, humanSpecies, slimeLordSpecies } = require("./constants.js");
+const { botPersonalities, humanSpecies, slimeLordSpecies, werewolfSpecies } = require("./constants.js");
 const database = require("./database.js");
 const questSystem = require("./quest-system.js");
 const achievementSystem = require("./achievements.js");
+const leveling = require("./leveling.js");
 const { commitFightProgress } = require("./fight-progress.js");
 const chaosSystem = require("./chaos.js");
 const {
@@ -10,7 +11,7 @@ const {
 } = require("./helpers.js");
 const {
   makeCombatant, calculateDamage, applyUltEffect,
-  tickCooldowns, applyOgreRegen, processCurseTick,
+  tickCooldowns, applyOgreRegen, processCurseTick, processBleedTick,
   buildFightMessagePayload, buildBotFightMessagePayload, buildFightResultPayload, formatFightHealth,
 } = require("./combat.js");
 
@@ -21,7 +22,8 @@ const BOT_TURN_WATCHDOG_MS = 20000;
 const BOT_TURN_STATE_FIELDS = [
   "playerHp", "botHp", "playerPossession", "botPossession",
   "playerStunnedTurns", "botStunnedTurns",
-  "playerBurn", "playerBurnRounds", "botBurn", "botBurnRounds",
+  "playerBloodMoonFrenzyUsed", "playerBloodMoonAttacks", "botBloodMoonFrenzyUsed", "botBloodMoonAttacks",
+  "playerBurn", "playerBurnRounds", "botBurn", "botBurnRounds", "playerBleed", "playerBleedRounds", "botBleed", "botBleedRounds",
   "playerBlockHeal", "botBlockHeal", "playerCurse", "botCurse",
   "playerUltBuff", "botUltBuff", "botAdaptiveStacks", "botAttackCounter",
   "botLastUltUsed", "botHealCooldown", "botUltCooldown", "playerUltCooldown",
@@ -232,14 +234,16 @@ async function runBotTurn(channel, fightId, turnToken) {
   const botC = {
     id:"BOT", species:fight.botSpecies, currentHp:fight.botHp, maxHp:fight.botMaxHp,
     ultBuff:fight.botUltBuff, adaptiveStacks:fight.botAdaptiveStacks||0, attackCounter:fight.botAttackCounter||0, slimeMissStacks:fight.botSlimeMissStacks||0,
-    burn:fight.botBurn||0, burnRounds:fight.botBurnRounds||0, curse:fight.botCurse||0,
+    bloodMoonFrenzyUsed:fight.botBloodMoonFrenzyUsed||false, bloodMoonAttacks:fight.botBloodMoonAttacks||0,
+    burn:fight.botBurn||0, burnRounds:fight.botBurnRounds||0, bleed:fight.botBleed||0, bleedRounds:fight.botBleedRounds||0, curse:fight.botCurse||0,
     blockHeal:fight.botBlockHeal||false, possession:fight.botPossession||false, stunnedTurns:fight.botStunnedTurns||0,
     healCooldown:fight.botHealCooldown, ultCooldown:fight.botUltCooldown, lastUltUsed:fight.botLastUltUsed,
   };
   const playerC = {
     id:fight.playerId, species:fight.playerSpecies, currentHp:fight.playerHp, maxHp:fight.playerMaxHp,
     ultBuff:fight.playerUltBuff, adaptiveStacks:fight.playerAdaptiveStacks||0, attackCounter:fight.playerAttackCounter||0, slimeMissStacks:fight.playerSlimeMissStacks||0,
-    burn:fight.playerBurn||0, burnRounds:fight.playerBurnRounds||0, curse:fight.playerCurse||0,
+    bloodMoonFrenzyUsed:fight.playerBloodMoonFrenzyUsed||false, bloodMoonAttacks:fight.playerBloodMoonAttacks||0,
+    burn:fight.playerBurn||0, burnRounds:fight.playerBurnRounds||0, bleed:fight.playerBleed||0, bleedRounds:fight.playerBleedRounds||0, curse:fight.playerCurse||0,
     blockHeal:fight.playerBlockHeal||false, possession:fight.playerPossession||false, stunnedTurns:fight.playerStunnedTurns||0,
     healCooldown:fight.playerHealCooldown, ultCooldown:fight.playerUltCooldown, lastUltUsed:fight.playerLastUltUsed,
   };
@@ -401,7 +405,11 @@ async function runBotTurn(channel, fightId, turnToken) {
   // Sync
   fight.botHp=Math.max(0,botC.currentHp); fight.playerHp=Math.max(0,playerC.currentHp);
   fight.playerBurn=playerC.burn; fight.playerBurnRounds=playerC.burnRounds;
+  fight.playerBleed=playerC.bleed; fight.playerBleedRounds=playerC.bleedRounds;
   fight.botBurn=botC.burn; fight.botBurnRounds=botC.burnRounds;
+  fight.botBleed=botC.bleed; fight.botBleedRounds=botC.bleedRounds;
+  fight.playerBloodMoonFrenzyUsed=playerC.bloodMoonFrenzyUsed||false; fight.playerBloodMoonAttacks=playerC.bloodMoonAttacks||0;
+  fight.botBloodMoonFrenzyUsed=botC.bloodMoonFrenzyUsed||false; fight.botBloodMoonAttacks=botC.bloodMoonAttacks||0;
   fight.playerBlockHeal=playerC.blockHeal; fight.playerCurse=playerC.curse;
   fight.playerPossession=playerC.possession; fight.playerStunnedTurns=playerC.stunnedTurns||0;
   fight.botPossession=botC.possession||false; fight.botCurse=botC.curse; fight.botStunnedTurns=botC.stunnedTurns||0;
@@ -416,6 +424,14 @@ async function runBotTurn(channel, fightId, turnToken) {
     fight.playerHp=Math.max(0,fight.playerHp-bd);
     fight.playerBurnRounds--; if(fight.playerBurnRounds<=0){fight.playerBurn=0;fight.playerBurnRounds=0;}
     log.push(`🔥 Burn deals ${bd} to you!`);
+    playerC.currentHp=fight.playerHp;
+  }
+  if(fight.playerBleed>0) {
+    playerC.bleed=fight.playerBleed; playerC.bleedRounds=fight.playerBleedRounds;
+    const bleed=processBleedTick(playerC);
+    fight.playerHp=Math.max(0,playerC.currentHp);
+    fight.playerBleed=playerC.bleed; fight.playerBleedRounds=playerC.bleedRounds;
+    if(bleed.bled>0) log.push(...bleed.lines);
   }
   // Ogre regen for bot
   if (fight.botSpecies.name==="Ogre") { fight.botHp=Math.min(fight.botMaxHp,fight.botHp+5); log.push("👹 Bot Regeneration +5"); }
@@ -463,87 +479,91 @@ const SLIME_LORD_BOSS_STATS = {
   brutal:     { hp:210, atkMin:25, atkMax:35, healMin:18, healMax:26, ultCooldown:7 },
 };
 
-async function startSlimeLordBoss(channel, previousFight) {
-  const playerId=previousFight.playerId;
+async function startSlimeLordBoss(channel, previousFight, bossType="slimeLord") {
+  const playerId=String(previousFight.playerId);
   if (_state.activeBotFights.has(playerId)) return;
   const difficulty=previousFight.difficulty;
-  const bossStats=SLIME_LORD_BOSS_STATS[difficulty] || SLIME_LORD_BOSS_STATS.easy;
-  const bossSpecies={ ...slimeLordSpecies, ...bossStats };
+  const isWerewolf=bossType==="werewolf";
+  const baseSpecies=isWerewolf?werewolfSpecies:slimeLordSpecies;
+  const bossStats=SLIME_LORD_BOSS_STATS[difficulty] || SLIME_LORD_BOSS_STATS.medium;
+  const bossSpecies={...baseSpecies,...bossStats};
   const playerSpecies=previousFight.playerSpecies || _state.userSpecies.get(playerId)?.species || humanSpecies;
   const playerMaxHp=playerSpecies.hp || humanSpecies.hp;
-  const fightId="slime-boss-" + playerId + "-" + Date.now();
+  const fightId=(isWerewolf?"werewolf-boss-":"slime-boss-")+playerId+"-"+Date.now();
   const fight={
-    fightId, playerId, playerSpecies, playerHp:playerMaxHp, playerMaxHp,
-    playerHealCooldown:0, playerUltCooldown:0, playerUltBuff:null,
-    playerAdaptiveStacks:0, playerAttackCounter:0, playerSlimeMissStacks:0,
-    playerBurn:0, playerBurnRounds:0, playerCurse:0, playerCurseRounds:0,
-    playerBlockHeal:false, playerPossession:false, playerStunnedTurns:0, playerLastUltUsed:null,
-    botSpecies:bossSpecies, botHp:bossSpecies.hp, botMaxHp:bossSpecies.hp,
-    botHealCooldown:0, botUltCooldown:0, botUltBuff:null, botAdaptiveStacks:0, botAttackCounter:0, botSlimeMissStacks:0,
-    botBurn:0, botBurnRounds:0, botCurse:0, botCurseRounds:0, botPossession:false, botBlockHeal:false, botStunnedTurns:0, botLastUltUsed:null,
-    round:1, difficulty, botPersonality:botPersonalities[difficulty], timeout:null, log:[
-      "A rare Slime Lord has emerged after your " + difficulty.toUpperCase() + " victory.",
-      "Your HP is fully restored and all temporary combat effects are reset for this fresh battle.",
+    fightId,playerId,playerSpecies,playerHp:playerMaxHp,playerMaxHp,
+    playerHealCooldown:0,playerUltCooldown:0,playerUltBuff:null,
+    playerAdaptiveStacks:0,playerAttackCounter:0,playerSlimeMissStacks:0,
+    playerBloodMoonFrenzyUsed:false,playerBloodMoonAttacks:0,
+    playerBurn:0,playerBurnRounds:0,playerBleed:0,playerBleedRounds:0,playerCurse:0,playerCurseRounds:0,
+    playerBlockHeal:false,playerPossession:false,playerStunnedTurns:0,playerLastUltUsed:null,
+    botSpecies:bossSpecies,botHp:bossSpecies.hp,botMaxHp:bossSpecies.hp,
+    botHealCooldown:0,botUltCooldown:0,botUltBuff:null,botAdaptiveStacks:0,botAttackCounter:0,botSlimeMissStacks:0,
+    botBloodMoonFrenzyUsed:false,botBloodMoonAttacks:0,
+    botBurn:0,botBurnRounds:0,botBleed:0,botBleedRounds:0,botCurse:0,botCurseRounds:0,
+    botPossession:false,botBlockHeal:false,botStunnedTurns:0,botLastUltUsed:null,
+    round:1,difficulty,botPersonality:botPersonalities[difficulty],timeout:null,
+    log:[
+      "A rare "+(isWerewolf?"Werewolf":"Slime Lord")+" has emerged after your "+difficulty.toUpperCase()+" victory.",
+      "Boss stats scale to the difficulty of the battle that triggered this encounter.",
+      "Your HP is fully restored and temporary combat effects are reset for this fresh battle."
     ],
-    playerName:previousFight.playerName || "You", isSlimeBoss:true, bossDifficulty:difficulty,
+    playerName:previousFight.playerName||"You",
+    isSlimeBoss:!isWerewolf,isEventBoss:true,bossType:isWerewolf?"werewolf":"slimeLord",bossDifficulty:difficulty
   };
-  // Reserve the player slot before awaiting Discord so another fight cannot start concurrently.
+  // Reserve the player's slot before Discord I/O to prevent concurrent fights.
   _state.activeBotFights.set(fightId,fight);
   _state.activeBotFights.set(playerId,fightId);
   try {
     const msg=await channel.send(buildBotFightMessagePayload(fight,fight.log,"playing"));
     _state.fightMessages.set(fightId,msg);
     fight.timeout=setTimeout(()=>{
-      if (_state.activeBotFights.get(fightId)===fight) {
+      if(_state.activeBotFights.get(fightId)===fight) {
         endBotFight(channel,fightId,"bot","player",difficulty,"timeout")
-          .catch(error=>console.error("[Slime Lord boss] Initial timeout resolution failed:",error?.stack||error));
+          .catch(error=>console.error("["+ (isWerewolf?"Werewolf":"Slime Lord") +" boss] Initial timeout resolution failed:",error?.stack||error));
       }
     },120000);
   } catch(error) {
-    if (_state.activeBotFights.get(fightId)===fight) _state.activeBotFights.delete(fightId);
-    if (_state.activeBotFights.get(playerId)===fightId) _state.activeBotFights.delete(playerId);
-    console.error("[Slime Lord boss] Failed to start boss encounter:",error?.stack||error);
+    if(_state.activeBotFights.get(fightId)===fight) _state.activeBotFights.delete(fightId);
+    if(_state.activeBotFights.get(playerId)===fightId) _state.activeBotFights.delete(playerId);
+    console.error("["+ (isWerewolf?"Werewolf":"Slime Lord") +" boss] Failed to start encounter:",error?.stack||error);
   }
 }
 
-async function finishSlimeLordBoss(channel, fight, winner, reason) {
+async function finishSlimeLordBoss(channel,fight,winner,reason) {
   const won=winner==="player";
-  let unlocked=false, alreadyUnlocked=false, saveFailed=false, unlockMissed=false;
-  if (won && reason!=="timeout") {
-    const current=_state.userSpecies.get(fight.playerId) || {
-      species:humanSpecies, originalSpecies:humanSpecies, questSpecies:{}, rolls:0,
-      requestsEnabled:true, lastSwitch:0, awakening:{}, badges:[],
+  const isWerewolf=fight.bossType==="werewolf";
+  const speciesKey=isWerewolf?"werewolf":"slimeLord";
+  const label=isWerewolf?"Werewolf":"Slime Lord";
+  const unlockChance=isWerewolf?0.05:0.092;
+  let unlocked=false,alreadyUnlocked=false,saveFailed=false,unlockMissed=false;
+  if(won && reason!=="timeout") {
+    const current=_state.userSpecies.get(fight.playerId)||{
+      species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},rolls:0,speciesTokens:0,candies:0,
+      level:1,xp:0,requestsEnabled:true,lastSwitch:0,awakening:{},badges:[]
     };
-    alreadyUnlocked=current.questSpecies?.slimeLord?.unlocked===true;
-    if (!alreadyUnlocked && Math.random()<0.092) {
-      const updated={
-        ...current,
-        questSpecies:{
-          ...(current.questSpecies||{}),
-          slimeLord:{ ...(current.questSpecies?.slimeLord||{}), unlocked:true, equipped:false, source:"boss" },
-        },
-      };
-      const saved=await database.saveUserSpecies(fight.playerId,updated);
-      if (saved) {
-        _state.userSpecies.set(fight.playerId,updated);
+    alreadyUnlocked=current.questSpecies?.[speciesKey]?.unlocked===true;
+    if(!alreadyUnlocked && Math.random()<unlockChance) {
+      const saved=await database.grantBossSpeciesUnlock(fight.playerId,speciesKey,fight.fightId);
+      if(saved?.ok) {
+        current.questSpecies={...(current.questSpecies||{}),[speciesKey]:{...(current.questSpecies?.[speciesKey]||{}),unlocked:true,equipped:false,source:"boss"}};
+        _state.userSpecies.set(fight.playerId,current);
         unlocked=true;
       } else saveFailed=true;
-    } else if (!alreadyUnlocked) unlockMissed=true;
+    } else if(!alreadyUnlocked) unlockMissed=true;
   }
-
-  const playerMention="<@" + fight.playerId + ">";
-  const header=won ? playerMention + " defeated the Slime Lord boss!" : playerMention + " was defeated by the Slime Lord boss.";
-  let desc="**Difficulty:** " + String(fight.difficulty).toUpperCase() + "\n";
-  desc+="**Your HP:** " + formatFightHealth(won?fight.playerHp:0,fight.playerMaxHp) + "\n";
-  desc+="**Boss HP:** " + formatFightHealth(won?0:fight.botHp,fight.botMaxHp) + "\n\n";
-  if (reason==="timeout" && won) desc+="The encounter ended on a technical timeout, so no species-unlock roll was granted.\n";
-  else if (unlocked) desc+="🫧 **Slime Lord permanently unlocked!** Use /switch to equip it.\n";
-  else if (alreadyUnlocked) desc+="You already have Slime Lord permanently unlocked.\n";
-  else if (saveFailed) desc+="The unlock roll succeeded, but MongoDB couldn't confirm the save. The species has not been reported as unlocked; please contact an owner to verify it.\n";
-  else if (unlockMissed) desc+="The Slime Lord did not yield its essence this time. Unlock chance: **9.2%**.\n";
-  else if (!won) desc+="Defeat the boss to roll for its permanent species unlock.\n";
+  const playerMention="<@"+fight.playerId+">";
+  const header=won?playerMention+" defeated the "+label+" boss!":playerMention+" was defeated by the "+label+" boss.";
+  let desc="**Difficulty:** "+String(fight.difficulty).toUpperCase()+"\n";
+  desc+="**Your HP:** "+formatFightHealth(won?fight.playerHp:0,fight.playerMaxHp)+"\n";
+  desc+="**Boss HP:** "+formatFightHealth(won?0:fight.botHp,fight.botMaxHp)+"\n\n";
+  if(unlocked) desc+=(isWerewolf?"🐺 **Werewolf permanently unlocked!**":"🫧 **Slime Lord permanently unlocked!**")+" Use /switch to equip it.\n";
+  else if(alreadyUnlocked) desc+="You already have "+label+" permanently unlocked.\n";
+  else if(saveFailed) desc+="The unlock roll succeeded, but MongoDB could not verify the save. The species was not reported as unlocked; please contact an owner to verify it.\n";
+  else if(unlockMissed) desc+="The "+label+" did not yield its essence this time. Unlock chance: **"+(unlockChance*100).toFixed(1)+"%**.\n";
+  else if(!won) desc+="Defeat the boss to roll for its permanent species unlock.\n";
   const msg=_state.fightMessages.get(fight.fightId);
-  if (msg) await msg.edit({ content:null, embeds:null, ...buildFightResultPayload(header,desc,won?0x2dd4bf:0x8b0000,[]) }).catch(()=>{});
+  if(msg) await msg.edit({content:null,embeds:null,...buildFightResultPayload(header,desc,won?(isWerewolf?0x7c3aed:0x2dd4bf):0x8b0000,[])}).catch(()=>{});
   _state.activeBotFights.delete(fight.fightId);
   _state.activeBotFights.delete(fight.playerId);
   _state.fightMessages.delete(fight.fightId);
@@ -566,12 +586,13 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
   await commitFightProgress(fight,fight.playerId,fight.playerSpecies);
   // Count completed battles before the Slime Lord boss early-return as well.
   await questSystem.trackProgress(fight.playerId,"battles",1);
-  await achievementSystem.recordBattle(fight.playerId,fight.playerSpecies,{won:winner==="player",mode:"bot",boss:Boolean(fight.isSlimeBoss)});
+  await achievementSystem.recordBattle(fight.playerId,fight.playerSpecies,{won:winner==="player",mode:"bot",boss:Boolean(fight.isEventBoss)});
+  const progressionResult=await leveling.awardFightProgress({state:_state,channel,fight,userId:fight.playerId,mode:"bot",difficulty,won:winner==="player",reason,boss:Boolean(fight.isEventBoss)});
   if (winner==="player" && reason!=="timeout") {
     await questSystem.trackProgress(fight.playerId,"botWins",1);
     if (difficulty==="brutal") await questSystem.trackProgress(fight.playerId,"brutalWins",1);
   }
-  if (fight.isSlimeBoss) {
+  if (fight.isEventBoss) {
     await finishSlimeLordBoss(channel,fight,winner,reason);
     return;
   }
@@ -605,8 +626,9 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
     desc += "⚔️ Leaderboard: +" + winsEarned + "\n";
     if (rollEarned) desc += "<:reroll_dice:1558042108965822515> Species Rolls: +1\n";
   } else {
-    desc += "No rewards earned.";
+    desc += reason==="timeout" ? "No progression rewards earned." : "Level progression and event rewards recorded.";
   }
+  if(progressionResult?.ok) desc += "\n⭐ Level progression recorded.";
   const resultPayload = buildFightResultPayload(header, desc, won ? 0x2ecc71 : 0xe74c3c, []);
   const msg = _state.fightMessages.get(fightId);
   if (msg) await msg.edit({ content: null, embeds: null, ...resultPayload }).catch(() => {});
@@ -615,8 +637,9 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
   _state.fightMessages.delete(fightId);
 
   // Only genuine wins against regular bots can trigger the rare boss encounter.
-  if (won && !fight.isSlimeBoss && reason!=="timeout" && Math.random()<0.075) {
-    await startSlimeLordBoss(channel,fight);
+  if (won && !fight.isEventBoss && reason!=="timeout" && ["medium","hard","impossible","brutal"].includes(difficulty) && Math.random()<0.075) {
+    const selectedBoss=Math.random()<0.6?"slimeLord":"werewolf";
+    await startSlimeLordBoss(channel,fight,selectedBoss);
   }
   } catch (error) {
     console.error("[Bot fight " + fightId + "] Fight resolution failed; releasing the fight lock:", error?.stack || error);
