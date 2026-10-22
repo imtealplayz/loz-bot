@@ -1970,8 +1970,9 @@ async function applyBattleLevelingReward(userId,rewardKey,{xpDelta=0,candiesDelt
       const old=resolveStoredLevel(beforeRecords);
       const progress=advanceLevel(old,xpDelta);
       const milestones=getLevelMilestones(progress.previousLevel,progress.level);
-      const candyReward=Math.max(0,Math.floor(Number(candiesDelta)||0))
-        + progress.levelsGained*Math.max(0,Math.floor(Number(candyPerLevel)||0));
+      const halloweenActive=Date.now()<Date.parse("2026-11-01T00:00:00+05:30");
+      const candyReward=(halloweenActive?Math.max(0,Math.floor(Number(candiesDelta)||0)):0)
+        +(halloweenActive?progress.levelsGained*Math.max(0,Math.floor(Number(candyPerLevel)||0)):0);
       const increments={candies:candyReward,rolls:milestones.rolls,speciesTokens:milestones.tokens};
       const saved=await User.updateMany(active,{$set:{level:progress.level,xp:progress.xp},$inc:increments},{session});
       const matched=Number(saved.matchedCount??saved.n??saved.modifiedCount??0);
@@ -2008,6 +2009,7 @@ async function purchaseHalloweenXp(userId,expectedCandies) {
     if(!await connect()) return {ok:false,status:"database-error"};
     session=await mongoose.startSession();
     await session.withTransaction(async()=>{
+      if(Date.now()>=Date.parse("2026-11-01T00:00:00+05:30")) throw new Error("SHOP_EVENT_ENDED");
       const active={userId:uid,archivedForRepair:{$ne:true}};
       const beforeRecords=await User.find(active).select({userId:1,level:1,xp:1,candies:1}).session(session).lean();
       if(!beforeRecords.length) throw new Error("LEVEL_NO_ACTIVE_PROFILE");
@@ -2086,13 +2088,15 @@ async function getHalloweenShopState(userId) {
     }
     if(!global||!document) return {ok:false,status:"database-error"};
     const users=await User.find({userId:uid,archivedForRepair:{$ne:true}}).select({candies:1,rolls:1,speciesTokens:1,questSpecies:1,originalSpecies:1,level:1,xp:1}).lean();
-    const minBalance=field=>users.length?Math.max(0,Math.min(...users.map(record=>Number(record[field])||0))):0;
+    if(!users.length) return {ok:false,status:"no-profile"};
+    const levelProgress=resolveStoredLevel(users);
+    const minBalance=field=>Math.max(0,Math.min(...users.map(record=>Number(record[field])||0)));
     const reaperUnlocked=users.some(record=>record.questSpecies?.reaper?.unlocked===true||record.originalSpecies?.name==="Reaper");
     return {
       ok:true,eventActive:now<Date.parse("2026-11-01T00:00:00+05:30"),
       candies:minBalance("candies"),rolls:minBalance("rolls"),tokens:minBalance("speciesTokens"),
-      level:users.length?Math.max(1,...users.map(record=>Math.min(500,Number(record.level)||1))):1,
-      xp:users.length?Math.max(0,...users.map(record=>Number(record.xp)||0)):0,
+      level:levelProgress.level,
+      xp:levelProgress.xp,
       rollsStock:Math.max(0,Number(document.data?.rollsStock)||0),
       tokensStock:Math.max(0,Number(document.data?.tokensStock)||0),
       restockAt:Number(document.data?.restockAt)||now+60*60*1000,
@@ -2127,7 +2131,9 @@ async function purchaseHalloweenItem(userId,item,quantity,expectedRestockAt,expe
     if(!await connect()) return {ok:false,status:"database-error"};
     session=await mongoose.startSession();
     await session.withTransaction(async()=>{
-      const now=Date.now(),userKey="user:"+uid;
+      const now=Date.now();
+      if(now>=Date.parse("2026-11-01T00:00:00+05:30")) throw new Error("SHOP_EVENT_ENDED");
+      const userKey="user:"+uid;
       let reserved;
       if(item==="reaper") {
         reserved=await EventShopState.updateOne({key:"halloween:global","data.reaperStock":{$gte:1}},{$inc:{"data.reaperStock":-1},$set:{updatedAt:new Date(now)}},{session});
@@ -2170,7 +2176,7 @@ async function purchaseHalloweenItem(userId,item,quantity,expectedRestockAt,expe
     return result||{ok:false,status:"database-error"};
   } catch(error) {
     const message=String(error?.message||"");
-    const status=message==="SHOP_OUT_OF_STOCK"?"out-of-stock":message==="SHOP_NO_PROFILE"?"no-profile":
+    const status=message==="SHOP_EVENT_ENDED"?"event-ended":message==="SHOP_OUT_OF_STOCK"?"out-of-stock":message==="SHOP_NO_PROFILE"?"no-profile":
       message==="SHOP_BALANCE_CHANGED"?"balance-changed":message==="SHOP_INSUFFICIENT"?"insufficient-candies":message==="SHOP_ALREADY_UNLOCKED"?"already-unlocked":
       message==="SHOP_RACE"?"retry":message==="SHOP_VERIFY"?"verification-failed":"database-error";
     if(status==="database-error"||status==="verification-failed") console.error("[Halloween Shop] Purchase failed:",error?.stack||error);
