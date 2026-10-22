@@ -53,6 +53,9 @@ const userSchema = new mongoose.Schema({
   questSpecies:    { type:Object, default:{} },
   rolls:           { type:Number, default:0 },
   speciesTokens:   { type:Number, default:0 },
+  level:           { type:Number, min:1, max:500, default:1 },
+  xp:              { type:Number, min:0, max:99, default:0 },
+  candies:         { type:Number, min:0, default:0 },
   guideRewardClaimed:{ type:Boolean, default:false },
   requestsEnabled: { type:Boolean, default:true },
   lastSwitch:      { type:Number, default:0 },
@@ -158,9 +161,9 @@ const accessBanSchema = new mongoose.Schema({
 
 const redemptionCodeSchema = new mongoose.Schema({
   code:                { type:String, required:true, unique:true, uppercase:true, trim:true },
-  rewardType:          { type:String, enum:["rolls","tokens"], required:true },
+  rewardType:          { type:String, enum:["rolls","tokens","candies"], required:true },
   amount:              { type:Number, required:true, min:1 },
-  additionalRewardType:{ type:String, enum:["rolls","tokens"], default:null },
+  additionalRewardType:{ type:String, enum:["rolls","tokens","candies"], default:null },
   additionalAmount:    { type:Number, min:1, default:null },
   createdBy:           { type:String, required:true },
   createdAt:           { type:Date, default:Date.now },
@@ -201,6 +204,28 @@ const achievementProfileSchema = new mongoose.Schema({
   data:{type:Object,default:{},minimize:false},
 },{minimize:false});
 const AchievementProfile = mongoose.model("AchievementProfile", achievementProfileSchema);
+
+// Unique receipts make battle rewards idempotent across restarts without growing user documents.
+const BattleRewardReceipt = mongoose.model("BattleRewardReceipt", new mongoose.Schema({
+  key:{type:String,required:true,unique:true,index:true},
+  userId:{type:String,required:true,index:true},
+  createdAt:{type:Date,default:Date.now},
+}, {minimize:false}));
+
+const EventShopState = mongoose.model("EventShopState", new mongoose.Schema({
+  key:{type:String,required:true,unique:true,index:true},
+  data:{type:Object,default:{},minimize:false},
+  updatedAt:{type:Date,default:Date.now},
+}, {minimize:false}));
+
+const pvpRewardWindowSchema = new mongoose.Schema({
+  key:{type:String,required:true,unique:true,index:true},
+  rewardsCount:{type:Number,default:0},
+  fightIds:{type:[String],default:[]},
+  expiresAt:{type:Date,required:true},
+}, {minimize:false});
+pvpRewardWindowSchema.index({expiresAt:1},{expireAfterSeconds:0});
+const PvpRewardWindow = mongoose.model("PvpRewardWindow", pvpRewardWindowSchema);
 
 // ==================== HELPERS ====================
 async function upsert(Model, filter, data) {
@@ -1206,8 +1231,11 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
         species:         obj.species         || null,
         originalSpecies: obj.originalSpecies || null,
         questSpecies:    obj.questSpecies    || {},
-        rolls:           obj.rolls           || 0,
+        rolls:           Math.max(0, ...records.map(record => Number(record.rolls)||0)),
         speciesTokens:   Math.max(0, ...records.map(record => Number(record.speciesTokens)||0)),
+        level:           Math.max(1, ...records.map(record => Math.min(500, Number(record.level)||1))),
+        xp:              0,
+        candies:         Math.max(0, ...records.map(record => Number(record.candies)||0)),
         guideRewardClaimed:records.some(record => record.guideRewardClaimed === true),
         requestsEnabled: obj.requestsEnabled !== false,
         lastSwitch:      obj.lastSwitch      || 0,
@@ -1216,6 +1244,8 @@ async function loadAllData(userSpecies, leaderboard, fightLeaderboard, fightStat
         giftReceived:    obj.giftReceived    || { count:0, resetAt:0 },
         badges:          obj.badges          || [],
       };
+      const highestSavedLevel=d.level;
+      d.xp=highestSavedLevel>=500?0:Math.max(0,Math.min(99,...records.filter(record=>Math.min(500,Number(record.level)||1)===highestSavedLevel).map(record=>Number(record.xp)||0)));
       userSpecies.set(uid, d);
       if (d.species && d.species.name) withSpecies++;
       if (d.rolls > 0) withRolls++;
@@ -1714,7 +1744,7 @@ async function createRedeemCode({
   try {
     if(userRepairPromise) await userRepairPromise;
     if(!await connect()) return {ok:false,status:"database-error"};
-    const normalized=normalizeRedeemCode(code),reward=rewardType==="tokens"?"tokens":"rolls";
+    const normalized=normalizeRedeemCode(code),reward=["rolls","tokens","candies"].includes(rewardType)?rewardType:"rolls";
     const quantity=Math.floor(Number(amount)),claims=Math.floor(Number(maxClaims??1000));
     const additionalReward=additionalRewardType==null?null:additionalRewardType;
     const extraQuantity=additionalReward?Math.floor(Number(additionalAmount??quantity)):null;
@@ -1730,7 +1760,7 @@ async function createRedeemCode({
     if(!Number.isSafeInteger(quantity)||quantity<1||quantity>1000000
       ||!Number.isSafeInteger(claims)||claims<0||claims>100000
       ||(expiryDate!==null&&(!Number.isFinite(expiryDate.getTime())||expiryDate.getTime()<=now))
-      ||(additionalReward!==null&&!["rolls","tokens"].includes(additionalReward))
+      ||(additionalReward!==null&&!["rolls","tokens","candies"].includes(additionalReward))
       ||(additionalReward!==null&&additionalReward===reward)
       ||(additionalReward!==null&&(!Number.isSafeInteger(extraQuantity)||extraQuantity<1||extraQuantity>1000000))) return {ok:false,status:"invalid-values"};
     const record=await RedemptionCode.create({
@@ -1746,36 +1776,40 @@ async function createRedeemCode({
   }
 }
 
-async function ensureDefaultRedeemCode({ code, rewardType="rolls", amount=3, expiresMinutes=1440, maxClaims=1000, createdBy }) {
+async function ensureDefaultRedeemCode({ code, rewardType="rolls", amount=3, expiresMinutes=1440, expiresAt, maxClaims=1000, additionalRewardType=null, additionalAmount=null, createdBy }) {
   try {
     if (userRepairPromise) await userRepairPromise;
     if (!await connect()) return { ok:false, status:"database-error" };
     const normalized = normalizeRedeemCode(code);
     const existing = await RedemptionCode.findOne({ code:normalized }).lean();
+    // Existing reward settings, claims, and expiry are deliberately never changed on restart.
     if (existing) return { ok:true, created:false, code:existing };
     const now = Date.now();
+    const primary=["rolls","tokens","candies"].includes(rewardType)?rewardType:"rolls";
+    const extra=additionalRewardType==null?null:(["rolls","tokens","candies"].includes(additionalRewardType)?additionalRewardType:null);
+    const expiry=expiresAt!==undefined?(expiresAt===null?null:new Date(expiresAt)):
+      (Number(expiresMinutes??1440)>0?new Date(now+Math.max(1,Math.floor(Number(expiresMinutes??1440)))*60000):null);
+    const quantity=Math.max(1,Math.floor(Number(amount)||1));
+    const extraQuantity=extra?Math.max(1,Math.floor(Number(additionalAmount??quantity)||quantity)):null;
+    if(!/^[A-Z0-9._-]{3,32}$/.test(normalized)
+      ||(expiry!==null&&(!Number.isFinite(expiry.getTime())||expiry.getTime()<=now))
+      ||(extra!==null&&(extra===primary||!Number.isSafeInteger(extraQuantity)||extraQuantity<1||extraQuantity>1000000))) return {ok:false,status:"invalid-values"};
     try {
-      const record = await RedemptionCode.create({
-        code:normalized,
-        rewardType:rewardType === "tokens" ? "tokens" : "rolls",
-        amount:Math.max(1,Math.floor(Number(amount)||1)),
-        createdBy:String(createdBy || "system"),
-        createdAt:new Date(now),
-        expiresAt:(Number(expiresMinutes??1440)>0 ? new Date(now+Math.max(1,Math.floor(Number(expiresMinutes??1440)))*60000) : null),
-        maxClaims:Math.max(0,Math.floor(Number(maxClaims??1000))),
-        claimedCount:0,
-        claimedUserIds:[],
-        rewardedUserIds:[],
+      const record=await RedemptionCode.create({
+        code:normalized,rewardType:primary,amount:quantity,
+        additionalRewardType:extra,additionalAmount:extraQuantity,
+        createdBy:String(createdBy||"system"),createdAt:new Date(now),expiresAt:expiry,
+        maxClaims:Math.max(0,Math.floor(Number(maxClaims??1000))),claimedCount:0,claimedUserIds:[],rewardedUserIds:[],
       });
-      return { ok:true, created:true, code:record.toObject() };
+      return {ok:true,created:true,code:record.toObject()};
     } catch(error) {
-      if (error?.code !== 11000) throw error;
-      const raced = await RedemptionCode.findOne({ code:normalized }).lean();
-      return raced ? { ok:true, created:false, code:raced } : { ok:false, status:"database-error" };
+      if(error?.code!==11000) throw error;
+      const raced=await RedemptionCode.findOne({code:normalized}).lean();
+      return raced?{ok:true,created:false,code:raced}:{ok:false,status:"database-error"};
     }
   } catch(error) {
-    console.error("[Codes] Could not seed default redemption code:", error?.message || error);
-    return { ok:false, status:"database-error" };
+    console.error("[Codes] Could not seed default redemption code:",error?.message||error);
+    return {ok:false,status:"database-error"};
   }
 }
 
@@ -1846,13 +1880,13 @@ async function redeemCode(userId, rawCode) {
       }
     }
     const activeFilter={userId:uid,archivedForRepair:{$ne:true}};
-    const existingUsers=await User.find(activeFilter).select({redeemedCodeIds:1,rolls:1,speciesTokens:1}).lean();
-    const rewardField=record.rewardType==="tokens"?"speciesTokens":"rolls";
+    const existingUsers=await User.find(activeFilter).select({redeemedCodeIds:1,rolls:1,speciesTokens:1,candies:1}).lean();
+    const rewardField=record.rewardType==="tokens"?"speciesTokens":record.rewardType==="candies"?"candies":"rolls";
     const hasReward=u=>Array.isArray(u?.redeemedCodeIds)&&u.redeemedCodeIds.includes(codeId);
     const alreadyAppliedEverywhere=existingUsers.length>0&&existingUsers.every(hasReward);
     const increments={[rewardField]:Number(record.amount)||1};
-    if(record.additionalRewardType==="rolls"||record.additionalRewardType==="tokens") {
-      const additionalField=record.additionalRewardType==="tokens"?"speciesTokens":"rolls";
+    if(record.additionalRewardType==="rolls"||record.additionalRewardType==="tokens"||record.additionalRewardType==="candies") {
+      const additionalField=record.additionalRewardType==="tokens"?"speciesTokens":record.additionalRewardType==="candies"?"candies":"rolls";
       increments[additionalField]=(Number(increments[additionalField])||0)+(Number(record.additionalAmount)||1);
     }
     if(!alreadyAppliedEverywhere) await User.updateMany(
@@ -1860,7 +1894,7 @@ async function redeemCode(userId, rawCode) {
       {$inc:increments,$addToSet:{redeemedCodeIds:codeId},$set:{userId:uid,archivedForRepair:false}},
       {upsert:existingUsers.length===0},
     );
-    const refreshedUsers=await User.find(activeFilter).select({redeemedCodeIds:1,rolls:1,speciesTokens:1}).lean();
+    const refreshedUsers=await User.find(activeFilter).select({redeemedCodeIds:1,rolls:1,speciesTokens:1,candies:1}).lean();
     if(!refreshedUsers.length||!refreshedUsers.every(hasReward)) return {ok:false,status:"reward-pending",reserved:!reservedHere,code:record};
     await RedemptionCode.updateOne({_id:record._id},{$addToSet:{rewardedUserIds:uid}});
     const latest=await RedemptionCode.findOne({_id:record._id}).lean();
@@ -1869,6 +1903,7 @@ async function redeemCode(userId, rawCode) {
     const balances={
       rolls:Math.max(0,...refreshedUsers.map(u=>Number(u.rolls)||0)),
       tokens:Math.max(0,...refreshedUsers.map(u=>Number(u.speciesTokens)||0)),
+      candies:Math.max(0,...refreshedUsers.map(u=>Number(u.candies)||0)),
     };
     return {
       ok:true,alreadyRedeemed:alreadyAppliedEverywhere,rewardType:record.rewardType,amount:Number(record.amount)||1,
@@ -1883,7 +1918,208 @@ async function redeemCode(userId, rawCode) {
 }
 
 // ==================== EXPORTS ====================
+async function applyBattleLevelingReward(userId,rewardKey,{level,xp,candiesDelta=0,rollsDelta=0,tokensDelta=0}={}) {
+  const uid=String(userId||""),key=String(rewardKey||"");
+  if(!/^\\d{17,20}$/.test(uid)||!key||key.length>200) return {ok:false,status:"invalid"};
+  let session=null;
+  try {
+    if(userRepairPromise) await userRepairPromise;
+    if(!await connect()) return {ok:false,status:"database-error"};
+    session=await mongoose.startSession();
+    let result=null;
+    await session.withTransaction(async()=>{
+      await BattleRewardReceipt.create([{key:uid+":"+key,userId:uid}],{session});
+      const active={userId:uid,archivedForRepair:{$ne:true}};
+      const existing=await User.find(active).select({userId:1}).session(session).lean();
+      if(!existing.length) throw new Error("LEVEL_NO_ACTIVE_PROFILE");
+      const nextLevel=Math.max(1,Math.min(500,Math.floor(Number(level)||1)));
+      const nextXP=nextLevel>=500?0:Math.max(0,Math.min(99,Math.floor(Number(xp)||0)));
+      const increments={candies:Math.max(0,Math.floor(Number(candiesDelta)||0)),rolls:Math.max(0,Math.floor(Number(rollsDelta)||0)),speciesTokens:Math.max(0,Math.floor(Number(tokensDelta)||0))};
+      const saved=await User.updateMany(active,{$set:{level:nextLevel,xp:nextXP},$inc:increments},{session});
+      const modified=Number(saved.modifiedCount??saved.nModified??0);
+      if(modified!==existing.length) throw new Error("LEVEL_PROFILE_WRITE_MISMATCH");
+      const records=await User.find(active).select({level:1,xp:1,candies:1,rolls:1,speciesTokens:1}).session(session).lean();
+      if(records.length!==existing.length) throw new Error("LEVEL_PROFILE_VERIFY_FAILED");
+      result={
+        level:Math.max(1,...records.map(record=>Math.min(500,Number(record.level)||1))),
+        xp:0,
+        candies:Math.max(0,Math.min(...records.map(record=>Number(record.candies)||0))),
+        rolls:Math.max(0,Math.min(...records.map(record=>Number(record.rolls)||0))),
+        speciesTokens:Math.max(0,Math.min(...records.map(record=>Number(record.speciesTokens)||0))),
+      };
+      if(result.level<500) {
+        const matching=records.filter(record=>Math.min(500,Number(record.level)||1)===result.level);
+        result.xp=Math.max(0,Math.min(99,...matching.map(record=>Number(record.xp)||0)));
+      }
+    });
+    return result?{ok:true,duplicate:false,user:result}:{ok:false,status:"database-error"};
+  } catch(error) {
+    if(error?.code===11000) return {ok:true,duplicate:true};
+    const message=String(error?.message||"");
+    if(message==="LEVEL_NO_ACTIVE_PROFILE") return {ok:false,status:"missing-user"};
+    console.error("[Leveling] Could not persist battle progression:",error?.stack||error);
+    return {ok:false,status:"database-error"};
+  } finally {
+    if(session) await session.endSession().catch(()=>{});
+  }
+}
+
+function makeHalloweenRestock(now) {
+  return {
+    rollsStock:Math.floor(Math.random()*46)+5,
+    tokensStock:Math.random()<0.15?Math.floor(Math.random()*3)+1:0,
+    restockAt:now+60*60*1000,
+    stockGeneratedAt:now,
+  };
+}
+async function getHalloweenShopState(userId) {
+  try {
+    if(userRepairPromise) await userRepairPromise;
+    if(!await connect()) return {ok:false,status:"database-error"};
+    const uid=String(userId||"");
+    if(!/^\\d{17,20}$/.test(uid)) return {ok:false,status:"invalid-user"};
+    const now=Date.now(),userKey="user:"+uid;
+    let document=await EventShopState.findOne({key:userKey}).lean();
+    if(!document) {
+      try {
+        document=await EventShopState.findOneAndUpdate({key:userKey},{$setOnInsert:{key:userKey,data:makeHalloweenRestock(now),updatedAt:new Date(now)}},{upsert:true,new:true}).lean();
+      } catch(error) {
+        if(error?.code!==11000) throw error;
+        document=await EventShopState.findOne({key:userKey}).lean();
+      }
+    }
+    if(!document||!document.data||Number(document.data.restockAt)<=now) {
+      const filter=!document?{key:userKey}:Number(document.data?.restockAt)>0?{key:userKey,"data.restockAt":document.data.restockAt}:{key:userKey,"data.restockAt":{$exists:false}};
+      const refreshed=await EventShopState.findOneAndUpdate(filter,{$set:{data:makeHalloweenRestock(now),updatedAt:new Date(now)}},{new:true}).lean();
+      document=refreshed||await EventShopState.findOne({key:userKey}).lean();
+    }
+    let global=await EventShopState.findOne({key:"halloween:global"}).lean();
+    if(!global) {
+      try {
+        global=await EventShopState.findOneAndUpdate({key:"halloween:global"},{$setOnInsert:{key:"halloween:global",data:{reaperStock:50},updatedAt:new Date(now)}},{upsert:true,new:true}).lean();
+      } catch(error) {
+        if(error?.code!==11000) throw error;
+        global=await EventShopState.findOne({key:"halloween:global"}).lean();
+      }
+    }
+    if(!global||!document) return {ok:false,status:"database-error"};
+    const users=await User.find({userId:uid,archivedForRepair:{$ne:true}}).select({candies:1,rolls:1,speciesTokens:1,questSpecies:1,originalSpecies:1,level:1,xp:1}).lean();
+    const minBalance=field=>users.length?Math.max(0,Math.min(...users.map(record=>Number(record[field])||0))):0;
+    const reaperUnlocked=users.some(record=>record.questSpecies?.reaper?.unlocked===true||record.originalSpecies?.name==="Reaper");
+    return {
+      ok:true,eventActive:now<Date.parse("2026-11-01T00:00:00+05:30"),
+      candies:minBalance("candies"),rolls:minBalance("rolls"),tokens:minBalance("speciesTokens"),
+      level:users.length?Math.max(1,...users.map(record=>Math.min(500,Number(record.level)||1))):1,
+      xp:users.length?Math.max(0,...users.map(record=>Number(record.xp)||0)):0,
+      rollsStock:Math.max(0,Number(document.data?.rollsStock)||0),
+      tokensStock:Math.max(0,Number(document.data?.tokensStock)||0),
+      restockAt:Number(document.data?.restockAt)||now+60*60*1000,
+      reaperStock:Math.max(0,Number(global.data?.reaperStock??50)||0),reaperUnlocked,
+    };
+  } catch(error) {
+    console.error("[Halloween Shop] Could not load shop state:",error?.stack||error);
+    return {ok:false,status:"database-error"};
+  }
+}
+async function purchaseHalloweenItem(userId,item,quantity,expectedRestockAt) {
+  const uid=String(userId||""),qty=Math.floor(Number(quantity));
+  if(!/^\\d{17,20}$/.test(uid)||!["rolls","tokens","reaper"].includes(item)||!Number.isSafeInteger(qty)||qty<1||qty>25) return {ok:false,status:"invalid"};
+  if(Date.now()>=Date.parse("2026-11-01T00:00:00+05:30")) return {ok:false,status:"event-ended"};
+  if(item==="reaper"&&qty!==1) return {ok:false,status:"invalid"};
+  if(item==="tokens"&&qty>3) return {ok:false,status:"invalid"};
+  const preview=await getHalloweenShopState(uid);
+  if(!preview.ok) return preview;
+  if(!preview.eventActive) return {ok:false,status:"event-ended"};
+  if(item!=="reaper") {
+    if(Number(preview.restockAt)!==Number(expectedRestockAt)) return {ok:false,status:"restocked"};
+    const available=item==="rolls"?preview.rollsStock:preview.tokensStock;
+    if(qty>available) return {ok:false,status:"out-of-stock"};
+  }
+  const cost=item==="rolls"?qty*50:item==="tokens"?qty*1000:2250;
+  let session=null,result=null;
+  try {
+    if(userRepairPromise) await userRepairPromise;
+    if(!await connect()) return {ok:false,status:"database-error"};
+    session=await mongoose.startSession();
+    await session.withTransaction(async()=>{
+      const now=Date.now(),userKey="user:"+uid;
+      let reserved;
+      if(item==="reaper") {
+        reserved=await EventShopState.updateOne({key:"halloween:global","data.reaperStock":{$gte:1}},{$inc:{"data.reaperStock":-1},$set:{updatedAt:new Date(now)}},{session});
+      } else {
+        const stockField=item==="rolls"?"rollsStock":"tokensStock";
+        reserved=await EventShopState.updateOne({key:userKey,"data.restockAt":Number(expectedRestockAt),["data."+stockField]:{$gte:qty}},{$inc:{["data."+stockField]:-qty},$set:{updatedAt:new Date(now)}},{session});
+      }
+      if(Number(reserved?.modifiedCount??reserved?.nModified??0)!==1) throw new Error("SHOP_OUT_OF_STOCK");
+      const active={userId:uid,archivedForRepair:{$ne:true}};
+      const records=await User.find(active).select({candies:1,questSpecies:1,originalSpecies:1}).session(session).lean();
+      if(!records.length) throw new Error("SHOP_NO_PROFILE");
+      if(records.some(record=>(Number(record.candies)||0)<cost)) throw new Error("SHOP_INSUFFICIENT");
+      if(item==="reaper"&&records.some(record=>record.questSpecies?.reaper?.unlocked===true||record.originalSpecies?.name==="Reaper")) throw new Error("SHOP_ALREADY_UNLOCKED");
+      const increments={candies:-cost};
+      if(item==="rolls") increments.rolls=qty;
+      if(item==="tokens") increments.speciesTokens=qty;
+      const update={$inc:increments};
+      const conditions={...active,candies:{$gte:cost}};
+      if(item==="reaper") {
+        update.$set={"questSpecies.reaper.unlocked":true,"questSpecies.reaper.equipped":false,"questSpecies.reaper.source":"halloween-shop"};
+        conditions["questSpecies.reaper.unlocked"]={$ne:true};
+        conditions["originalSpecies.name"]={$ne:"Reaper"};
+      }
+      const changed=await User.updateMany(conditions,update,{session});
+      if(Number(changed?.modifiedCount??changed?.nModified??0)!==records.length) throw new Error("SHOP_RACE");
+      const after=await User.find(active).select({candies:1,rolls:1,speciesTokens:1,questSpecies:1}).session(session).lean();
+      if(after.length!==records.length||after.some(record=>(Number(record.candies)||0)<0)) throw new Error("SHOP_VERIFY");
+      const shopDoc=await EventShopState.findOne({key:item==="reaper"?"halloween:global":userKey}).session(session).lean();
+      const min=field=>Math.max(0,Math.min(...after.map(record=>Number(record[field])||0)));
+      result={
+        ok:true,item,quantity:qty,cost,candies:min("candies"),rolls:min("rolls"),tokens:min("speciesTokens"),
+        reaperUnlocked:after.some(record=>record.questSpecies?.reaper?.unlocked===true),
+        rollsStock:item==="rolls"?Math.max(0,Number(shopDoc?.data?.rollsStock)||0):undefined,
+        tokensStock:item==="tokens"?Math.max(0,Number(shopDoc?.data?.tokensStock)||0):undefined,
+        reaperStock:item==="reaper"?Math.max(0,Number(shopDoc?.data?.reaperStock)||0):undefined,
+      };
+    });
+    return result||{ok:false,status:"database-error"};
+  } catch(error) {
+    const message=String(error?.message||"");
+    const status=message==="SHOP_OUT_OF_STOCK"?"out-of-stock":message==="SHOP_NO_PROFILE"?"no-profile":
+      message==="SHOP_INSUFFICIENT"?"insufficient-candies":message==="SHOP_ALREADY_UNLOCKED"?"already-unlocked":
+      message==="SHOP_RACE"?"retry":message==="SHOP_VERIFY"?"verification-failed":"database-error";
+    if(status==="database-error"||status==="verification-failed") console.error("[Halloween Shop] Purchase failed:",error?.stack||error);
+    return {ok:false,status};
+  } finally {
+    if(session) await session.endSession().catch(()=>{});
+  }
+}
+async function claimPvpRewardWindow(userA,userB,fightId) {
+  const a=String(userA||""),b=String(userB||""),fid=String(fightId||"");
+  if(!/^\\d{17,20}$/.test(a)||!/^\\d{17,20}$/.test(b)||a===b||!fid) return false;
+  try {
+    if(!await connect()) return false;
+    const ids=[a,b].sort();
+    const day=new Date(Date.now()+19800000).toISOString().slice(0,10);
+    const key=day+":"+ids[0]+":"+ids[1];
+    const expiry=new Date(Date.now()+60*86400000);
+    const existing=await PvpRewardWindow.findOne({key}).lean();
+    if(!existing) {
+      try {
+        await PvpRewardWindow.create({key,rewardsCount:1,fightIds:[fid],expiresAt:expiry});
+        return true;
+      } catch(error) {
+        if(error?.code!==11000) throw error;
+      }
+    }
+    const updated=await PvpRewardWindow.findOneAndUpdate({key,rewardsCount:{$lt:3},fightIds:{$ne:fid}},{$inc:{rewardsCount:1},$addToSet:{fightIds:fid}},{new:true}).lean();
+    return Boolean(updated&&(updated.fightIds||[]).includes(fid)&&Number(updated.rewardsCount)<=3);
+  } catch(error) {
+    console.error("[Leveling] PvP reward eligibility reservation failed:",error?.message||error);
+    return false;
+  }
+}
+
 module.exports = {
+  applyBattleLevelingReward, getHalloweenShopState, purchaseHalloweenItem, claimPvpRewardWindow,
   saveUserSpecies, grantArchdemonUnlock, getArchdemonUnlockState, saveUserRolls, saveUserSpeciesFields, addSpeciesTokens, redeemSpeciesToken, awardGuideCompletionRoll, repairUserRecords,
   createRedeemCode, ensureDefaultRedeemCode, getRedeemCode, listRedeemCodes, redeemCode,
   saveLeaderboard, saveFightLeaderboard,
