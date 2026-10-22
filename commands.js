@@ -2569,6 +2569,83 @@ async function handleCommand(interaction) {
 // ==================== BUTTON HANDLER ====================
 async function handleButton(interaction) {
   const { customId, user, guild, channel, message } = interaction;
+  // Halloween shop purchase workflow. Every button is bound to the invoking user.
+  if(customId.startsWith("hshop_buy_")) {
+    const parts=customId.split("_"),item=parts[2],expectedUserId=parts[3];
+    if(user.id!==expectedUserId) return safeReply(interaction,{content:"This shop button belongs to another player.",flags:MessageFlags.Ephemeral});
+    if(!["rolls","tokens","reaper"].includes(item)) return safeReply(interaction,{content:"Invalid shop item.",flags:MessageFlags.Ephemeral});
+    if(item==="reaper") {
+      await interaction.deferReply({flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral});
+      const shop=await database.getHalloweenShopState(user.id);
+      if(!shop?.ok) return interaction.editReply(halloweenShopErrorPayload("Shop Unavailable","LOZ couldn't verify your stock or Candies. No purchase was made."));
+      if(!shop.eventActive) return interaction.editReply(halloweenShopErrorPayload("Event Ended","Halloween purchases are closed."));
+      if(shop.reaperUnlocked) return interaction.editReply(halloweenShopErrorPayload("Already Unlocked","Reaper is already unlocked for your account."));
+      if(shop.reaperStock<1) return interaction.editReply(halloweenShopErrorPayload("Out of Stock","The global Reaper stock is sold out and never restocks."));
+      if(shop.candies<2250) return interaction.editReply(halloweenShopErrorPayload("Not Enough Candies","You have "+shop.candies+" Candies; Reaper costs 2,250."));
+      return interaction.editReply(buildHalloweenPurchaseConfirmation(user.id,"reaper",1,0,shop));
+    }
+    const expectedRestockAt=Number(parts[4]);
+    if(!Number.isFinite(expectedRestockAt)||expectedRestockAt<=0) return safeReply(interaction,{content:"The hourly stock reference is invalid. Reopen /events shop.",flags:MessageFlags.Ephemeral});
+    const maxAllowed=item==="rolls"?50:3;
+    const modal=new ModalBuilder()
+      .setCustomId("hshop_quantity_"+item+"_"+user.id+"_"+expectedRestockAt)
+      .setTitle(item==="rolls"?"Buy Species Rolls":"Buy Species Token");
+    const quantityInput=new TextInputBuilder()
+      .setCustomId("quantity")
+      .setLabel("Quantity (1–"+maxAllowed+")")
+      .setStyle(TextInputStyle.Short)
+      .setMinLength(1)
+      .setMaxLength(2)
+      .setPlaceholder("Enter a whole number")
+      .setRequired(true);
+    modal.addComponents(new ActionRowBuilder().addComponents(quantityInput));
+    return interaction.showModal(modal);
+  }
+
+  if(customId.startsWith("hshop_confirm_")) {
+    const parts=customId.split("_"),item=parts[2],quantity=Number(parts[3]),restockAt=Number(parts[4]),expectedUserId=parts[5];
+    if(user.id!==expectedUserId) return safeReply(interaction,{content:"This purchase confirmation belongs to another player.",flags:MessageFlags.Ephemeral});
+    if(!["rolls","tokens","reaper"].includes(item)||!Number.isSafeInteger(quantity)||quantity<1) return safeReply(interaction,{content:"Invalid purchase confirmation.",flags:MessageFlags.Ephemeral});
+    await interaction.deferUpdate();
+    const result=await database.purchaseHalloweenItem(user.id,item,quantity,item==="reaper"?null:restockAt);
+    if(!result?.ok) {
+      const messages={
+        "event-ended":["Event Ended","Halloween purchases are closed."],
+        "restocked":["Stock Refreshed","Your hourly stock changed. Reopen /events shop and try again."],
+        "out-of-stock":["Out of Stock","The requested quantity is no longer available."],
+        "insufficient-candies":["Not Enough Candies","Your current Candy balance is lower than this purchase cost."],
+        "already-unlocked":["Already Unlocked","Reaper is already unlocked for your account."],
+        "retry":["Stock Changed","Another purchase used some stock first. Reopen /events shop and try again."],
+        "no-profile":["Profile Missing","LOZ couldn't find your active player record. No purchase was made."],
+        "verification-failed":["Purchase Not Verified","LOZ couldn't verify the database update. Contact an owner before retrying."],
+        "database-error":["Purchase Failed","MongoDB couldn't verify the purchase. No success is being reported."]
+      };
+      const [title,body]=messages[result.status]||messages["database-error"];
+      return interaction.editReply(halloweenShopErrorPayload(title,body));
+    }
+    const data=_state.userSpecies.get(user.id)||{species:humanSpecies,originalSpecies:humanSpecies,questSpecies:{},level:1,xp:0,rolls:0,speciesTokens:0,candies:0};
+    data.candies=result.candies;
+    data.rolls=result.rolls;
+    data.speciesTokens=result.tokens;
+    if(item==="reaper") data.questSpecies={...(data.questSpecies||{}),reaper:{...(data.questSpecies?.reaper||{}),unlocked:true,equipped:false,source:"halloween-shop"}};
+    _state.userSpecies.set(user.id,data);
+    const lines=[
+      "Purchased "+quantity+" "+(item==="rolls"?"Species Roll(s)":item==="tokens"?"Species Token(s)":"Reaper permanent unlock")+".",
+      "Candies remaining: "+result.candies.toLocaleString(),
+      "Species Rolls: "+result.rolls.toLocaleString(),
+      "Species Tokens: "+result.tokens.toLocaleString()
+    ];
+    if(item==="reaper") lines.push("Global Reaper stock remaining: "+result.reaperStock+". Reaper is permanently unlocked; use /switch to equip it.");
+    else lines.push("Remaining personal stock: "+(item==="rolls"?result.rollsStock:result.tokensStock)+".");
+    return interaction.editReply(buildStyledCardPayload("Purchase Complete",0x16a34a,[{body:lines.join("\\n")}],true));
+  }
+
+  if(customId.startsWith("hshop_cancel_")) {
+    const expectedUserId=customId.slice("hshop_cancel_".length);
+    if(user.id!==expectedUserId) return safeReply(interaction,{content:"This cancellation belongs to another player.",flags:MessageFlags.Ephemeral});
+    return interaction.update(buildStyledCardPayload("Purchase Cancelled",0x808080,[{body:"No Candies were spent and no stock was used."}],true));
+  }
+
   if (customId.startsWith("codes_view_")) {
     if (user.id!==_state.ownerId) {
       return safeReply(interaction,{content:"Only the primary LOZ owner can view redemption codes.",flags:64});
@@ -3394,6 +3471,30 @@ async function handleButton(interaction) {
 }
 
 
+async function handleModalSubmit(interaction) {
+  const {customId,user}=interaction;
+  if(!customId.startsWith("hshop_quantity_")) return false;
+  const parts=customId.split("_"),item=parts[2],expectedUserId=parts[3],expectedRestockAt=Number(parts[4]);
+  if(user.id!==expectedUserId) return safeReply(interaction,{content:"This shop quantity form belongs to another player.",flags:MessageFlags.Ephemeral});
+  if(!["rolls","tokens"].includes(item)||!Number.isFinite(expectedRestockAt)||expectedRestockAt<=0)
+    return safeReply(interaction,{content:"This shop quantity form is invalid. Reopen /events shop.",flags:MessageFlags.Ephemeral});
+  await interaction.deferReply({flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral});
+  const raw=String(interaction.fields.getTextInputValue("quantity")||"").trim();
+  if(!/^\d{1,2}$/.test(raw)) return interaction.editReply(halloweenShopErrorPayload("Invalid Quantity","Enter a whole number within the available stock."));
+  const quantity=Number(raw);
+  const shop=await database.getHalloweenShopState(user.id);
+  if(!shop?.ok) return interaction.editReply(halloweenShopErrorPayload("Shop Unavailable","LOZ couldn't verify your stock or Candy balance. No purchase was made."));
+  if(!shop.eventActive) return interaction.editReply(halloweenShopErrorPayload("Event Ended","Halloween purchases are closed."));
+  if(Number(shop.restockAt)!==expectedRestockAt) return interaction.editReply(halloweenShopErrorPayload("Stock Refreshed","Your hourly stock refreshed while this form was open. Reopen /events shop."));
+  const stock=item==="rolls"?shop.rollsStock:shop.tokensStock;
+  const limit=item==="rolls"?50:3;
+  if(!Number.isSafeInteger(quantity)||quantity<1||quantity>limit||quantity>stock)
+    return interaction.editReply(halloweenShopErrorPayload("Quantity Unavailable","You may buy from 1 up to "+Math.min(limit,stock)+" item(s) at this restock."));
+  const price=item==="rolls"?50:1000,cost=price*quantity;
+  if(shop.candies<cost) return interaction.editReply(halloweenShopErrorPayload("Not Enough Candies","You have "+shop.candies+" Candies, but this purchase costs "+cost+"."));
+  return interaction.editReply(buildHalloweenPurchaseConfirmation(user.id,item,quantity,expectedRestockAt,shop));
+}
+
 async function handleSelectMenu(interaction) {
   const { customId, user, guild } = interaction;
   if (customId.startsWith("leaderboard_select_")) {
@@ -3496,4 +3597,4 @@ new SlashCommandBuilder().setName("leaderboard").setDescription("View player lea
     .addSubcommand(s=>s.setName("repair-user-db").setDescription("Archive and repair duplicate player records")),
 ].map(c=>c.toJSON());
 
-module.exports = { setState, setClient, setRegisteredCommandIds, getCurrentDeveloperAlert, isArchdemonUnlocked, markArchdemonUnlocked, preserveLegacyArchdemonUnlock, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, maybePromptForDeveloperAlert, commands };
+module.exports = { setState, setClient, setRegisteredCommandIds, getCurrentDeveloperAlert, isArchdemonUnlocked, markArchdemonUnlocked, preserveLegacyArchdemonUnlock, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, handleModalSubmit, maybePromptForDeveloperAlert, commands };
