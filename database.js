@@ -1631,12 +1631,19 @@ async function saveAchievementProfile(userId,data) {
   return await upsert(AchievementProfile,{userId:String(userId)},{userId:String(userId),data});
 }
 
-async function getGloryLeaderboardTop(limit=25) {
+async function getGloryLeaderboardTop(limit=25,userIds=null) {
   try {
     if (!await connect()) return null;
-    const safeLimit=Math.max(1,Math.min(25,Number(limit)||25));
-    const entries=await AchievementProfile.find({"data.glory":{$gt:0}}).sort({"data.glory":-1,userId:1}).limit(safeLimit).lean();
-    return entries.map(entry => ({userId:String(entry.userId),glory:Math.max(0,Number(entry.data && entry.data.glory)||0)}));
+    const filter={"data.glory":{$gt:0}};
+    const scoped=Array.isArray(userIds);
+    if(scoped) {
+      const ids=[...new Set(userIds.map(id=>String(id||"")).filter(id=>/^\\d{17,20}$/.test(id)))].slice(0,5000);
+      if(!ids.length) return [];
+      filter.userId={$in:ids};
+    }
+    const safeLimit=Math.max(1,Math.min(scoped?300:25,Number(limit)||25));
+    const entries=await AchievementProfile.find(filter).sort({"data.glory":-1,userId:1}).limit(safeLimit).lean();
+    return entries.map(entry=>({userId:String(entry.userId),glory:Math.max(0,Number(entry.data&&entry.data.glory)||0)}));
   } catch(error) {
     console.error("❌ Glory leaderboard read error:",error.message);
     return null;
@@ -1936,8 +1943,8 @@ async function applyBattleLevelingReward(userId,rewardKey,{level,xp,candiesDelta
       const nextXP=nextLevel>=500?0:Math.max(0,Math.min(99,Math.floor(Number(xp)||0)));
       const increments={candies:Math.max(0,Math.floor(Number(candiesDelta)||0)),rolls:Math.max(0,Math.floor(Number(rollsDelta)||0)),speciesTokens:Math.max(0,Math.floor(Number(tokensDelta)||0))};
       const saved=await User.updateMany(active,{$set:{level:nextLevel,xp:nextXP},$inc:increments},{session});
-      const modified=Number(saved.modifiedCount??saved.nModified??0);
-      if(modified!==existing.length) throw new Error("LEVEL_PROFILE_WRITE_MISMATCH");
+      const matched=Number(saved.matchedCount??saved.n??saved.modifiedCount??0);
+      if(matched!==existing.length) throw new Error("LEVEL_PROFILE_WRITE_MISMATCH");
       const records=await User.find(active).select({level:1,xp:1,candies:1,rolls:1,speciesTokens:1}).session(session).lean();
       if(records.length!==existing.length) throw new Error("LEVEL_PROFILE_VERIFY_FAILED");
       result={
@@ -2023,7 +2030,8 @@ async function getHalloweenShopState(userId) {
 }
 async function purchaseHalloweenItem(userId,item,quantity,expectedRestockAt) {
   const uid=String(userId||""),qty=Math.floor(Number(quantity));
-  if(!/^\d{17,20}$/.test(uid)||!["rolls","tokens","reaper"].includes(item)||!Number.isSafeInteger(qty)||qty<1||qty>25) return {ok:false,status:"invalid"};
+  if(!/^\d{17,20}$/.test(uid)||!["rolls","tokens","reaper"].includes(item)||!Number.isSafeInteger(qty)||qty<1) return {ok:false,status:"invalid"};
+  if((item==="rolls"&&qty>50)||(item==="tokens"&&qty>3)||(item==="reaper"&&qty!==1)) return {ok:false,status:"invalid"};
   if(Date.now()>=Date.parse("2026-11-01T00:00:00+05:30")) return {ok:false,status:"event-ended"};
   if(item==="reaper"&&qty!==1) return {ok:false,status:"invalid"};
   if(item==="tokens"&&qty>3) return {ok:false,status:"invalid"};
