@@ -76,7 +76,7 @@ async function notifyLevelUp(state, channel, userId, fromLevel, toLevel, rewards
   if (rewards.tokens > 0) rows.push("• <:species_token:1558181624296771634> " + rewards.tokens + " Species Token(s)");
   const embed = new EmbedBuilder()
     .setColor(0xf97316)
-    .setTitle("A New Milestone in the Rift")
+    .setTitle("Level up!")
     .setDescription("**" + message + "**\n\n<@" + userId + "> leveled up from level **" + fromLevel + "** to **" + toLevel + "**.\n\n**Rewards**\n" + (rows.length ? rows.join("\n") : "• New level reached"))
     .setFooter({ text: "LOZ · Legends of the Rift" });
   const payload = { embeds: [embed], allowedMentions: { users: [String(userId)] } };
@@ -109,22 +109,12 @@ async function awardFightProgress({ state, channel, fight, userId, mode = "bot",
     if (fight.progressionAwardKeys.includes(rewardKey)) return { ok: false, status: "duplicate-local" };
     fight.progressionAwardKeys.push(rewardKey);
     const data = state.userSpecies.get(uid) || { species: null, originalSpecies: null, questSpecies: {}, rolls: 0, speciesTokens: 0, candies: 0, level: 1, xp: 0 };
-    const before = normalizeLevelData(data);
     const reward = calculateBattleReward({ mode, difficulty, won, rounds: Math.max(1, Number(fight.round) || 1), boss });
-    const totalXP = before.xp + reward.xp;
-    const levelsGained = Math.min(MAX_LEVEL - before.level, Math.floor(totalXP / XP_PER_LEVEL));
-    const nextLevel = before.level + levelsGained;
-    const nextXP = nextLevel >= MAX_LEVEL ? 0 : totalXP - levelsGained * XP_PER_LEVEL;
-    let rollsDelta = 0;
-    let tokensDelta = 0;
-    for (let level = before.level + 1; level <= nextLevel; level++) {
-      if (level % 5 === 0) rollsDelta++;
-      if (level % 25 === 0) tokensDelta++;
-    }
     const halloweenActive = Date.now() < HALLOWEEN_END;
-    const candiesDelta = halloweenActive ? reward.candies + levelsGained * 5 : 0;
     const saved = await database.applyBattleLevelingReward(uid, rewardKey, {
-      level: nextLevel, xp: nextXP, candiesDelta, rollsDelta, tokensDelta
+      xpDelta: reward.xp,
+      candiesDelta: halloweenActive ? reward.candies : 0,
+      candyPerLevel: halloweenActive ? 5 : 0
     });
     if (!saved || !saved.ok || saved.duplicate) return { ok: Boolean(saved && saved.ok), status: saved && saved.duplicate ? "duplicate" : "save-failed" };
     const updated = Object.assign({}, data, {
@@ -132,14 +122,14 @@ async function awardFightProgress({ state, channel, fight, userId, mode = "bot",
       rolls: saved.user.rolls, speciesTokens: saved.user.speciesTokens
     });
     state.userSpecies.set(uid, updated);
-    for (let level = before.level + 1; level <= saved.user.level; level++) {
+    for (let level = saved.user.previousLevel + 1; level <= saved.user.level; level++) {
       await notifyLevelUp(state, channel, uid, level - 1, level, {
         candies: halloweenActive ? 5 : 0,
         rolls: level % 5 === 0 ? 1 : 0,
         tokens: level % 25 === 0 ? 1 : 0
       });
     }
-    return { ok: true, xp: reward.xp, candies: candiesDelta, levelsGained, level: saved.user.level, xpProgress: saved.user.xp, rolls: rollsDelta, tokens: tokensDelta };
+    return { ok: true, xp: reward.xp, candies: saved.user.candiesDelta, levelsGained: saved.user.levelsGained, level: saved.user.level, xpProgress: saved.user.xp, rolls: saved.user.rollsDelta, tokens: saved.user.tokensDelta };
   } catch (error) {
     console.error("[Leveling] Fight progression failed safely:", error && (error.stack || error));
     return { ok: false, status: "error" };
