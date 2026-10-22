@@ -9,7 +9,8 @@ function makeCombatant(id, species) {
     maxHp: species.hp, currentHp: species.hp,
     healCooldown: 0, ultCooldown: 0, ultBuff: null,
     adaptiveStacks: 0, attackCounter: 0, slimeMissStacks: 0,
-    burn: 0, burnRounds: 0, curse: 0, curseRounds: 0,
+    bloodMoonFrenzyUsed:false, bloodMoonAttacks:0,
+    burn: 0, burnRounds: 0, bleed:0, bleedRounds:0, curse: 0, curseRounds: 0,
     blockHeal: false, possession: false, stunnedTurns: 0,
     lastUltUsed: null, ultChoicePending: false,
   };
@@ -44,6 +45,16 @@ function absorbSlimeLordDamage(attacker, defender, incomingDamage, specialLines)
 function calculateDamage(attacker, defender) {
   const attackerMutations = { hpDelta: 0 };
   const specialLines = [];
+  if(attacker.species.name==="Werewolf" && !attacker.bloodMoonFrenzyUsed && attacker.currentHp<=attacker.maxHp*0.5) {
+    attacker.bloodMoonFrenzyUsed=true;
+    attacker.bloodMoonAttacks=2;
+    specialLines.push("🐺 **BLOOD MOON FRENZY!** Werewolf has entered a frenzy.");
+  }
+  const bloodMoonActive=attacker.species.name==="Werewolf" && Number(attacker.bloodMoonAttacks)>0;
+  if(bloodMoonActive) {
+    attacker.bloodMoonAttacks=Math.max(0,Number(attacker.bloodMoonAttacks)-1);
+    specialLines.push("🐺 Blood Moon Frenzy ×1.25 · "+attacker.bloodMoonAttacks+" empowered attack(s) remain.");
+  }
 
   // Shadow Clone
   if (defender.ultBuff?.type === "clone" && defender.ultBuff.duration > 0) {
@@ -106,7 +117,8 @@ function calculateDamage(attacker, defender) {
   }
 
   const baseDamage = Math.floor(Math.random()*(attacker.species.atkMax-attacker.species.atkMin+1))+attacker.species.atkMin;
-  let finalDamage = baseDamage, multiplier = 1, ignoreReduction = 0;
+  let finalDamage = baseDamage, multiplier = bloodMoonActive?1.25:1, ignoreReduction = 0;
+  let reaperUltHeal=false;
 
   // Attacker passives
   if (attacker.species.name==="Orc" && attacker.currentHp<attacker.maxHp*0.3) { finalDamage+=5; specialLines.push("🟢 Berserker +5"); }
@@ -163,10 +175,9 @@ function calculateDamage(attacker, defender) {
         attacker.currentHp=Math.min(attacker.maxHp,attacker.currentHp+lifeSteal);
         return { damage:killDmg, baseDamage, specialLines, attackerMutations:{hpDelta:0}, instantKill:true };
       } else {
-        // Above 20% — 1.7× damage attack + 50% life steal
-        multiplier*=1.7;
-        ub._reaperUltHeal=true;
-        ub.type="nextAttack"; // convert to nextAttack so it processes below
+        // Above 20% — the shared nextAttack path applies ×1.7 exactly once.
+        reaperUltHeal=true;
+        ub.type="nextAttack"; // let the shared nextAttack branch consume the multiplier once
         specialLines.push("🌑 Reaper ULT ×1.7 + 50% life steal");
       }
     }
@@ -178,12 +189,13 @@ function calculateDamage(attacker, defender) {
       if (ub.healSelf&&ub.healAmount) { attackerMutations.hpDelta+=ub.healAmount; specialLines.push(`🩸 Heal +${ub.healAmount}`); }
       if (ub.curse&&ub.curseRounds) { defender.curse=(defender.curse||0)+ub.curse; defender.curseRounds=ub.curseRounds; specialLines.push(`👿 Curse applied`); }
       if (ub.burn&&ub.burnRounds) { defender.burn=(defender.burn||0)+ub.burn; defender.burnRounds=Math.max(defender.burnRounds||0,ub.burnRounds); specialLines.push(`🔥 Burn +${ub.burn}`); }
+      if (ub.bleed&&ub.bleedRounds) { defender.bleed=Math.max(Number(defender.bleed)||0,Number(ub.bleed)||0); defender.bleedRounds=Math.max(Number(defender.bleedRounds)||0,Number(ub.bleedRounds)||0); specialLines.push(`🩸 Bleed +${ub.bleed}`); }
       attacker.ultBuff=null;
     } else if (ub.type==="buff"&&ub.attack) {
       multiplier*=ub.attack; specialLines.push(`💪 ULT Buff +${Math.round((ub.attack-1)*100)}%`);
       ub.duration--; if(ub.duration<=0) attacker.ultBuff=null;
     } else if (ub.type==="thunderActive") {
-      multiplier*=1.4; specialLines.push("⚡ Thunder Surge ×1.4"); attacker.ultBuff=null;
+      specialLines.push("⚡ Thunder Surge: paralysis is active; no damage multiplier."); attacker.ultBuff=null;
     } else if (ub.type==="trueDragonSuppression") {
       multiplier*=0.8; specialLines.push("🐉 Dragon Spirit Suppression -20% attack");
       ub.duration--; if(ub.duration<=0) attacker.ultBuff=null;
@@ -209,7 +221,7 @@ function calculateDamage(attacker, defender) {
     defender.ultBuff.duration--; if(defender.ultBuff.duration<=0) defender.ultBuff=null;
   }
   if (defender.ultBuff?.type==="earthDamageReduction") {
-    multiplier*=1-(0.6*(1-ignoreReduction)); specialLines.push("🌍 Terra Shield -60%"); defender.ultBuff=null;
+    multiplier*=1-(0.9*(1-ignoreReduction)); specialLines.push("🌍 Terra Shield -90%"); defender.ultBuff=null;
   }
 
   // Type advantage
@@ -241,7 +253,13 @@ function calculateDamage(attacker, defender) {
 
   // Post-damage attacker heals
   if (finalDamage>0) {
-    if (attacker.species.name==="Reaper") { const h=Math.floor(finalDamage*0.3); attackerMutations.hpDelta+=h; specialLines.push(`🌑 Soul Reaper +${h}`); }
+    if (attacker.species.name==="Reaper") {
+      const passiveHeal=Math.floor(finalDamage*0.3);
+      const ultimateHeal=reaperUltHeal?Math.floor(finalDamage*0.5):0;
+      attackerMutations.hpDelta+=passiveHeal+ultimateHeal;
+      specialLines.push(`🌑 Soul Reaper +${passiveHeal}`);
+      if(ultimateHeal>0) specialLines.push(`🌑 Death Judgment lifesteal +${ultimateHeal}`);
+    }
     if (attacker.species.name==="Demon")  { const h=Math.floor(finalDamage*0.2); attackerMutations.hpDelta+=h; specialLines.push(`😈 Life Steal +${h}`); }
     if (attacker.species.name==="Angel")  { const h=Math.floor(finalDamage*0.1); attackerMutations.hpDelta+=h; specialLines.push(`👼 Holy Touch +${h}`); }
     if (defender.species.name==="Ice Dragon") { const h=Math.floor(finalDamage*0.1); defender.currentHp=Math.min(defender.maxHp,defender.currentHp+h); specialLines.push(`❄️ Frost Armor +${h}`); }
@@ -270,6 +288,14 @@ function processBurnTick(combatant) {
   return { burned:dmg, lines:[`🔥 Burn deals ${dmg} damage`] };
 }
 
+function processBleedTick(combatant) {
+  if(!combatant.bleed||combatant.bleed<=0||!combatant.bleedRounds||combatant.bleedRounds<=0) return {bled:0,lines:[]};
+  const damage=Math.max(0,Number(combatant.bleed)||0);
+  combatant.currentHp=Math.max(0,combatant.currentHp-damage);
+  combatant.bleedRounds=Math.max(0,Number(combatant.bleedRounds)-1);
+  if(combatant.bleedRounds<=0) combatant.bleed=0;
+  return {bled:damage,lines:["🩸 Bleed deals "+damage+" damage"]};
+}
 function processCurseTick(combatant) {
   if (!combatant.curse||combatant.curse<=0) return;
   combatant.curseRounds=(combatant.curseRounds||0)-1;
@@ -327,9 +353,9 @@ function applyUltEffect(attacker, defender) {
     case "Demon Lord":  attacker.ultBuff={type:"nextAttack",multiplier:2,burn:7,burnRounds:2}; msg="🔥 **HELLFIRE!**\n2× + 7 burn 2 rounds!"; break;
     case "Demi God":    attacker.ultBuff={type:"nextAttack",multiplier:2.5}; msg="✨ **DIVINE WRATH!**\n2.5× next attack!"; break;
     case "God": {
-      const rawDamage=Math.floor(defender.currentHp*0.4);
+      const rawDamage=Math.floor(defender.maxHp*0.5);
       const dmg=defender.species.name==="Chaos Creator" ? Math.ceil(rawDamage*0.5) : rawDamage;
-      const heal=Math.floor(attacker.currentHp*0.4);
+      const heal=Math.floor(attacker.maxHp*0.5);
       attacker.currentHp=Math.min(attacker.maxHp,attacker.currentHp+heal);
       const assimilationLines=[];
       const assimilation=absorbSlimeLordDamage(attacker,defender,dmg,assimilationLines);
@@ -371,7 +397,7 @@ function applyUltEffect(attacker, defender) {
       break;
     }
     case "Fire Dragon": attacker.ultBuff={type:"nextAttack",multiplier:1.7,burn:10,burnRounds:2}; msg="🔥 **INFERNO BLAST!**\n1.7× + 10 burn 2 rounds!"; break;
-    case "Thunder Dragon": attacker.ultBuff={type:"thunderActive"}; defender.stunnedTurns=Math.max(2,Number(defender.stunnedTurns)||0); msg="⚡ **THUNDER SURGE!**\n1.4× + paralyzes the opponent for 2 turns, granting you two extra turns!"; break;
+    case "Thunder Dragon": attacker.ultBuff={type:"thunderActive"}; defender.stunnedTurns=Math.max(2,Number(defender.stunnedTurns)||0); msg="⚡ **THUNDER SURGE!**\nparalyzes the opponent for 2 turns, granting you two extra turns!"; break;
     case "Bot":         attacker.ultBuff={type:"nextAttack",multiplier:2,recoil:0.25}; msg="💻 **SYSTEM OVERLOAD!**\n2× + 25% recoil!"; break;
     case "Cyborg": {
       const h=Math.floor(attacker.maxHp*0.3);
@@ -389,6 +415,7 @@ function applyUltEffect(attacker, defender) {
     }
     case "Archdemon":   attacker.ultBuff={type:"nextAttack",multiplier:2.0,curse:10,curseRounds:3}; msg="👿 **ABYSSAL GATE!**\n2× + 10 curse 3 turns!"; break;
     case "Slime Lord":  attacker.ultBuff={type:"slimeAssimilation"}; msg="🫧 **PREDATORY ASSIMILATION!**\nConvert the next incoming hit into HP; reflect any overflow beyond max HP."; break;
+    case "Werewolf": attacker.ultBuff={type:"nextAttack",multiplier:1.8,bleed:4,bleedRounds:2}; msg="🐺 **LUNAR REND!**\n×1.8 next attack + 4 Bleed damage for 2 ticks!"; break;
     case "True Dragon":
       attacker.ultBuff={type:"nextAttack",multiplier:2,ignoreReduction:0.1};
       defender.ultBuff={type:"trueDragonSuppression",duration:1};
@@ -455,6 +482,7 @@ function getBuffLine(p) {
   const parts = [];
   if (p.ultBuff)        parts.push("✦ Ultimate " + inlineCode(p.ultBuff.type));
   if (p.burn > 0)       parts.push("🔥 Burn " + inlineCode(p.burn + " × " + p.burnRounds));
+  if (p.bleed > 0)      parts.push("🩸 Bleed " + inlineCode(p.bleed + " × " + p.bleedRounds));
   if (p.curse > 0)      parts.push("☠ Curse " + inlineCode(p.curse));
   if (p.blockHeal)      parts.push("⛔ Healing blocked");
   if (p.possession)     parts.push("🎭 Possessed");
@@ -530,8 +558,10 @@ function buildBotFightEmbed(fight, logLines = [], phase = "playing") {
   const botEffects = [];
   if (fight.playerUltBuff) playerEffects.push("✦ Ultimate " + inlineCode(fight.playerUltBuff.type));
   if ((fight.playerBurn || 0) > 0) playerEffects.push("🔥 Burn " + inlineCode(fight.playerBurn + " × " + fight.playerBurnRounds));
+  if ((fight.playerBleed || 0) > 0) playerEffects.push("🩸 Bleed " + inlineCode(fight.playerBleed + " × " + fight.playerBleedRounds));
   if (fight.botUltBuff) botEffects.push("✦ Ultimate " + inlineCode(fight.botUltBuff.type));
   if ((fight.botBurn || 0) > 0) botEffects.push("🔥 Burn " + inlineCode(fight.botBurn + " × " + fight.botBurnRounds));
+  if ((fight.botBleed || 0) > 0) botEffects.push("🩸 Bleed " + inlineCode(fight.botBleed + " × " + fight.botBleedRounds));
   const logs = cleanFightLog(logLines);
   const playerName = fight.playerName || "You";
   return new ContainerBuilder()
@@ -636,7 +666,7 @@ function buildFightResultPayload(header, body, color, mentionIds = []) {
 
 module.exports = {
   makeCombatant, calculateDamage,
-  processBurnTick, processCurseTick, tickCooldowns, tickBothUltCooldowns, applyOgreRegen,
+  processBurnTick, processBleedTick, processCurseTick, tickCooldowns, tickBothUltCooldowns, applyOgreRegen,
   applyUltEffect,
   getBuffLine, buildFightEmbed, buildFightRow, buildFightMessagePayload,
   buildBotFightEmbed, buildBotFightRow, buildBotFightMessagePayload,
