@@ -847,6 +847,28 @@ function buildDeveloperAlertReminderPayload() {
   return {components:[container],flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral,allowedMentions:{parse:[]}};
 }
 
+async function maybePromptForDeveloperAlert(interaction) {
+  if (!interaction || !interaction.user || interaction.commandName === "alert") return false;
+  const userId = String(interaction.user.id || "");
+  if (!/^\d{17,20}$/.test(userId)) return false;
+  const alert = getCurrentDeveloperAlert();
+  let claim = false;
+  try {
+    claim = await database.claimDeveloperAlertPrompt(userId, alert.id);
+    if (!claim || claim.claimed !== true) return false;
+    await interaction.followUp(buildDeveloperAlertReminderPayload());
+    await database.markDeveloperAlertPromptDelivered(userId, claim.claimedAt);
+    return true;
+  } catch (error) {
+    if (claim && claim.claimedAt) {
+      await database.releaseDeveloperAlertPromptClaim(userId, alert.id, claim).catch(()=>false);
+    }
+    // A reminder must never break the command that already completed.
+    console.warn("[Developer Alert] Could not send the shutdown reminder:", error && (error.message || error));
+    return false;
+  }
+}
+
 const SPECIES_TOKEN_EMOJI = "<:species_token:1558181624296771634>";
 const SPECIES_TOKEN_SPECIES_NAMES = [
   "Demi God", "Demon Lord", "Demon King", "Demon", "Oni", "Orc Lord",
