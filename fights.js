@@ -274,7 +274,7 @@ async function runBotTurn(channel, fightId, turnToken) {
     log.push("⚡ **PARALYZED!** "+botC.species.name+" loses this turn.");
   } else if (botC.possession) {
     botC.possession=false;
-    const selfHit=Math.floor(Math.random()*(botC.species.atkMax-botC.species.atkMin+1))+botC.species.atkMin;
+    const selfMin=botC.species.name==="Werewolf"?30:botC.species.atkMin; const selfMax=botC.species.name==="Werewolf"?42:botC.species.atkMax; const selfHit=Math.floor(Math.random()*(selfMax-selfMin+1))+selfMin;
     botC.currentHp=Math.max(0,botC.currentHp-selfHit);
     log.push(`🎭 **POSSESSION!** ${botC.species.name} attacks itself for ${selfHit}!`);
   } else {
@@ -303,7 +303,10 @@ async function runBotTurn(channel, fightId, turnToken) {
       if (botC.blockHeal) { botC.blockHeal=false; log.push("👑 **ROYAL COMMAND!** Bot cannot heal!"); botAction="attack"; }
       else if (botC.currentHp>=botC.maxHp*0.8) { log.push("❌ Bot HP above 80% — too healthy!"); botAction="attack"; }
       else {
-        let rawH=Math.floor(Math.random()*(botC.species.healMax-botC.species.healMin+1))+botC.species.healMin;
+        const healMin=botC.species.name==="Werewolf"?18:botC.species.healMin;
+        const healMax=botC.species.name==="Werewolf"?30:botC.species.healMax;
+        const rawH=Math.floor(Math.random()*(healMax-healMin+1))+healMin;
+        if(botC.species.name==="Werewolf") log.push("🐺 Boss base healing roll: "+rawH+" HP (18–30 before status effects).");
         // <15% desperation rule for bots too
         if (botC.currentHp<botC.maxHp*0.15) {
           if (Math.random()<0.75) { rawH=Math.floor(rawH*0.5); log.push("💔 Bot's desperate heal only 50%!"); }
