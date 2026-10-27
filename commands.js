@@ -1275,8 +1275,7 @@ async function handleCommand(interaction) {
     const alert = getCurrentDeveloperAlert();
     const saved = await database.markDeveloperAlertViewed(user.id, alert.id);
     if (!saved) console.warn("[Developer Alert] Alert displayed, but its viewed state could not be saved for " + user.id);
-    const codeRecord = await database.getRedeemCode("HALLOWEEN");
-    return interaction.editReply(buildDeveloperAlertPayload(true, codeRecord));
+    return interaction.editReply(buildDeveloperAlertPayload(true));
   }
 
   // ── PATCHNOTES ────────────────────────────────────────────────
