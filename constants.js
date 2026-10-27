@@ -11,7 +11,8 @@ const patchNotes = [
       "**HALLOWEEN code:** Added a once-per-player code for 250 Candies and 5 Species Rolls, available until November 1, 2026 at 12:00 AM IST.",
       "**Leaderboards and safeguards:** Added the Player Level leaderboard and Global/Server scope. Server leaderboard lookups are bounded and avoid full-guild member fetches. PvP progression rewards are limited to three eligible fights per opponent pair per day. Persistent reward receipts prevent duplicate battle rewards, and changes to player data are additive.",
       "**Combat balance:** Reduced Archdemon ATK to 16–22; removed Thunder Dragon's 1.4× ultimate damage multiplier while retaining its two-turn paralysis; increased Earth Dragon's Terra Strike to 1.4× and Terra Shield to 90%; added 5 HP to Half-Blood, buffed Ice Dragon ATK to 20–30, reduced True Dragon to 175 HP, and increased Goblin ATK to 10–16. Added missing crit profiles, changed God's ultimate to 50% of maximum HP for damage/healing, made God token-eligible, and increased Reaper HP by 10 while fixing its ultimate life-steal.",
-      "**Event and compatibility:** Candy earnings and Halloween shop purchases end on November 1, 2026 at 12:00 AM IST. Existing Slime Lord difficulty stats and historical patch notes are retained; no database reset is required."
+      "**Event and compatibility:** Candy earnings and Halloween shop purchases end on November 1, 2026 at 12:00 AM IST. Existing Slime Lord difficulty stats and historical patch notes are retained; no database reset is required.",
+      "**Operations notice:** LOZ presence is set to Do Not Disturb. The developer alert contains only the farewell notice, announcing shutdown for October 31, 2026 at 2:24 AM IST because LOZ does not have enough funds to keep running."
     ],
   },
   {
