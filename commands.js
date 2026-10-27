@@ -160,28 +160,33 @@ async function buildLeaderboardView(leaderboardType,guild,scope="global") {
   const type=["fights","rolls","glory","levels"].includes(leaderboardType)?leaderboardType:"fights";
   const selectedScope=scope==="server"?"server":"global";
   if(selectedScope==="server"&&!guild) {
-    return attachLeaderboardSelector(buildStyledCardPayload("Server Leaderboard",0x808080,[{heading:"Unavailable here",body:"Use the server leaderboard inside a Discord server. Global rankings are available in DMs."}]),type,selectedScope);
+    return attachLeaderboardSelector(
+      buildStyledCardPayload("Server Leaderboard",0x808080,[{heading:"Unavailable here",body:"Use the server leaderboard inside a Discord server. Global rankings are available in DMs."}]),
+      type,selectedScope
+    );
   }
-  const candidateLimit=selectedScope==="server"?Number.MAX_SAFE_INTEGER:10;
-  let serverMemberIds=null;
-  if(selectedScope==="server") {
-    try {
-      const members=await guild.members.fetch();
-      serverMemberIds=new Set(members.keys());
-    } catch(_) {
-      serverMemberIds=new Set(guild.members?.cache?.keys?.()||[]);
-    }
-  }
-  const serverUserIds=selectedScope==="server"
-    ?Array.from(_state.userSpecies.keys()).map(String).filter(uid=>serverMemberIds.has(uid))
+
+  // Never fetch every member of a guild for this view. Build a bounded candidate set
+  // from existing LOZ records, then do a short, targeted member lookup only for those IDs.
+  const candidateLimit=selectedScope==="server"?500:10;
+  const allUserIds=selectedScope==="server"
+    ?Array.from(_state.userSpecies.keys()).map(String).filter(uid=>/^\d{17,20}$/.test(uid)).slice(0,5000)
     :null;
   let candidates=[];
+
   if(type==="glory") {
-    const entries=await database.getGloryLeaderboardTop(selectedScope==="server"?10:candidateLimit,serverUserIds);
+    const entries=await database.getGloryLeaderboardTop(candidateLimit,allUserIds);
     if(entries===null) {
-      return attachLeaderboardSelector(buildStyledCardPayload("LOZ Leaderboard",0x0891b2,[{heading:"Glory",body:"MongoDB could not load the Glory leaderboard. Please try again later."}]),type,selectedScope);
+      return attachLeaderboardSelector(
+        buildStyledCardPayload("LOZ Leaderboard",0x0891b2,[{heading:"Glory",body:"MongoDB could not load the Glory leaderboard. Please try again later."}]),
+        type,selectedScope
+      );
     }
-    candidates=entries.map(entry=>({uid:String(entry?.userId||""),score:Math.max(0,Number(entry?.glory)||0),data:_state.userSpecies.get(String(entry?.userId||""))||{}}));
+    candidates=entries.map(entry=>({
+      uid:String(entry?.userId||""),
+      score:Math.max(0,Number(entry?.glory)||0),
+      data:_state.userSpecies.get(String(entry?.userId||""))||{}
+    }));
   } else if(type==="fights") {
     candidates=Array.from(_state.fightLeaderboard.entries())
       .map(([uid,score])=>({uid:String(uid),score:Math.max(0,Number(score?.wins)||0),data:_state.userSpecies.get(String(uid))||{}}))
@@ -205,15 +210,39 @@ async function buildLeaderboardView(leaderboardType,guild,scope="global") {
       .slice(0,candidateLimit);
   }
 
-  if(selectedScope==="server") candidates=candidates.filter(candidate=>serverMemberIds.has(String(candidate.uid)));
-  const rows=[];
-  for(const candidate of candidates) {
-    if(rows.length>=10) break;
-    const resolved=selectedScope==="server"
-      ? (()=>{const member=guild.members.cache.get(String(candidate.uid));return {name:member?.displayName||member?.user?.username||"Unknown",member:Boolean(member)};})()
-      : await resolveLeaderboardName(candidate.uid,null);
-    if(selectedScope==="server"&&!resolved.member) continue;
-    const rank=rows.length+1;
+  if(selectedScope==="server") {
+    const topCandidateIds=candidates.slice(0,120).map(candidate=>candidate.uid).filter(uid=>/^\d{17,20}$/.test(uid));
+    const missingIds=topCandidateIds.filter(uid=>!guild.members.cache.has(uid));
+    if(missingIds.length) {
+      let timeoutId=null;
+      try {
+        // A bounded lookup prevents an interaction from sitting in "thinking" indefinitely.
+        const fetchMembers=guild.members.fetch({user:missingIds,cache:true}).catch(()=>null);
+        await Promise.race([
+          fetchMembers,
+          new Promise(resolve=>{timeoutId=setTimeout(()=>resolve(null),2500);})
+        ]);
+      } catch(_) {
+        // Fall back to whatever members Discord has already cached.
+      } finally {
+        if(timeoutId) clearTimeout(timeoutId);
+      }
+    }
+    const memberCache=guild.members?.cache;
+    candidates=candidates.filter(candidate=>memberCache?.has(String(candidate.uid))).slice(0,10);
+  }
+
+  const topCandidates=candidates.slice(0,10);
+  const rows=await Promise.all(topCandidates.map(async (candidate,index)=>{
+    let resolved;
+    if(selectedScope==="server") {
+      const member=guild.members.cache.get(String(candidate.uid));
+      resolved={name:member?.displayName||member?.user?.username||"Unknown",member:Boolean(member)};
+    } else {
+      resolved=await resolveLeaderboardName(candidate.uid,null);
+    }
+    if(selectedScope==="server"&&!resolved.member) return null;
+    const rank=index+1;
     const prefix=rank===1?"🥇":rank===2?"🥈":rank===3?"🥉":"**"+String(rank).padStart(2,"0")+".**";
     let identity=type==="glory"?GLORY_LEADERBOARD_EMOJI:(candidate.data?.species?.emoji||"⚔️");
     let scoreText="";
@@ -221,16 +250,16 @@ async function buildLeaderboardView(leaderboardType,guild,scope="global") {
     else if(type==="rolls") { identity="<:reroll_dice:1558042108965822515>"; scoreText=candidate.score.toLocaleString()+" rolls"; }
     else if(type==="glory") scoreText=candidate.score.toLocaleString()+" Glory";
     else scoreText="Level "+candidate.level+" · "+candidate.xp+"/100 XP";
-    rows.push(prefix+" "+identity+" **"+resolved.name+"** · **"+scoreText+"**");
-  }
+    return {rank,text:prefix+" "+identity+" **"+resolved.name+"** · **"+scoreText+"**"};
+  }));
+  const visibleRows=rows.filter(Boolean);
   const label=type==="fights"?"Fight Wins":type==="rolls"?"Species Rolls":type==="glory"?"Glory":"Player Level";
   const title="LOZ Leaderboard · "+(selectedScope==="server"?(guild.name||"Server"):"Global");
   let body;
-  if(rows.length) {
-    body="*Top "+rows.length+" "+(selectedScope==="server"?"members in this server":"players")+" · Ranked by "+label.toLowerCase()+"*\n\n"+rows.join("\n");
-    if(selectedScope==="server") body+="\n\n*Server view filters player records to current server members.*";
+  if(visibleRows.length) {
+    body="*Top "+visibleRows.length+" "+(selectedScope==="server"?"members in this server":"players")+" · Ranked by "+label.toLowerCase()+"*\\n\\n"+visibleRows.map(row=>row.text).join("\\n");
   } else if(selectedScope==="server") {
-    body="No ranked server members were found in the current candidate set. Earn progression or try the Global leaderboard.";
+    body="No ranked LOZ players from this server could be verified in Discord's current member cache. Try again shortly after players interact with LOZ here, or choose Global.";
   } else {
     body=type==="glory"?"No Glory has been earned yet. Open /achievements to begin.":type==="fights"?"No fight records yet. Start battling to appear here.":type==="rolls"?"No unspent Species Rolls are available to rank yet.":"No player level progression has been recorded yet.";
   }
