@@ -42,8 +42,8 @@ function absorbSlimeLordDamage(attacker, defender, incomingDamage, specialLines)
   return { healing, reflected };
 }
 
-function speciesAttackBounds(species) {
-  if(species?.name==="Werewolf") return {min:30,max:42};
+function speciesAttackBounds(species,isEventBoss=false) {
+  if(species?.name==="Werewolf"&&!isEventBoss) return {min:30,max:42};
   const min=Math.max(1,Math.floor(Number(species?.atkMin)||1));
   const max=Math.max(min,Math.floor(Number(species?.atkMax)||min));
   return {min,max};
@@ -111,7 +111,7 @@ function calculateDamage(attacker, defender) {
     if (attacker.species.name === "Chaos Creator") {
       specialLines.push("🌀 The enemy tried to counter, but got counter-countered.");
     } else {
-      const counterRange=speciesAttackBounds(defender.species);
+      const counterRange=speciesAttackBounds(defender.species,defender.isEventBoss===true);
       const ctr = Math.floor(Math.random()*(counterRange.max-counterRange.min+1))+counterRange.min;
       attackerMutations.hpDelta -= ctr;
       const lines=[`🤖 **MACHINE LEARNING!** Bot counters for ${ctr}!`];
@@ -127,7 +127,8 @@ function calculateDamage(attacker, defender) {
   if (attacker.species.name !== "Chaos Creator" && Math.random() < missRate) {
     // 30% chance defender counter-strikes on miss
     if (Math.random() < 0.3) {
-      const avgAtk = Math.floor((defender.species.atkMin + defender.species.atkMax) / 2);
+      const defenderRange=speciesAttackBounds(defender.species,defender.isEventBoss===true);
+      const avgAtk = Math.floor((defenderRange.min + defenderRange.max) / 2);
       const ctr = Math.floor(avgAtk * 0.6);
       attackerMutations.hpDelta -= ctr;
       const lines=[`💨 **MISS!** ${defender.species.emoji} **${defender.species.name}** counter-strikes for **${ctr}**!`];
@@ -141,9 +142,9 @@ function calculateDamage(attacker, defender) {
     return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
   }
 
-  const attackRange=speciesAttackBounds(attacker.species);
+  const attackRange=speciesAttackBounds(attacker.species,attacker.isEventBoss===true);
   const baseDamage = Math.floor(Math.random()*(attackRange.max-attackRange.min+1))+attackRange.min;
-  if(attacker.species.name==="Werewolf") specialLines.push("🐺 Base attack roll: "+baseDamage+" (30–42 before enemy defenses).");
+  if(attacker.species.name==="Werewolf") specialLines.push("🐺 Base attack roll: "+baseDamage+(attacker.isEventBoss?" (difficulty-scaled boss roll before enemy defenses).":" (30–42 before enemy defenses)."));
   let finalDamage = baseDamage, multiplier = bloodMoonActive?1.3:1, ignoreReduction = 0;
   let reaperUltHeal=false, ultimateLifeSteal=0;
 
@@ -266,7 +267,7 @@ function calculateDamage(attacker, defender) {
 
   // Kijin shadow dance
   if (attacker.species.name==="Kijin"&&Math.random()<0.15) {
-    const shadowRange=speciesAttackBounds(attacker.species);
+    const shadowRange=speciesAttackBounds(attacker.species,attacker.isEventBoss===true);
     const s=Math.floor(Math.random()*(shadowRange.max-shadowRange.min+1))+shadowRange.min;
     finalDamage+=s; specialLines.push(`🎭 Shadow Dance +${s}`);
   }
