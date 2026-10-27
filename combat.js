@@ -54,7 +54,7 @@ function calculateDamage(attacker, defender) {
     else if(buff.bleed) lines.push("🐺 Lunar Rend missed; its empowered attack and Bleed were consumed.");
     else lines.push("✨ The empowered attack was consumed by the miss.");
   };
-  if(attacker.species.name==="Werewolf" && !attacker.bloodMoonFrenzyUsed && attacker.currentHp<=attacker.maxHp*0.5) {
+  if(attacker.species.name==="Werewolf" && !attacker.bloodMoonFrenzyUsed && attacker.currentHp<=attacker.maxHp*0.75) {
     attacker.bloodMoonFrenzyUsed=true;
     attacker.bloodMoonAttacks=2;
     specialLines.push("🐺 **BLOOD MOON FRENZY!** Werewolf has entered a frenzy.");
@@ -62,7 +62,7 @@ function calculateDamage(attacker, defender) {
   const bloodMoonActive=attacker.species.name==="Werewolf" && Number(attacker.bloodMoonAttacks)>0;
   if(bloodMoonActive) {
     attacker.bloodMoonAttacks=Math.max(0,Number(attacker.bloodMoonAttacks)-1);
-    specialLines.push("🐺 Blood Moon Frenzy ×1.25 · "+attacker.bloodMoonAttacks+" empowered attack(s) remain.");
+    specialLines.push("🐺 Blood Moon Frenzy ×1.3 · "+attacker.bloodMoonAttacks+" empowered attack(s) remain.");
   }
 
   // Shadow Clone
@@ -134,7 +134,7 @@ function calculateDamage(attacker, defender) {
   }
 
   const baseDamage = Math.floor(Math.random()*(attacker.species.atkMax-attacker.species.atkMin+1))+attacker.species.atkMin;
-  let finalDamage = baseDamage, multiplier = bloodMoonActive?1.25:1, ignoreReduction = 0;
+  let finalDamage = baseDamage, multiplier = bloodMoonActive?1.3:1, ignoreReduction = 0;
   let reaperUltHeal=false;
 
   // Attacker passives
@@ -434,7 +434,7 @@ function applyUltEffect(attacker, defender) {
     }
     case "Archdemon":   attacker.ultBuff={type:"nextAttack",multiplier:2.0,curse:10,curseRounds:3}; msg="👿 **ABYSSAL GATE!**\n2× + 10 curse 3 turns!"; break;
     case "Slime Lord":  attacker.ultBuff={type:"slimeAssimilation"}; msg="🫧 **PREDATORY ASSIMILATION!**\nConvert the next incoming hit into HP; reflect any overflow beyond max HP."; break;
-    case "Werewolf": attacker.ultBuff={type:"nextAttack",multiplier:1.8,bleed:4,bleedRounds:2}; msg="🐺 **LUNAR REND!**\n×1.8 next attack + 4 Bleed damage for 2 ticks!"; break;
+    case "Werewolf": attacker.ultBuff={type:"nextAttack",multiplier:2,bleed:10,bleedRounds:3}; msg="🐺 **LUNAR REND!**\n×2 next attack + 10 Bleed damage for 3 ticks!"; break;
     case "True Dragon":
       attacker.ultBuff={type:"nextAttack",multiplier:2,ignoreReduction:0.1};
       defender.ultBuff={type:"trueDragonSuppression",duration:1};
