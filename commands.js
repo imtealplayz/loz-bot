@@ -126,6 +126,8 @@ function getSpeciesAutocompleteEntries(includeChaosCreator = false) {
     }));
 }
 
+const _leaderboardMemberFetchState = new Map();
+
 function attachLeaderboardSelector(payload, selectedType, scope="global") {
   const selected=["fights","rolls","glory","levels"].includes(selectedType)?selectedType:"fights";
   const selectedScope=scope==="server"?"server":"global";
@@ -214,18 +216,29 @@ async function buildLeaderboardView(leaderboardType,guild,scope="global") {
     const topCandidateIds=candidates.slice(0,120).map(candidate=>candidate.uid).filter(uid=>/^\d{17,20}$/.test(uid));
     const missingIds=topCandidateIds.filter(uid=>!guild.members.cache.has(uid));
     if(missingIds.length) {
-      let timeoutId=null;
-      try {
-        // A bounded lookup prevents an interaction from sitting in "thinking" indefinitely.
-        const fetchMembers=guild.members.fetch({user:missingIds,cache:true}).catch(()=>null);
-        await Promise.race([
-          fetchMembers,
-          new Promise(resolve=>{timeoutId=setTimeout(()=>resolve(null),2500);})
-        ]);
-      } catch(_) {
-        // Fall back to whatever members Discord has already cached.
-      } finally {
-        if(timeoutId) clearTimeout(timeoutId);
+      const guildKey=String(guild.id);
+      let fetchState=_leaderboardMemberFetchState.get(guildKey);
+      if(!fetchState) {
+        fetchState={pending:false,lastStartedAt:0};
+        _leaderboardMemberFetchState.set(guildKey,fetchState);
+      }
+      // One in-flight lookup per guild, throttled for 30 seconds. If Discord is slow,
+      // render from cache instead of stacking additional member-fetch requests.
+      if(!fetchState.pending && Date.now()-fetchState.lastStartedAt>=30000) {
+        fetchState.pending=true;
+        fetchState.lastStartedAt=Date.now();
+        let timeoutId=null;
+        const fetchMembers=guild.members.fetch({user:missingIds,cache:true})
+          .catch(()=>null)
+          .finally(()=>{fetchState.pending=false;});
+        try {
+          await Promise.race([
+            fetchMembers,
+            new Promise(resolve=>{timeoutId=setTimeout(()=>resolve(null),2500);})
+          ]);
+        } finally {
+          if(timeoutId) clearTimeout(timeoutId);
+        }
       }
     }
     const memberCache=guild.members?.cache;
