@@ -42,6 +42,13 @@ function absorbSlimeLordDamage(attacker, defender, incomingDamage, specialLines)
   return { healing, reflected };
 }
 
+function speciesAttackBounds(species) {
+  if(species?.name==="Werewolf") return {min:30,max:42};
+  const min=Math.max(1,Math.floor(Number(species?.atkMin)||1));
+  const max=Math.max(min,Math.floor(Number(species?.atkMax)||min));
+  return {min,max};
+}
+
 function calculateDamage(attacker, defender) {
   const attackerMutations = { hpDelta: 0 };
   const specialLines = [];
@@ -104,7 +111,8 @@ function calculateDamage(attacker, defender) {
     if (attacker.species.name === "Chaos Creator") {
       specialLines.push("🌀 The enemy tried to counter, but got counter-countered.");
     } else {
-      const ctr = Math.floor(Math.random()*(defender.species.atkMax-defender.species.atkMin+1))+defender.species.atkMin;
+      const counterRange=speciesAttackBounds(defender.species);
+      const ctr = Math.floor(Math.random()*(counterRange.max-counterRange.min+1))+counterRange.min;
       attackerMutations.hpDelta -= ctr;
       const lines=[`🤖 **MACHINE LEARNING!** Bot counters for ${ctr}!`];
       recordSlimeLordMiss(attacker, lines);
@@ -133,9 +141,11 @@ function calculateDamage(attacker, defender) {
     return { damage:0, baseDamage:0, specialLines:lines, attackerMutations, missedAttack:true };
   }
 
-  const baseDamage = Math.floor(Math.random()*(attacker.species.atkMax-attacker.species.atkMin+1))+attacker.species.atkMin;
+  const attackRange=speciesAttackBounds(attacker.species);
+  const baseDamage = Math.floor(Math.random()*(attackRange.max-attackRange.min+1))+attackRange.min;
+  if(attacker.species.name==="Werewolf") specialLines.push("🐺 Base attack roll: "+baseDamage+" (30–42 before enemy defenses).");
   let finalDamage = baseDamage, multiplier = bloodMoonActive?1.3:1, ignoreReduction = 0;
-  let reaperUltHeal=false;
+  let reaperUltHeal=false, ultimateLifeSteal=0;
 
   // Attacker passives
   if (attacker.species.name==="Orc" && attacker.currentHp<attacker.maxHp*0.3) { finalDamage+=5; specialLines.push("🟢 Berserker +5"); }
@@ -207,7 +217,8 @@ function calculateDamage(attacker, defender) {
       if (ub.healSelf&&ub.healAmount) { attackerMutations.hpDelta+=ub.healAmount; specialLines.push(`🩸 Heal +${ub.healAmount}`); }
       if (ub.curse&&ub.curseRounds) { defender.curse=(defender.curse||0)+ub.curse; defender.curseRounds=ub.curseRounds; specialLines.push(`👿 Curse applied`); }
       if (ub.burn&&ub.burnRounds) { defender.burn=(defender.burn||0)+ub.burn; defender.burnRounds=Math.max(defender.burnRounds||0,ub.burnRounds); specialLines.push(`🔥 Burn +${ub.burn}`); }
-      if (ub.bleed&&ub.bleedRounds) { defender.bleed=Math.max(Number(defender.bleed)||0,Number(ub.bleed)||0); defender.bleedRounds=Math.max(Number(defender.bleedRounds)||0,Number(ub.bleedRounds)||0); specialLines.push(`🩸 Bleed +${ub.bleed}`); }
+      if (ub.bleed&&ub.bleedRounds) { defender.bleed=Math.max(Number(defender.bleed)||0,Number(ub.bleed)||0); defender.bleedRounds=Math.max(Number(defender.bleedRounds)||0,Number(ub.bleedRounds)||0); specialLines.push(`🩸 Bleed +${ub.bleed} for ${ub.bleedRounds} ticks`); }
+      ultimateLifeSteal=Math.max(0,Math.min(1,Number(ub.lifeSteal)||0));
       attacker.ultBuff=null;
     } else if (ub.type==="buff"&&ub.attack) {
       multiplier*=ub.attack; specialLines.push(`💪 ULT Buff +${Math.round((ub.attack-1)*100)}%`);
@@ -255,7 +266,8 @@ function calculateDamage(attacker, defender) {
 
   // Kijin shadow dance
   if (attacker.species.name==="Kijin"&&Math.random()<0.15) {
-    const s=Math.floor(Math.random()*(attacker.species.atkMax-attacker.species.atkMin+1))+attacker.species.atkMin;
+    const shadowRange=speciesAttackBounds(attacker.species);
+    const s=Math.floor(Math.random()*(shadowRange.max-shadowRange.min+1))+shadowRange.min;
     finalDamage+=s; specialLines.push(`🎭 Shadow Dance +${s}`);
   }
 
@@ -277,6 +289,11 @@ function calculateDamage(attacker, defender) {
       attackerMutations.hpDelta+=passiveHeal+ultimateHeal;
       specialLines.push(`🌑 Soul Reaper +${passiveHeal}`);
       if(ultimateHeal>0) specialLines.push(`🌑 Death Judgment lifesteal +${ultimateHeal}`);
+    }
+    if(ultimateLifeSteal>0) {
+      const leech=Math.floor(finalDamage*ultimateLifeSteal);
+      attackerMutations.hpDelta+=leech;
+      specialLines.push(`🐺 Lunar Rend life leech +${leech} HP (${Math.round(ultimateLifeSteal*100)}% of damage).`);
     }
     if (attacker.species.name==="Demon")  { const h=Math.floor(finalDamage*0.2); attackerMutations.hpDelta+=h; specialLines.push(`😈 Life Steal +${h}`); }
     if (attacker.species.name==="Angel")  { const h=Math.floor(finalDamage*0.1); attackerMutations.hpDelta+=h; specialLines.push(`👼 Holy Touch +${h}`); }
@@ -434,7 +451,7 @@ function applyUltEffect(attacker, defender) {
     }
     case "Archdemon":   attacker.ultBuff={type:"nextAttack",multiplier:2.0,curse:10,curseRounds:3}; msg="👿 **ABYSSAL GATE!**\n2× + 10 curse 3 turns!"; break;
     case "Slime Lord":  attacker.ultBuff={type:"slimeAssimilation"}; msg="🫧 **PREDATORY ASSIMILATION!**\nConvert the next incoming hit into HP; reflect any overflow beyond max HP."; break;
-    case "Werewolf": attacker.ultBuff={type:"nextAttack",multiplier:2,bleed:10,bleedRounds:3}; msg="🐺 **LUNAR REND!**\n×2 next attack + 10 Bleed damage for 3 ticks!"; break;
+    case "Werewolf": attacker.ultBuff={type:"nextAttack",multiplier:2,bleed:12,bleedRounds:3,lifeSteal:0.6}; msg="🐺 **LUNAR REND!**\n×2 next attack + 12 Bleed damage for 3 ticks + 60% life leech!"; break;
     case "True Dragon":
       attacker.ultBuff={type:"nextAttack",multiplier:2,ignoreReduction:0.1};
       defender.ultBuff={type:"trueDragonSuppression",duration:1};
