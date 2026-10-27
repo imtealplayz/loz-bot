@@ -1,15 +1,15 @@
 const patchNotes = [
   {
-    version:"7.0v", date:"2026-10-22", alertId:"7.0v-halloween-2026-10-22",
+    version:"7.0v", date:"2026-10-22", alertId:"7.0v-shutdown-farewell-2026-10-28",
     changes:[
       "**Leveling:** Added persistent player levels capped at 500, with exactly 100 XP required per level. Eligible bot and PvP results grant XP based on difficulty, result, and battle length. The profile displays a level progress bar, and /level shows current progress and balances.",
       "**Level-up rewards:** Added 15 rotating level-up messages, sent by DM with a battle-channel fallback. Every fifth level awards a Species Roll, every 25th level awards a Species Token, and level-ups award 5 Halloween Candies while the event is active.",
       "**Halloween bosses:** A win on Medium-or-higher bot difficulty has a 7.5% combined boss-spawn chance. After a successful roll, Slime Lord is selected 60% of the time and Werewolf 40%. Werewolf uses difficulty-scaled boss stats and has a separate 5% permanent-unlock drop on a confirmed victory.",
-      "**Werewolf species:** Added the playable Halloween species with 125 HP, 24–36 ATK, 12–20 HEAL, 14% crit chance, ×1.6 crit damage, and a 7% miss chance. Blood Moon Frenzy empowers two attacks at or below 50% HP; Lunar Rend applies a ×1.8 attack and 4 Bleed damage for two ticks.",
+      "**Werewolf species:** Increased playable Werewolf to 125 HP, 30–42 ATK, and 18–30 HEAL. Blood Moon Frenzy activates at or below 75% HP and empowers the next two attacks with ×1.3 damage. Lunar Rend empowers the next attack with ×2 damage and applies 10 Bleed damage for 3 ticks. Critical chance remains 14%, crit multiplier ×1.6, miss chance 7%, and ultimate cooldown 10 rounds.",
       "**Halloween Candies:** Completed eligible fights award Candies based on difficulty, result, and round count. Each level gained adds 5 Candies during the Halloween event. Players can exchange 100 Candies for 100 XP through /events shop; the exchange cannot exceed Level 500 and follows the normal level-milestone reward rules.",
       "**Candy shop:** /events shop sells Species Rolls for 50 Candies, Species Tokens for 1,000 Candies, and Reaper for 2,250 Candies. Reaper has 50 units of global stock that never resets. Roll stock is personal and restocks hourly at 5–50; each personal restock has a 15% chance to include 1–3 Species Tokens. Purchases show the cost and remaining balance and require confirmation.",
       "**HALLOWEEN code:** Added a once-per-player code for 250 Candies and 5 Species Rolls, available until November 1, 2026 at 12:00 AM IST.",
-      "**Leaderboards and safeguards:** Added the Player Level leaderboard and Global/Server scope. PvP progression rewards are limited to three eligible fights per opponent pair per day. Persistent reward receipts prevent duplicate battle rewards, and changes to player data are additive.",
+      "**Leaderboards and safeguards:** Added the Player Level leaderboard and Global/Server scope. Server leaderboard lookups are bounded and avoid full-guild member fetches. PvP progression rewards are limited to three eligible fights per opponent pair per day. Persistent reward receipts prevent duplicate battle rewards, and changes to player data are additive.",
       "**Combat balance:** Reduced Archdemon ATK to 16–22; removed Thunder Dragon's 1.4× ultimate damage multiplier while retaining its two-turn paralysis; increased Earth Dragon's Terra Strike to 1.4× and Terra Shield to 90%; added 5 HP to Half-Blood, buffed Ice Dragon ATK to 20–30, reduced True Dragon to 175 HP, and increased Goblin ATK to 10–16. Added missing crit profiles, changed God's ultimate to 50% of maximum HP for damage/healing, made God token-eligible, and increased Reaper HP by 10 while fixing its ultimate life-steal.",
       "**Event and compatibility:** Candy earnings and Halloween shop purchases end on November 1, 2026 at 12:00 AM IST. Existing Slime Lord difficulty stats and historical patch notes are retained; no database reset is required."
     ],
@@ -292,7 +292,7 @@ const slimeLordSpecies = { number:20, name:"Slime Lord",emoji:"🫧",roleName:"S
 const eclipsedSovereignSpecies = { number:21, name:"Eclipsed Sovereign", emoji:"🌘", roleName:"Eclipsed-Sovereign", color:0x6f2da8, hp:115, atkMin:15, atkMax:22, healMin:14, healMax:22, ultCooldown:7, chance:"Special awakening" };
 const chaosCreatorSpecies = { number:22, name:"Chaos Creator", emoji:"🌀", roleName:null, color:0x18181b, hp:150, atkMin:20, atkMax:28, healMin:18, healMax:30, ultCooldown:2, chance:"Primary owner only" };
 const trueDragonSpecies = { number:23, name:"True Dragon", emoji:"🐉✨", roleName:"True-Dragon", color:0x6f2da8, hp:175, atkMin:32, atkMax:42, healMin:18, healMax:28, ultCooldown:9, chance:"Secret / Awakening" };
-const werewolfSpecies = { number:24, name:"Werewolf", emoji:"🐺", roleName:"Werewolf", color:0x7c3aed, hp:125, atkMin:24, atkMax:36, healMin:12, healMax:20, ultCooldown:10, chance:"Halloween boss · 5% unlock drop" };
+const werewolfSpecies = { number:24, name:"Werewolf", emoji:"🐺", roleName:"Werewolf", color:0x7c3aed, hp:125, atkMin:30, atkMax:42, healMin:18, healMax:30, ultCooldown:10, chance:"Halloween boss · 5% unlock drop" };
 
 // ==================== BOT DIFFICULTY ====================
 const botSpeciesByDifficulty = {
@@ -454,7 +454,7 @@ function getPassiveDescription(name) {
     "Slime Lord":"**Adaptive Momentum** — each miss or counter builds a next-attack multiplier: ×1.2, ×1.4, ×1.6, ×1.8, up to ×2.0; a successful hit consumes the bonus.",
     "Chaos Creator":"**Absolute Authority** — receives 50% less damage, cannot miss normal attacks, and counter attempts against its attacks are counter-countered.",
     "True Dragon":"**Dragon Spirit Haki** — takes 20% less incoming damage; Universal Perception sees through evasion.",
-    Werewolf:"**Blood Moon Frenzy** — once per fight at 50% HP or lower, its next 2 attacks deal ×1.25; missed attacks consume a charge.",
+    Werewolf:"**Blood Moon Frenzy** — once per fight at 75% HP or lower, its next 2 attacks deal ×1.3; missed attacks consume a charge.",
   };
   return passives[name] || "Unknown passive";
 }
@@ -488,7 +488,7 @@ function getActiveDescription(name) {
     "True Dragon":"**Fourfold Cataclysm** — 2× next attack, bypasses 10% of enemy damage reduction, and suppresses the opponent’s next attack by 20% (CD: 9)",
     Archdemon:"**Abyssal Gate** — 2× + 10 curse 3 turns (CD: 10)",
     "Slime Lord":"**Predatory Assimilation** — converts the next incoming damage hit into HP; any amount beyond max HP is reflected to the attacker (CD: 9).",
-    Werewolf:"**Lunar Rend** — ×1.8 next attack and 4 Bleed damage for 2 ticks (CD: 10).",
+    Werewolf:"**Lunar Rend** — ×2 next attack and 10 Bleed damage for 3 ticks (CD: 10).",
     "Chaos Creator":"**Disintegrate** — after primary-owner confirmation, instantly eliminates the current opponent. Victory rewards and stats are credited normally (CD: 2).",
   };
   return actives[name] || "Unknown active";
