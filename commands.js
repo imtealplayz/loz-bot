@@ -3147,7 +3147,7 @@ async function handleButton(interaction) {
 
     if (action==="possessed") {
       playerC.possession=false;
-      const rawSelfHit=Math.floor(Math.random()*(playerC.species.atkMax-playerC.species.atkMin+1))+playerC.species.atkMin;
+      const selfMin=playerC.species.name==="Werewolf"?30:playerC.species.atkMin; const selfMax=playerC.species.name==="Werewolf"?42:playerC.species.atkMax; const rawSelfHit=Math.floor(Math.random()*(selfMax-selfMin+1))+selfMin;
       const selfHit=playerC.species.name==="Chaos Creator"?Math.ceil(rawSelfHit*0.5):rawSelfHit;
       playerC.currentHp=Math.max(0,playerC.currentHp-selfHit);
       log.push(`🎭 **POSSESSION!** You are forced to attack yourself for ${selfHit}!`);
@@ -3158,7 +3158,11 @@ async function handleButton(interaction) {
       else {
         let mult=1;
         if (playerC.ultBuff?.type==="iceHealBoost") { mult=1.5; playerC.ultBuff=null; log.push("❄️ Glacial Spike boosts heal!"); }
-        let rawH=Math.floor((Math.floor(Math.random()*(playerC.species.healMax-playerC.species.healMin+1))+playerC.species.healMin)*mult);
+        const healMin=playerC.species.name==="Werewolf"?18:playerC.species.healMin;
+        const healMax=playerC.species.name==="Werewolf"?30:playerC.species.healMax;
+        const healRoll=Math.floor(Math.random()*(healMax-healMin+1))+healMin;
+        let rawH=Math.floor(healRoll*mult);
+        if(playerC.species.name==="Werewolf") log.push("🐺 Base healing roll: "+healRoll+" HP (18–30 before status effects).");
         // Low HP desperation rule: <15% HP
         if (playerC.currentHp<playerC.maxHp*0.15) {
           if (Math.random()<0.75) { rawH=Math.floor(rawH*0.5); log.push("💔 **Shaking hands!** Desperate heal only 50% effective!"); }
@@ -3386,7 +3390,11 @@ async function handleButton(interaction) {
         let mult=1;
         if (player.ultBuff?.type==="iceHealBoost") { mult=1.5; player.ultBuff=null; }
         if (player.ultBuff?.type==="earthHealBoost") { mult*=1.2; player.ultBuff=null; }
-        let rawH=Math.floor((Math.floor(Math.random()*(player.species.healMax-player.species.healMin+1))+player.species.healMin)*mult);
+        const healMin=player.species.name==="Werewolf"?18:player.species.healMin;
+        const healMax=player.species.name==="Werewolf"?30:player.species.healMax;
+        const healRoll=Math.floor(Math.random()*(healMax-healMin+1))+healMin;
+        let rawH=Math.floor(healRoll*mult);
+        if(player.species.name==="Werewolf") log.push("🐺 Base healing roll: "+healRoll+" HP (18–30 before status effects).");
         if (player.currentHp<player.maxHp*0.15) {
           if (Math.random()<0.75) { rawH=Math.floor(rawH*0.5); log.push(`💔 **Shaking hands!** <@${user.id}>'s desperate heal only 50%!`); }
           else { rawH=Math.floor(rawH*1.3); log.push(`✨ **Miracle heal!** <@${user.id}> gets +30% bonus!`); }
@@ -3404,7 +3412,7 @@ async function handleButton(interaction) {
     } else if (action==="attack") {
       if (player.possession) {
         player.possession=false;
-        const rawSelfHit=Math.floor(Math.random()*(player.species.atkMax-player.species.atkMin+1))+player.species.atkMin;
+        const selfMin=player.species.name==="Werewolf"?30:player.species.atkMin; const selfMax=player.species.name==="Werewolf"?42:player.species.atkMax; const rawSelfHit=Math.floor(Math.random()*(selfMax-selfMin+1))+selfMin;
         const selfHit=player.species.name==="Chaos Creator"?Math.ceil(rawSelfHit*0.5):rawSelfHit;
         player.currentHp=Math.max(0,player.currentHp-selfHit);
         log.push(`🎭 **POSSESSION!** <@${user.id}> attacks themselves for ${selfHit}!`);
