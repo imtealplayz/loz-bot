@@ -1,6 +1,6 @@
 const patchNotes = [
   {
-    version:"7.0v", date:"2026-10-22", alertId:"7.0v-shutdown-farewell-2026-10-28",
+    version:"7.0v", date:"2026-10-28", alertId:"7.0v-shutdown-farewell-2026-10-28",
     changes:[
       "**Leveling:** Added persistent player levels capped at 500, with exactly 100 XP required per level. Eligible bot and PvP results grant XP based on difficulty, result, and battle length. The profile displays a level progress bar, and /level shows current progress and balances.",
       "**Level-up rewards:** Added 15 rotating level-up messages, sent by DM with a battle-channel fallback. Every fifth level awards a Species Roll, every 25th level awards a Species Token, and level-ups award 5 Halloween Candies while the event is active.",
