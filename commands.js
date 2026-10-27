@@ -773,7 +773,7 @@ const GUIDE_PAGES = [
   },
   {
     title:"Step 4: Fight Players or Bots",
-    body:"Challenge a player with \x60/fight player user:@player\x60, or train with \x60/fight bot difficulty:Easy\x60. Choose a bot difficulty from the command options.\n\nUse **Attack**, **Heal**, and **ULT** when available. **Forfeit** ends the battle.\n\n**Rare boss:** a genuine bot victory has a **7.5% chance** to spawn the Slime Lord boss. Defeating that boss gives a separate **9.2% chance** to permanently unlock Slime Lord. Try a bot fight when you're ready, then click **Next Page**.",
+    body:"Challenge a player with \x60/fight player user:@player\x60, or train with \x60/fight bot difficulty:Easy\x60. Choose a bot difficulty from the command options.\n\nUse **Attack**, **Heal**, and **ULT** when available. **Forfeit** ends the battle.\n\n**Halloween bosses:** a genuine Medium-or-higher bot victory has a **7.5% combined boss spawn chance**. If it succeeds, the boss is **Slime Lord (60%)** or **Werewolf (40%)**. Defeating Slime Lord has a **9.2%** permanent-unlock chance; defeating Werewolf has a separate **5%** chance to permanently unlock its playable species. Try a bot fight when you're ready, then click **Next Page**.",
   },
   {
     title:"Step 5: Quests & Awakenings",
