@@ -788,48 +788,18 @@ function getCurrentDeveloperAlert() {
 }
 
 function buildDeveloperAlertPayload(ephemeral=true,codeRecord=null) {
-  const alert=getCurrentDeveloperAlert(),container=new ContainerBuilder().setAccentColor(0x7c3aed);
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🌕 The Veil Opens · LOZ "+alert.version+(alert.date?" · "+alert.date:"")));
-  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  const container=new ContainerBuilder().setAccentColor(0x7c3aed);
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "### 🐺 The Moonlit Hunter\nSomething old has stirred beyond the Rift. A hunter walks beneath the blood moon, and those brave enough to face the Halloween bosses may claim power that survives the season.\n\nPatch notes here: "+commandMention("patchnotes")
+    "## LOZ Farewell\nLOZ will shut down in exactly 3 days, on October 31, 2026 at 2:24 AM IST, because LOZ does not have enough funds to keep running. Thank you for being part of this journey. Farewell."
   ));
-  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("### 🎁 Halloween Reward Code\nCode: HALLOWEEN\nReward: 250 Candies and 5 Species Rolls.\nEach player may redeem it once before November 1, 2026 at 12:00 AM IST."));
-  if(codeRecord) {
-    const expiry=codeRecord.expiresAt==null?null:new Date(codeRecord.expiresAt).getTime();
-    const active=(expiry===null||(Number.isFinite(expiry)&&expiry>Date.now()))&&(Number(codeRecord.maxClaims??1)===0||Number(codeRecord.claimedCount||0)<Number(codeRecord.maxClaims));
-    if(!active) container.addTextDisplayComponents(new TextDisplayBuilder().setContent("The HALLOWEEN code is no longer available."));
-  } else {
-    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("LOZ could not verify the HALLOWEEN code right now. If redemption fails, retry later."));
-  }
-  container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("The Slime Lord and Werewolf may emerge after eligible bot victories. Defeat Werewolf for a chance at its permanent species unlock. Keep your Candies for the Halloween shop."));
   return {components:[container],flags:MessageFlags.IsComponentsV2|(ephemeral?MessageFlags.Ephemeral:0),allowedMentions:{parse:[]}};
 }
 function buildDeveloperAlertReminderPayload() {
-  const alert=getCurrentDeveloperAlert(),container=new ContainerBuilder().setAccentColor(0x7c3aed);
+  const container=new ContainerBuilder().setAccentColor(0x7c3aed);
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    "## 🌕 LOZ "+alert.version+" · Halloween\nThe veil has opened. Challenge the Halloween bosses, collect Candies, and check "+commandMention("patchnotes")+" for the full patch notes. Redeem HALLOWEEN for 250 Candies and 5 Species Rolls before November 1, 2026 at 12:00 AM IST."
+    "## LOZ Farewell\nLOZ will shut down in exactly 3 days, on October 31, 2026 at 2:24 AM IST, because LOZ does not have enough funds to keep running. Thank you for being part of this journey. Farewell."
   ));
   return {components:[container],flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral,allowedMentions:{parse:[]}};
-}
-
-async function maybePromptForDeveloperAlert(interaction) {
-  if (!interaction?.user?.id || (!interaction.replied && !interaction.deferred) || interaction.commandName === "alert") return false;
-  const alert = getCurrentDeveloperAlert();
-  const claim = await database.claimDeveloperAlertPrompt(interaction.user.id, alert.id);
-  if (!claim) return false;
-  try {
-    await interaction.followUp(buildDeveloperAlertReminderPayload());
-    const delivered = await database.markDeveloperAlertPromptDelivered(interaction.user.id, claim.claimedAt);
-    if (!delivered) console.warn("[Developer Alert] Reminder was sent, but its delivery timestamp could not be saved for " + interaction.user.id);
-    return true;
-  } catch(e) {
-    await database.releaseDeveloperAlertPromptClaim(interaction.user.id, alert.id, claim);
-    console.error("Developer alert reminder delivery failed:", e?.message || String(e));
-    return false;
-  }
 }
 
 const SPECIES_TOKEN_EMOJI = "<:species_token:1558181624296771634>";
