@@ -158,6 +158,31 @@ async function resolveLeaderboardName(userId,guild) {
   return {name:fetched?.username||"Unknown",member:false};
 }
 
+async function buildLeaderboardViewWithTimeout(type,guild,scope="global") {
+  let timer=null;
+  try {
+    const timeoutPayload=attachLeaderboardSelector(
+      buildStyledCardPayload("LOZ Leaderboard",0x808080,[{
+        heading:"Leaderboard Timed Out",
+        body:"This leaderboard took too long to load. LOZ stopped waiting so Discord won't remain stuck on a thinking state. Please try again shortly."
+      }]),
+      type,scope
+    );
+    return await Promise.race([
+      buildLeaderboardView(type,guild,scope),
+      new Promise(resolve=>{timer=setTimeout(()=>resolve(timeoutPayload),4500);})
+    ]);
+  } catch(error) {
+    console.error("[Leaderboard] View failed:",error?.stack||error);
+    return attachLeaderboardSelector(
+      buildStyledCardPayload("LOZ Leaderboard",0xdc2626,[{heading:"Leaderboard Unavailable",body:"LOZ could not load this leaderboard. No player data was changed."}]),
+      type,scope
+    );
+  } finally {
+    if(timer) clearTimeout(timer);
+  }
+}
+
 async function buildLeaderboardView(leaderboardType,guild,scope="global") {
   const type=["fights","rolls","glory","levels"].includes(leaderboardType)?leaderboardType:"fights";
   const selectedScope=scope==="server"?"server":"global";
@@ -1961,7 +1986,7 @@ async function handleCommand(interaction) {
   if (commandName === "leaderboard") {
     const scope=options.getString("leaderboard")||"global";
     await interaction.deferReply({flags:MessageFlags.IsComponentsV2});
-    return interaction.editReply(await buildLeaderboardView("fights",guild,scope));
+    return interaction.editReply(await buildLeaderboardViewWithTimeout("fights",guild,scope));
   }
 
   if (commandName === "level") {
@@ -3583,7 +3608,7 @@ async function handleSelectMenu(interaction) {
       return safeReply(interaction,{content:"Choose a valid leaderboard.",flags:64});
     }
     await interaction.deferUpdate();
-    return interaction.editReply(await buildLeaderboardView(selected,guild,scope));
+    return interaction.editReply(await buildLeaderboardViewWithTimeout(selected,guild,scope));
   }
   if(customId.startsWith("ach:species-select:")) return achievementSystem.handleSelectMenu(interaction,_state,_client);
   if (!customId.startsWith("species_token_pick_")) return;
@@ -3676,4 +3701,4 @@ new SlashCommandBuilder().setName("leaderboard").setDescription("View player lea
     .addSubcommand(s=>s.setName("repair-user-db").setDescription("Archive and repair duplicate player records")),
 ].map(c=>c.toJSON());
 
-module.exports = { setState, setClient, setRegisteredCommandIds, getCurrentDeveloperAlert, isArchdemonUnlocked, markArchdemonUnlocked, preserveLegacyArchdemonUnlock, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, handleModalSubmit, maybePromptForDeveloperAlert, commands };
+module.exports = { setState, setClient, setRegisteredCommandIds, getCurrentDeveloperAlert, isArchdemonUnlocked, markArchdemonUnlocked, preserveLegacyArchdemonUnlock, handleCommand, handleAutocomplete, handleButton, handleSelectMenu, handleModalSubmit, maybePromptForDeveloperAlert: typeof maybePromptForDeveloperAlert === "function" ? maybePromptForDeveloperAlert : async () => false, commands };
