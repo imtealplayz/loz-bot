@@ -127,6 +127,23 @@ function getSpeciesAutocompleteEntries(includeChaosCreator = false) {
 }
 
 const _leaderboardMemberFetchState = new Map();
+const _guildLeaderboardWriteAt = new Map();
+function noteGuildLeaderboardActivity(interaction) {
+  const guildId=String(interaction?.guildId||interaction?.guild?.id||"");
+  const user=interaction?.user;
+  const userId=String(user?.id||"");
+  if(!/^\d{17,20}$/.test(guildId)||!/^\d{17,20}$/.test(userId)) return;
+  const displayName=String(interaction?.member?.displayName||interaction?.member?.nick||user?.globalName||user?.username||"Unknown").slice(0,128);
+  let state=_leaderboardMemberFetchState.get(guildId);
+  if(!state) state={members:new Map()};
+  if(!state.members) state.members=new Map();
+  state.members.set(userId,{id:userId,displayName,user:{username:String(user?.username||"Unknown")}});
+  _leaderboardMemberFetchState.set(guildId,state);
+  const key=guildId+":"+userId,now=Date.now(),last=_guildLeaderboardWriteAt.get(key)||0;
+  if(now-last<60000) return;
+  _guildLeaderboardWriteAt.set(key,now);
+  void database.recordGuildLeaderboardActivity(guildId,userId,displayName,String(user?.username||"Unknown"));
+}
 
 function attachLeaderboardSelector(payload, selectedType, scope="global") {
   const selected=["fights","rolls","glory","levels"].includes(selectedType)?selectedType:"fights";
@@ -195,30 +212,28 @@ async function buildLeaderboardView(leaderboardType,guild,scope="global") {
 
   let serverMemberCache=null;
   if(selectedScope==="server") {
-    // Use the gateway cache plus at most one 1,000-member listing call. Never fetch members one by one.
+    // The bot deliberately does not require Discord's privileged Guild Members intent.
+    // Rank only LOZ participants observed in this server, restoring them from an additive DB index.
     serverMemberCache=new Map(guild.members?.cache||[]);
     const guildKey=String(guild.id);
-    let fetchState=_leaderboardMemberFetchState.get(guildKey);
-    if(!fetchState) {
-      fetchState={pending:false,lastStartedAt:0};
-      _leaderboardMemberFetchState.set(guildKey,fetchState);
-    }
-    if(typeof guild.members?.list==="function"&&!fetchState.pending&&Date.now()-fetchState.lastStartedAt>=30000) {
-      fetchState.pending=true;
-      fetchState.lastStartedAt=Date.now();
-      let timeoutId=null;
-      const fetchPromise=guild.members.list({limit:1000})
-        .then(members=>{
-          if(members&&typeof members.forEach==="function") members.forEach(member=>serverMemberCache.set(String(member.id),member));
-          else if(Array.isArray(members)) members.forEach(member=>serverMemberCache.set(String(member.id),member));
-        })
-        .catch(()=>{})
-        .finally(()=>{fetchState.pending=false;});
-      await Promise.race([
-        fetchPromise,
-        new Promise(resolve=>{timeoutId=setTimeout(resolve,1800);})
-      ]);
-      if(timeoutId) clearTimeout(timeoutId);
+    const localState=_leaderboardMemberFetchState.get(guildKey);
+    for(const [uid,member] of (localState?.members||new Map())) serverMemberCache.set(String(uid),member);
+    let timer=null;
+    const stored=await Promise.race([
+      database.getGuildLeaderboardActivity(guildKey,5000),
+      new Promise(resolve=>{timer=setTimeout(()=>resolve("__server_activity_timeout__"),900);})
+    ]);
+    if(timer) clearTimeout(timer);
+    if(Array.isArray(stored)) {
+      for(const entry of stored) {
+        const uid=String(entry.userId||"");
+        if(!/^\d{17,20}$/.test(uid)||serverMemberCache.has(uid)) continue;
+        serverMemberCache.set(uid,{
+          id:uid,
+          displayName:String(entry.displayName||entry.username||"Unknown"),
+          user:{username:String(entry.username||entry.displayName||"Unknown")}
+        });
+      }
     }
   }
   const belongsToScope=uid=>selectedScope!=="server"||serverMemberCache.has(String(uid));
@@ -1126,6 +1141,7 @@ async function buildServersPagePayload(page, ownerId) {
 
 // ==================== SLASH COMMAND HANDLER ====================
 async function handleCommand(interaction) {
+  noteGuildLeaderboardActivity(interaction);
   const { commandName, options, user, guild, channel } = interaction;
 
   // Older guild-scoped /fight registrations may still send a root-level player option.
@@ -2640,6 +2656,7 @@ async function handleCommand(interaction) {
 
 // ==================== BUTTON HANDLER ====================
 async function handleButton(interaction) {
+  noteGuildLeaderboardActivity(interaction);
   const { customId, user, guild, channel, message } = interaction;
   // Halloween shop purchase workflow. Every button is bound to the invoking user.
   if(customId.startsWith("hshop_buy_")) {
@@ -3576,6 +3593,7 @@ async function handleButton(interaction) {
 
 
 async function handleModalSubmit(interaction) {
+  noteGuildLeaderboardActivity(interaction);
   const {customId,user}=interaction;
   if(!customId.startsWith("hshop_quantity_")) return false;
   const parts=customId.split("_"),item=parts[2],expectedUserId=parts[3],expectedRestockAt=Number(parts[4]);
@@ -3600,6 +3618,7 @@ async function handleModalSubmit(interaction) {
 }
 
 async function handleSelectMenu(interaction) {
+  noteGuildLeaderboardActivity(interaction);
   const { customId, user, guild } = interaction;
   if (customId==="leaderboard_select" || customId.startsWith("leaderboard_select_")) {
     const selected=interaction.values?.[0];
