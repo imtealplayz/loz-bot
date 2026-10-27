@@ -262,7 +262,7 @@ async function buildLeaderboardView(leaderboardType,guild,scope="global") {
   const title="LOZ Leaderboard · "+(selectedScope==="server"?(guild.name||"Server"):"Global");
   let body;
   if(rows.length) {
-    body="*Top "+rows.length+" "+(selectedScope==="server"?"members in this server":"players")+" · Ranked by "+label.toLowerCase()+"*\\n\\n"+rows.join("\\n");
+    body="*Top "+rows.length+" "+(selectedScope==="server"?"members in this server":"players")+" · Ranked by "+label.toLowerCase()+"*\n\n"+rows.join("\n");
   } else if(selectedScope==="server") {
     body="No ranked LOZ players from this server could be verified in Discord's current member cache. Try again shortly after players interact with LOZ here, or choose Global.";
   } else {
