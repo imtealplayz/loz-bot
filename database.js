@@ -205,6 +205,19 @@ const achievementProfileSchema = new mongoose.Schema({
 },{minimize:false});
 const AchievementProfile = mongoose.model("AchievementProfile", achievementProfileSchema);
 
+// Additive per-server activity index for server-scoped leaderboards. It records LOZ participants,
+// not every guild member, and does not modify the existing player collection.
+const guildLeaderboardActivitySchema = new mongoose.Schema({
+  guildId:{type:String,required:true},
+  userId:{type:String,required:true},
+  displayName:{type:String,default:""},
+  username:{type:String,default:""},
+  lastSeenAt:{type:Date,default:Date.now},
+},{minimize:false});
+guildLeaderboardActivitySchema.index({guildId:1,userId:1},{unique:true});
+guildLeaderboardActivitySchema.index({guildId:1,lastSeenAt:-1});
+const GuildLeaderboardActivity = mongoose.model("GuildLeaderboardActivity",guildLeaderboardActivitySchema);
+
 // Unique receipts make battle rewards idempotent across restarts without growing user documents.
 const BattleRewardReceipt = mongoose.model("BattleRewardReceipt", new mongoose.Schema({
   key:{type:String,required:true,unique:true,index:true},
@@ -2314,6 +2327,42 @@ async function grantBossSpeciesUnlock(userId,speciesKey,fightId) {
   }
 }
 
+async function recordGuildLeaderboardActivity(guildId,userId,displayName="",username="") {
+  const gid=String(guildId||""),uid=String(userId||"");
+  if(!/^\d{17,20}$/.test(gid)||!/^\d{17,20}$/.test(uid)) return false;
+  try {
+    if(!await connect()) return false;
+    await GuildLeaderboardActivity.updateOne(
+      {guildId:gid,userId:uid},
+      {$set:{displayName:String(displayName||"").slice(0,128),username:String(username||"").slice(0,128),lastSeenAt:new Date()}},
+      {upsert:true}
+    );
+    return true;
+  } catch(error) {
+    console.warn("[Server Leaderboard] Could not record guild activity:",error?.message||error);
+    return false;
+  }
+}
+async function getGuildLeaderboardActivity(guildId,limit=5000) {
+  const gid=String(guildId||"");
+  if(!/^\d{17,20}$/.test(gid)) return [];
+  try {
+    if(!await connect()) return null;
+    const safeLimit=Math.max(1,Math.min(5000,Math.floor(Number(limit)||5000)));
+    const rows=await GuildLeaderboardActivity.find({guildId:gid})
+      .sort({lastSeenAt:-1,userId:1}).limit(safeLimit).lean();
+    return rows.map(row=>({
+      userId:String(row.userId),
+      displayName:String(row.displayName||""),
+      username:String(row.username||""),
+      lastSeenAt:row.lastSeenAt||null
+    }));
+  } catch(error) {
+    console.warn("[Server Leaderboard] Could not load guild activity:",error?.message||error);
+    return null;
+  }
+}
+
 module.exports = {
   rollBossSpeciesUnlock, grantBossSpeciesUnlock, applyBattleLevelingReward, purchaseHalloweenXp, getHalloweenShopState, purchaseHalloweenItem, claimPvpRewardWindow,
   saveUserSpecies, grantArchdemonUnlock, getArchdemonUnlockState, saveUserRolls, saveUserSpeciesFields, addSpeciesTokens, redeemSpeciesToken, awardGuideCompletionRoll, repairUserRecords,
@@ -2328,7 +2377,7 @@ module.exports = {
   recordLoz60EventResponse, getLoz60EventRegisteredUserIds, getLoz60EventRespondedUserIds,
   awardGuildInviteReward,
   getLeaderboardBadgeSnapshot, saveLeaderboardBadgeSnapshot,
-  getAchievementProfile, saveAchievementProfile, getGloryLeaderboardTop,
+  getAchievementProfile, saveAchievementProfile, getGloryLeaderboardTop, recordGuildLeaderboardActivity, getGuildLeaderboardActivity,
   getGloryLeaderboardSnapshot, saveGloryLeaderboardSnapshot, claimLoz60RegistrationReward,
   getLoz60RewardDeliveryStatus, markLoz60RewardDmSent,
   setAccessBan, getActiveAccessBan, removeAccessBan,
