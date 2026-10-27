@@ -168,54 +168,9 @@ async function buildLeaderboardView(leaderboardType,guild,scope="global") {
     );
   }
 
-  // Never fetch every member of a guild for this view. Build a bounded candidate set
-  // from existing LOZ records, then do a short, targeted member lookup only for those IDs.
-  const candidateLimit=selectedScope==="server"?500:10;
-  const allUserIds=selectedScope==="server"
-    ?Array.from(_state.userSpecies.keys()).map(String).filter(uid=>/^\d{17,20}$/.test(uid)).slice(0,5000)
-    :null;
-  let candidates=[];
-
-  if(type==="glory") {
-    const entries=await database.getGloryLeaderboardTop(candidateLimit,allUserIds);
-    if(entries===null) {
-      return attachLeaderboardSelector(
-        buildStyledCardPayload("LOZ Leaderboard",0x0891b2,[{heading:"Glory",body:"MongoDB could not load the Glory leaderboard. Please try again later."}]),
-        type,selectedScope
-      );
-    }
-    candidates=entries.map(entry=>({
-      uid:String(entry?.userId||""),
-      score:Math.max(0,Number(entry?.glory)||0),
-      data:_state.userSpecies.get(String(entry?.userId||""))||{}
-    }));
-  } else if(type==="fights") {
-    candidates=Array.from(_state.fightLeaderboard.entries())
-      .map(([uid,score])=>({uid:String(uid),score:Math.max(0,Number(score?.wins)||0),data:_state.userSpecies.get(String(uid))||{}}))
-      .filter(entry=>entry.score>0)
-      .sort((a,b)=>(b.score-a.score)||a.uid.localeCompare(b.uid))
-      .slice(0,candidateLimit);
-  } else if(type==="rolls") {
-    candidates=Array.from(_state.userSpecies.entries())
-      .map(([uid,data])=>({uid:String(uid),score:Math.max(0,Number(data?.rolls)||0),data}))
-      .filter(entry=>entry.score>0)
-      .sort((a,b)=>(b.score-a.score)||a.uid.localeCompare(b.uid))
-      .slice(0,candidateLimit);
-  } else {
-    candidates=Array.from(_state.userSpecies.entries())
-      .map(([uid,data])=>{
-        const progress=leveling.normalizeLevelData(data||{});
-        return {uid:String(uid),score:progress.level*100+progress.xp,level:progress.level,xp:progress.xp,data:data||{}};
-      })
-      .filter(entry=>entry.level>1||entry.xp>0)
-      .sort((a,b)=>(b.level-a.level)||(b.xp-a.xp)||a.uid.localeCompare(b.uid))
-      .slice(0,candidateLimit);
-  }
-
   let serverMemberCache=null;
   if(selectedScope==="server") {
-    // Begin with the gateway cache. One bounded API lookup can add up to 1,000 members;
-    // unlike fetch(), this never tries to retrieve the entire guild.
+    // Use the gateway cache plus at most one 1,000-member listing call. Never fetch members one by one.
     serverMemberCache=new Map(guild.members?.cache||[]);
     const guildKey=String(guild.id);
     let fetchState=_leaderboardMemberFetchState.get(guildKey);
@@ -223,57 +178,91 @@ async function buildLeaderboardView(leaderboardType,guild,scope="global") {
       fetchState={pending:false,lastStartedAt:0};
       _leaderboardMemberFetchState.set(guildKey,fetchState);
     }
-    if(typeof guild.members.list==="function"&&!fetchState.pending&&Date.now()-fetchState.lastStartedAt>=30000) {
+    if(typeof guild.members?.list==="function"&&!fetchState.pending&&Date.now()-fetchState.lastStartedAt>=30000) {
       fetchState.pending=true;
       fetchState.lastStartedAt=Date.now();
       let timeoutId=null;
-      const fetchMembers=guild.members.list({limit:1000})
+      const fetchPromise=guild.members.list({limit:1000})
         .then(members=>{
-          if(members&&typeof members.forEach==="function") {
-            members.forEach(member=>serverMemberCache.set(String(member.id),member));
-          }
-          return members;
+          if(members&&typeof members.forEach==="function") members.forEach(member=>serverMemberCache.set(String(member.id),member));
+          else if(Array.isArray(members)) members.forEach(member=>serverMemberCache.set(String(member.id),member));
         })
-        .catch(()=>null)
+        .catch(()=>{})
         .finally(()=>{fetchState.pending=false;});
-      try {
-        await Promise.race([
-          fetchMembers,
-          new Promise(resolve=>{timeoutId=setTimeout(()=>resolve(null),2500);})
-        ]);
-      } finally {
-        if(timeoutId) clearTimeout(timeoutId);
-      }
+      await Promise.race([
+        fetchPromise,
+        new Promise(resolve=>{timeoutId=setTimeout(resolve,1800);})
+      ]);
+      if(timeoutId) clearTimeout(timeoutId);
     }
-    candidates=candidates.filter(candidate=>serverMemberCache.has(String(candidate.uid))).slice(0,10);
+  }
+  const belongsToScope=uid=>selectedScope!=="server"||serverMemberCache.has(String(uid));
+  const memberIds=selectedScope==="server"?Array.from(serverMemberCache.keys()).filter(uid=>/^\d{17,20}$/.test(String(uid))):null;
+  let candidates=[];
+
+  if(type==="glory") {
+    let timeoutId=null;
+    const entries=await Promise.race([
+      database.getGloryLeaderboardTop(selectedScope==="server"?5000:10,memberIds),
+      new Promise(resolve=>{timeoutId=setTimeout(()=>resolve("__leaderboard_timeout__"),4500);})
+    ]);
+    if(timeoutId) clearTimeout(timeoutId);
+    if(entries==="__leaderboard_timeout__"||entries===null) {
+      return attachLeaderboardSelector(
+        buildStyledCardPayload("LOZ Leaderboard",0x0891b2,[{heading:"Glory",body:entries===null?"MongoDB could not load the Glory leaderboard. Please try again later.":"The Glory query timed out. Please try again in a moment; the command will not keep loading indefinitely."}]),
+        type,selectedScope
+      );
+    }
+    candidates=entries.map(entry=>({
+      uid:String(entry?.userId||""),
+      score:Math.max(0,Number(entry?.glory)||0),
+      data:_state.userSpecies.get(String(entry?.userId||""))||{}
+    })).filter(entry=>belongsToScope(entry.uid));
+  } else if(type==="fights") {
+    candidates=Array.from(_state.fightLeaderboard.entries())
+      .map(([uid,score])=>({uid:String(uid),score:Math.max(0,Number(score?.wins)||0),data:_state.userSpecies.get(String(uid))||{}}))
+      .filter(entry=>entry.score>0&&belongsToScope(entry.uid))
+      .sort((a,b)=>(b.score-a.score)||a.uid.localeCompare(b.uid));
+  } else if(type==="rolls") {
+    candidates=Array.from(_state.userSpecies.entries())
+      .map(([uid,data])=>({uid:String(uid),score:Math.max(0,Number(data?.rolls)||0),data}))
+      .filter(entry=>entry.score>0&&belongsToScope(entry.uid))
+      .sort((a,b)=>(b.score-a.score)||a.uid.localeCompare(b.uid));
+  } else {
+    candidates=Array.from(_state.userSpecies.entries())
+      .map(([uid,data])=>{
+        const progress=leveling.normalizeLevelData(data||{});
+        return {uid:String(uid),score:progress.level*100+progress.xp,level:progress.level,xp:progress.xp,data:data||{}};
+      })
+      .filter(entry=>(entry.level>1||entry.xp>0)&&belongsToScope(entry.uid))
+      .sort((a,b)=>(b.level-a.level)||(b.xp-a.xp)||a.uid.localeCompare(b.uid));
   }
 
   const topCandidates=candidates.slice(0,10);
-  const rows=await Promise.all(topCandidates.map(async (candidate,index)=>{
-    let resolved;
+  const rows=await Promise.all(topCandidates.map(async(candidate,index)=>{
+    let name="Unknown";
     if(selectedScope==="server") {
-      const member=serverMemberCache?.get(String(candidate.uid));
-      resolved={name:member?.displayName||member?.user?.username||"Unknown",member:Boolean(member)};
+      const member=serverMemberCache.get(String(candidate.uid));
+      name=member?.displayName||member?.user?.username||"Unknown";
     } else {
-      resolved=await resolveLeaderboardName(candidate.uid,null);
+      const resolved=await resolveLeaderboardName(candidate.uid,null);
+      name=resolved?.name||"Unknown";
     }
-    if(selectedScope==="server"&&!resolved.member) return null;
     const rank=index+1;
     const prefix=rank===1?"🥇":rank===2?"🥈":rank===3?"🥉":"**"+String(rank).padStart(2,"0")+".**";
     let identity=type==="glory"?GLORY_LEADERBOARD_EMOJI:(candidate.data?.species?.emoji||"⚔️");
     let scoreText="";
     if(type==="fights") scoreText=candidate.score.toLocaleString()+" wins";
-    else if(type==="rolls") { identity="<:reroll_dice:1558042108965822515>"; scoreText=candidate.score.toLocaleString()+" rolls"; }
+    else if(type==="rolls") {identity="<:reroll_dice:1558042108965822515>";scoreText=candidate.score.toLocaleString()+" rolls";}
     else if(type==="glory") scoreText=candidate.score.toLocaleString()+" Glory";
     else scoreText="Level "+candidate.level+" · "+candidate.xp+"/100 XP";
-    return {rank,text:prefix+" "+identity+" **"+resolved.name+"** · **"+scoreText+"**"};
+    return prefix+" "+identity+" **"+name+"** · **"+scoreText+"**";
   }));
-  const visibleRows=rows.filter(Boolean);
   const label=type==="fights"?"Fight Wins":type==="rolls"?"Species Rolls":type==="glory"?"Glory":"Player Level";
   const title="LOZ Leaderboard · "+(selectedScope==="server"?(guild.name||"Server"):"Global");
   let body;
-  if(visibleRows.length) {
-    body="*Top "+visibleRows.length+" "+(selectedScope==="server"?"members in this server":"players")+" · Ranked by "+label.toLowerCase()+"*\\n\\n"+visibleRows.map(row=>row.text).join("\\n");
+  if(rows.length) {
+    body="*Top "+rows.length+" "+(selectedScope==="server"?"members in this server":"players")+" · Ranked by "+label.toLowerCase()+"*\\n\\n"+rows.join("\\n");
   } else if(selectedScope==="server") {
     body="No ranked LOZ players from this server could be verified in Discord's current member cache. Try again shortly after players interact with LOZ here, or choose Global.";
   } else {
