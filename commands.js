@@ -212,44 +212,47 @@ async function buildLeaderboardView(leaderboardType,guild,scope="global") {
       .slice(0,candidateLimit);
   }
 
+  let serverMemberCache=null;
   if(selectedScope==="server") {
-    const topCandidateIds=candidates.slice(0,120).map(candidate=>candidate.uid).filter(uid=>/^\d{17,20}$/.test(uid));
-    const missingIds=topCandidateIds.filter(uid=>!guild.members.cache.has(uid));
-    if(missingIds.length) {
-      const guildKey=String(guild.id);
-      let fetchState=_leaderboardMemberFetchState.get(guildKey);
-      if(!fetchState) {
-        fetchState={pending:false,lastStartedAt:0};
-        _leaderboardMemberFetchState.set(guildKey,fetchState);
-      }
-      // One in-flight lookup per guild, throttled for 30 seconds. If Discord is slow,
-      // render from cache instead of stacking additional member-fetch requests.
-      if(!fetchState.pending && Date.now()-fetchState.lastStartedAt>=30000) {
-        fetchState.pending=true;
-        fetchState.lastStartedAt=Date.now();
-        let timeoutId=null;
-        const fetchMembers=guild.members.fetch({user:missingIds,cache:true})
-          .catch(()=>null)
-          .finally(()=>{fetchState.pending=false;});
-        try {
-          await Promise.race([
-            fetchMembers,
-            new Promise(resolve=>{timeoutId=setTimeout(()=>resolve(null),2500);})
-          ]);
-        } finally {
-          if(timeoutId) clearTimeout(timeoutId);
-        }
+    // Begin with the gateway cache. One bounded API lookup can add up to 1,000 members;
+    // unlike fetch(), this never tries to retrieve the entire guild.
+    serverMemberCache=new Map(guild.members?.cache||[]);
+    const guildKey=String(guild.id);
+    let fetchState=_leaderboardMemberFetchState.get(guildKey);
+    if(!fetchState) {
+      fetchState={pending:false,lastStartedAt:0};
+      _leaderboardMemberFetchState.set(guildKey,fetchState);
+    }
+    if(typeof guild.members.list==="function"&&!fetchState.pending&&Date.now()-fetchState.lastStartedAt>=30000) {
+      fetchState.pending=true;
+      fetchState.lastStartedAt=Date.now();
+      let timeoutId=null;
+      const fetchMembers=guild.members.list({limit:1000})
+        .then(members=>{
+          if(members&&typeof members.forEach==="function") {
+            members.forEach(member=>serverMemberCache.set(String(member.id),member));
+          }
+          return members;
+        })
+        .catch(()=>null)
+        .finally(()=>{fetchState.pending=false;});
+      try {
+        await Promise.race([
+          fetchMembers,
+          new Promise(resolve=>{timeoutId=setTimeout(()=>resolve(null),2500);})
+        ]);
+      } finally {
+        if(timeoutId) clearTimeout(timeoutId);
       }
     }
-    const memberCache=guild.members?.cache;
-    candidates=candidates.filter(candidate=>memberCache?.has(String(candidate.uid))).slice(0,10);
+    candidates=candidates.filter(candidate=>serverMemberCache.has(String(candidate.uid))).slice(0,10);
   }
 
   const topCandidates=candidates.slice(0,10);
   const rows=await Promise.all(topCandidates.map(async (candidate,index)=>{
     let resolved;
     if(selectedScope==="server") {
-      const member=guild.members.cache.get(String(candidate.uid));
+      const member=serverMemberCache?.get(String(candidate.uid));
       resolved={name:member?.displayName||member?.user?.username||"Unknown",member:Boolean(member)};
     } else {
       resolved=await resolveLeaderboardName(candidate.uid,null);
