@@ -21,7 +21,7 @@ const TOKEN = (process.env.TOKEN || process.env.DISCORD_TOKEN || "").trim();
 
 const SUPPORT_SERVER_INVITE = "https://discord.gg/TKBYpjqnPC";
 // Bump only when intentionally queuing a one-time startup alert for a new release event.
-const DEVELOPER_ALERT_STARTUP_CYCLE = "loz-7.0v-halloween-2026-10-22-v1";
+const DEVELOPER_ALERT_STARTUP_CYCLE = "loz-7.0v-shutdown-farewell-2026-10-28-v1";
 
 function buildAccessNoticePayload({ unavailable=false, ephemeral=false }={}) {
   const card=new ContainerBuilder().setAccentColor(unavailable ? 0xe0a020 : 0xdc2626);
@@ -317,7 +317,7 @@ function updatePresence() {
       type: 4,
       state: `Serving ${client.guilds.cache.size} servers`,
     }],
-    status: "online",
+    status: "dnd",
   });
 }
 
