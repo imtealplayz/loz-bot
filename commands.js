@@ -1140,6 +1140,95 @@ async function buildServersPagePayload(page, ownerId) {
 }
 
 // ==================== SLASH COMMAND HANDLER ====================
+async function startBotFight(interaction, difficulty, isRematch = false) {
+  const user = interaction?.user;
+  const channel = interaction?.channel;
+  const guild = interaction?.guild;
+  if (!user?.id || !channel) {
+    return safeReply(interaction, {embeds:[createErrorEmbed("LOZ couldn't access the channel for this fight.")], flags:64});
+  }
+  if (!Object.prototype.hasOwnProperty.call(botSpeciesByDifficulty, difficulty)
+    || !Array.isArray(botSpeciesByDifficulty[difficulty]) || botSpeciesByDifficulty[difficulty].length === 0) {
+    return safeReply(interaction, {embeds:[createErrorEmbed("Choose a valid bot difficulty.")], flags:64});
+  }
+  if (_state.activeRequests.has(user.id)) {
+    return safeReply(interaction,{embeds:[createErrorEmbed("You have a pending player challenge. Accept, decline, or wait for it to expire before starting another fight.")],flags:64});
+  }
+  if (isPlayerInFight(user.id) || _state.activeBotFights.has(user.id)) {
+    return safeReply(interaction,{embeds:[createErrorEmbed("Already in a fight!")],flags:64});
+  }
+  const playerData = _state.userSpecies.get(user.id);
+  if (!playerData?.species || playerData.species.name === "Human") {
+    return safeReply(interaction,{embeds:[createErrorEmbed("You need a species! Use `/species-roll` first.")],flags:64});
+  }
+  const speciesPool = botSpeciesByDifficulty[difficulty];
+  const bsName = speciesPool[Math.floor(Math.random() * speciesPool.length)];
+  const bSpecies = getSpeciesByName(bsName);
+  const personality = botPersonalities[difficulty];
+  if (!bSpecies || !personality) {
+    return safeReply(interaction,{embeds:[createErrorEmbed("LOZ couldn't prepare that bot fight. Please try again.")],flags:64});
+  }
+  const fightId = `bot-${user.id}-${Date.now()}`;
+  const fight = {
+    fightId, playerId:user.id, playerSpecies:playerData.species,
+    playerHp:(playerData.species || humanSpecies).hp, playerMaxHp:(playerData.species || humanSpecies).hp,
+    playerHealCooldown:0, playerUltCooldown:0, playerUltBuff:null, playerUltDebuffs:[],
+    playerDamageDealt:0, playerDamageTaken:0,
+    playerAdaptiveStacks:0, playerAttackCounter:0, playerSlimeMissStacks:0, playerBloodMoonFrenzyUsed:false, playerBloodMoonAttacks:0,
+    playerBurn:0, playerBurnRounds:0, playerBleed:0, playerBleedRounds:0,
+    playerCurse:0, playerBlockHeal:false, playerPossession:false, playerStunnedTurns:0, playerLastUltUsed:null,
+    botSpecies:bSpecies, botHp:bSpecies.hp, botMaxHp:bSpecies.hp,
+    botHealCooldown:0, botUltCooldown:0, botUltBuff:null, botUltDebuffs:[], botDamageDealt:0, botDamageTaken:0,
+    botAdaptiveStacks:0, botAttackCounter:0, botSlimeMissStacks:0, botBloodMoonFrenzyUsed:false, botBloodMoonAttacks:0,
+    botBurn:0, botBurnRounds:0, botBleed:0, botBleedRounds:0, botCurse:0, botPossession:false, botBlockHeal:false, botStunnedTurns:0, botLastUltUsed:null,
+    round:1, difficulty, botPersonality:personality, timeout:null, log:[], playerName:interaction.member?.displayName || user.displayName || user.username,
+  };
+  _state.activeBotFights.set(fightId,fight);
+  _state.activeBotFights.set(user.id,fightId);
+  let msg;
+  let fightChannel = channel;
+  let usedDmFallback = false;
+  const fightPayload = buildBotFightMessagePayload(fight,["Fight started. Your turn."],"playing");
+  try {
+    msg = await channel.send(fightPayload);
+  } catch(channelError) {
+    console.error(
+      "[Bot fight " + fightId + "] Public message post failed"
+        + " (guild=" + (guild?.id || "none")
+        + ", channel=" + (channel?.id || "unknown")
+        + ", code=" + (channelError?.code || "unknown") + "):",
+      channelError?.stack || channelError
+    );
+    try {
+      fightChannel = await user.createDM();
+      msg = await fightChannel.send(fightPayload);
+      usedDmFallback = true;
+      fight.deliveryMode = "dm";
+      fight.deliveryChannelId = fightChannel.id;
+      console.warn("[Bot fight " + fightId + "] Started in player DM after public channel access failed.");
+    } catch(dmError) {
+      if (_state.activeBotFights.get(fightId) === fight) _state.activeBotFights.delete(fightId);
+      if (_state.activeBotFights.get(user.id) === fightId) _state.activeBotFights.delete(user.id);
+      console.error("[Bot fight " + fightId + "] DM fallback also failed:",dmError?.stack || dmError);
+      return safeReply(interaction,{embeds:[createErrorEmbed(
+        "LOZ couldn't post in this channel or deliver a private battle. No fight was started. Enable DMs from server members, or ask a server admin to give LOZ View Channel and Send Messages permissions."
+      )],flags:64});
+    }
+  }
+  _state.fightMessages.set(fightId,msg);
+  fight.timeout = setTimeout(() => {
+    if (_state.activeBotFights.get(fightId) === fight) {
+      endBotFight(fightChannel,fightId,"bot","player",difficulty,"timeout")
+        .catch(error => console.error("[Bot fight " + fightId + "] Timeout resolution failed:",error?.stack || error));
+    }
+  },120000);
+  return safeReply(interaction,{embeds:[createSuccessEmbed(
+    usedDmFallback
+      ? (isRematch ? "Fight again started in your DMs because LOZ couldn't post in this channel." : "Fight started in your DMs because LOZ couldn't post in this channel.")
+      : (isRematch ? "Fight again started!" : "Fight started!")
+  )],flags:64});
+}
+
 async function handleCommand(interaction) {
   noteGuildLeaderboardActivity(interaction);
   const { commandName, options, user, guild, channel } = interaction;
@@ -1810,67 +1899,7 @@ async function handleCommand(interaction) {
 
   // ── FIGHT: BOT BATTLE ──────────────────────────────────────────
   if (commandName === "fight" && (fightSubcommand === "bot" || (!fightSubcommand && options.getString("difficulty", false)))) {
-    const difficulty=options.getString("difficulty");
-    if (_state.activeRequests.has(user.id)) return safeReply(interaction,{embeds:[createErrorEmbed("You have a pending player challenge. Accept, decline, or wait for it to expire before starting another fight.")],flags:64});
-    if (isPlayerInFight(user.id)||_state.activeBotFights.has(user.id)) return safeReply(interaction,{embeds:[createErrorEmbed("Already in a fight!")],flags:64});
-    const playerData=_state.userSpecies.get(user.id);
-    if (!playerData?.species||playerData.species.name==="Human") return safeReply(interaction,{embeds:[createErrorEmbed("You need a species! Use `/species-roll` first.")],flags:64});
-    const bsName=botSpeciesByDifficulty[difficulty][Math.floor(Math.random()*botSpeciesByDifficulty[difficulty].length)];
-    const bSpecies=getSpeciesByName(bsName), personality=botPersonalities[difficulty];
-    const fightId=`bot-${user.id}-${Date.now()}`;
-    const fight={
-      fightId, playerId:user.id, playerSpecies:playerData.species,
-      playerHp:(playerData.species||humanSpecies).hp, playerMaxHp:(playerData.species||humanSpecies).hp,
-      playerHealCooldown:0, playerUltCooldown:0, playerUltBuff:null,
-      playerAdaptiveStacks:0, playerAttackCounter:0, playerSlimeMissStacks:0, playerBloodMoonFrenzyUsed:false, playerBloodMoonAttacks:0,
-      playerBurn:0, playerBurnRounds:0, playerBleed:0, playerBleedRounds:0,
-      playerCurse:0, playerBlockHeal:false, playerPossession:false, playerStunnedTurns:0, playerLastUltUsed:null,
-      botSpecies:bSpecies, botHp:bSpecies.hp, botMaxHp:bSpecies.hp,
-      botHealCooldown:0, botUltCooldown:0, botUltBuff:null, botAdaptiveStacks:0, botAttackCounter:0, botSlimeMissStacks:0, botBloodMoonFrenzyUsed:false, botBloodMoonAttacks:0,
-      botBurn:0, botBurnRounds:0, botBleed:0, botBleedRounds:0, botCurse:0, botPossession:false, botBlockHeal:false, botStunnedTurns:0, botLastUltUsed:null,
-      round:1, difficulty, botPersonality:personality, timeout:null, log:[], playerName:user.displayName||user.username,
-    };
-    _state.activeBotFights.set(fightId,fight); _state.activeBotFights.set(user.id,fightId);
-    let msg;
-    let fightChannel=channel;
-    let usedDmFallback=false;
-    const fightPayload=buildBotFightMessagePayload(fight,["Fight started. Your turn."],"playing");
-    try {
-      msg=await channel.send(fightPayload);
-    } catch(channelError) {
-      console.error(
-        "[Bot fight "+fightId+"] Public message post failed"
-          +" (guild="+(guild?.id||"none")
-          +", channel="+(channel?.id||"unknown")
-          +", code="+(channelError?.code||"unknown")+"):",
-        channelError?.stack||channelError
-      );
-
-      // A bot battle needs one editable message for its buttons and all later turns.
-      // Use the player's DM as a real-message fallback rather than cancelling combat.
-      try {
-        fightChannel=await user.createDM();
-        msg=await fightChannel.send(fightPayload);
-        usedDmFallback=true;
-        fight.deliveryMode="dm";
-        fight.deliveryChannelId=fightChannel.id;
-        console.warn("[Bot fight "+fightId+"] Started in player DM after public channel access failed.");
-      } catch(dmError) {
-        if (_state.activeBotFights.get(fightId)===fight) _state.activeBotFights.delete(fightId);
-        if (_state.activeBotFights.get(user.id)===fightId) _state.activeBotFights.delete(user.id);
-        console.error("[Bot fight "+fightId+"] DM fallback also failed:",dmError?.stack||dmError);
-        return safeReply(interaction,{embeds:[createErrorEmbed(
-          "LOZ couldn't post in this channel or deliver a private battle. No fight was started. Enable DMs from server members, or ask a server admin to give LOZ View Channel and Send Messages permissions."
-        )],flags:64});
-      }
-    }
-    _state.fightMessages.set(fightId,msg);
-    fight.timeout=setTimeout(()=>{ if(_state.activeBotFights.get(fightId)===fight) endBotFight(fightChannel,fightId,"bot","player",difficulty,"timeout").catch(error=>console.error("[Bot fight "+fightId+"] Timeout resolution failed:",error?.stack||error)); },120000);
-    return safeReply(interaction,{embeds:[createSuccessEmbed(
-      usedDmFallback
-        ? "Fight started in your DMs because LOZ couldn't post in this channel."
-        : "Fight started!"
-    )],flags:64});
+    return startBotFight(interaction, options.getString("difficulty"));
   }
 
   if (commandName === "fight" && !fightSubcommand) {
@@ -3120,6 +3149,15 @@ async function handleButton(interaction) {
   if (customId.startsWith("botfight_")) {
     const parts=customId.split("_");
     let action=parts[1];
+    if (action === "again") {
+      const ownerId = parts[2];
+      const difficulty = parts[3];
+      if (user.id !== ownerId) return safeReply(interaction,{content:"This rematch button belongs to another player.",flags:64});
+      if (!Object.prototype.hasOwnProperty.call(botSpeciesByDifficulty, difficulty)) {
+        return safeReply(interaction,{embeds:[createErrorEmbed("This rematch button has an invalid difficulty.")],flags:64});
+      }
+      return startBotFight(interaction, difficulty, true);
+    }
     if (action==="choice") {
       const choiceType=parts[2], choice=parts[3], fightId=parts.slice(4).join("_");
       const fight=_state.activeBotFights.get(fightId);
@@ -3156,8 +3194,8 @@ async function handleButton(interaction) {
 
     if (action==="forfeit") { await endBotFight(channel,fightId,"bot","player",fight.difficulty); return; }
 
-    const playerC={id:fight.playerId,species:fight.playerSpecies,currentHp:fight.playerHp,maxHp:fight.playerMaxHp,ultBuff:fight.playerUltBuff,adaptiveStacks:fight.playerAdaptiveStacks||0,attackCounter:fight.playerAttackCounter||0,slimeMissStacks:fight.playerSlimeMissStacks||0,bloodMoonFrenzyUsed:fight.playerBloodMoonFrenzyUsed||false,bloodMoonAttacks:fight.playerBloodMoonAttacks||0,burn:fight.playerBurn||0,burnRounds:fight.playerBurnRounds||0,bleed:fight.playerBleed||0,bleedRounds:fight.playerBleedRounds||0,curse:fight.playerCurse||0,blockHeal:fight.playerBlockHeal||false,possession:fight.playerPossession||false,stunnedTurns:fight.playerStunnedTurns||0,healCooldown:fight.playerHealCooldown,ultCooldown:fight.playerUltCooldown,lastUltUsed:fight.playerLastUltUsed};
-    const botC={id:"BOT",species:fight.botSpecies,currentHp:fight.botHp,maxHp:fight.botMaxHp,ultBuff:fight.botUltBuff,adaptiveStacks:fight.botAdaptiveStacks||0,attackCounter:fight.botAttackCounter||0,slimeMissStacks:fight.botSlimeMissStacks||0,bloodMoonFrenzyUsed:fight.botBloodMoonFrenzyUsed||false,bloodMoonAttacks:fight.botBloodMoonAttacks||0,burn:fight.botBurn||0,burnRounds:fight.botBurnRounds||0,bleed:fight.botBleed||0,bleedRounds:fight.botBleedRounds||0,curse:fight.botCurse||0,blockHeal:fight.botBlockHeal||false,possession:fight.botPossession||false,stunnedTurns:fight.botStunnedTurns||0,healCooldown:fight.botHealCooldown,ultCooldown:fight.botUltCooldown,lastUltUsed:fight.botLastUltUsed};
+    const playerC={id:fight.playerId,species:fight.playerSpecies,currentHp:fight.playerHp,maxHp:fight.playerMaxHp,ultBuff:fight.playerUltBuff,ultDebuffs:fight.playerUltDebuffs||[],adaptiveStacks:fight.playerAdaptiveStacks||0,attackCounter:fight.playerAttackCounter||0,slimeMissStacks:fight.playerSlimeMissStacks||0,bloodMoonFrenzyUsed:fight.playerBloodMoonFrenzyUsed||false,bloodMoonAttacks:fight.playerBloodMoonAttacks||0,burn:fight.playerBurn||0,burnRounds:fight.playerBurnRounds||0,bleed:fight.playerBleed||0,bleedRounds:fight.playerBleedRounds||0,curse:fight.playerCurse||0,blockHeal:fight.playerBlockHeal||false,possession:fight.playerPossession||false,stunnedTurns:fight.playerStunnedTurns||0,healCooldown:fight.playerHealCooldown,ultCooldown:fight.playerUltCooldown,lastUltUsed:fight.playerLastUltUsed};
+    const botC={id:"BOT",species:fight.botSpecies,currentHp:fight.botHp,maxHp:fight.botMaxHp,ultBuff:fight.botUltBuff,ultDebuffs:fight.botUltDebuffs||[],adaptiveStacks:fight.botAdaptiveStacks||0,attackCounter:fight.botAttackCounter||0,slimeMissStacks:fight.botSlimeMissStacks||0,bloodMoonFrenzyUsed:fight.botBloodMoonFrenzyUsed||false,bloodMoonAttacks:fight.botBloodMoonAttacks||0,burn:fight.botBurn||0,burnRounds:fight.botBurnRounds||0,bleed:fight.botBleed||0,bleedRounds:fight.botBleedRounds||0,curse:fight.botCurse||0,blockHeal:fight.botBlockHeal||false,possession:fight.botPossession||false,stunnedTurns:fight.botStunnedTurns||0,healCooldown:fight.botHealCooldown,ultCooldown:fight.botUltCooldown,lastUltUsed:fight.botLastUltUsed};
 
     // Oni possession consumes the target's next action.
     if (playerC.possession) action="possessed";
@@ -3218,6 +3256,8 @@ async function handleButton(interaction) {
     } else if (action==="ult") {
       if (playerC.ultCooldown>0) { log.push(`❌ ULT on cooldown for ${playerC.ultCooldown} more rounds!`); }
       else {
+        const botHpBeforeUlt = botC.currentHp;
+        const playerHpBeforeUlt = playerC.currentHp;
         let um, requiresChoice=false, choiceType=null;
         if (chaosDisintegrateConfirmed) {
           um = "Disintegrating this individual named " + (fight.botSpecies?.name || "opponent") + ".";
@@ -3226,7 +3266,21 @@ async function handleButton(interaction) {
           ({message:um,requiresChoice,choiceType}=applyUltEffect(playerC,botC));
         }
         fight.playerUltBuff=playerC.ultBuff;
+        fight.playerUltDebuffs=playerC.ultDebuffs||[];
+        fight.botUltDebuffs=botC.ultDebuffs||[];
         fight.playerLastUltUsed=playerC.lastUltUsed;
+        if (!chaosDisintegrateConfirmed) {
+          const damageDealt = Math.max(0, botHpBeforeUlt - botC.currentHp);
+          const damageTaken = Math.max(0, playerHpBeforeUlt - playerC.currentHp);
+          if (damageDealt > 0) {
+            fight.playerDamageDealt = (Number(fight.playerDamageDealt) || 0) + damageDealt;
+            fight.botDamageTaken = (Number(fight.botDamageTaken) || 0) + damageDealt;
+          }
+          if (damageTaken > 0) {
+            fight.botDamageDealt = (Number(fight.botDamageDealt) || 0) + damageTaken;
+            fight.playerDamageTaken = (Number(fight.playerDamageTaken) || 0) + damageTaken;
+          }
+        }
         // Hold progression until the fight resolves, so forfeits cannot farm quests or awakenings.
         addFightProgress(fight,user.id,"ults",1);
         if (requiresChoice) {
@@ -3244,7 +3298,16 @@ async function handleButton(interaction) {
       }
     } else if (action==="attack") {
       const result=calculateDamage(playerC,botC);
-      if (result.damage > 0) addFightProgress(fight,user.id,"damage",result.damage);
+      if (result.damage > 0) {
+        addFightProgress(fight,user.id,"damage",result.damage);
+        fight.playerDamageDealt = (Number(fight.playerDamageDealt) || 0) + result.damage;
+        fight.botDamageTaken = (Number(fight.botDamageTaken) || 0) + result.damage;
+      }
+      if (result.missedAttack && Number(result.attackerMutations?.hpDelta) < 0) {
+        const counterDamage = Math.max(0, -Number(result.attackerMutations.hpDelta));
+        fight.botDamageDealt = (Number(fight.botDamageDealt) || 0) + counterDamage;
+        fight.playerDamageTaken = (Number(fight.playerDamageTaken) || 0) + counterDamage;
+      }
       playerC.currentHp=Math.max(0,Math.min(playerC.maxHp,playerC.currentHp+result.attackerMutations.hpDelta));
       if (result.instantKill) {
         botC.currentHp=0;
@@ -3284,7 +3347,7 @@ async function handleButton(interaction) {
 
     // Sync back — including BOTH cooldowns after tickBothUltCooldowns
     fight.playerHp=Math.max(0,playerC.currentHp); fight.botHp=Math.max(0,botC.currentHp);
-    fight.playerUltBuff=playerC.ultBuff; fight.playerHealCooldown=playerC.healCooldown; fight.playerUltCooldown=playerC.ultCooldown;
+    fight.playerUltBuff=playerC.ultBuff; fight.playerUltDebuffs=playerC.ultDebuffs||[]; fight.botUltDebuffs=botC.ultDebuffs||[]; fight.playerHealCooldown=playerC.healCooldown; fight.playerUltCooldown=playerC.ultCooldown;
     fight.playerBurn=playerC.burn; fight.playerBurnRounds=playerC.burnRounds; fight.playerBleed=playerC.bleed; fight.playerBleedRounds=playerC.bleedRounds; fight.playerCurse=playerC.curse;
     fight.playerBloodMoonFrenzyUsed=playerC.bloodMoonFrenzyUsed||false; fight.playerBloodMoonAttacks=playerC.bloodMoonAttacks||0;
     fight.playerUltBuff=playerC.ultBuff;
@@ -3392,6 +3455,8 @@ async function handleButton(interaction) {
           chaosUltNullified=decision.confirmed;
         }
 
+        const opponentHpBeforeUlt = opponent.currentHp;
+        const playerHpBeforeUlt = player.currentHp;
         let um="",requiresChoice=false,choiceType=null;
         if (chaosDisintegrateConfirmed) {
           opponent.currentHp=0;
@@ -3400,6 +3465,28 @@ async function handleButton(interaction) {
           um="🌀 **ABSOLUTE NULLIFICATION!** "+player.species.name+"'s ultimate was nullified.";
         } else {
           ({message:um,requiresChoice,choiceType}=applyUltEffect(player,opponent));
+        }
+        if (!chaosDisintegrateConfirmed && !chaosUltNullified) {
+          const damageDealt = Math.max(0, opponentHpBeforeUlt - opponent.currentHp);
+          const damageTaken = Math.max(0, playerHpBeforeUlt - player.currentHp);
+          if (damageDealt > 0) {
+            if (isP1) {
+              fight.player1DamageDealt = (Number(fight.player1DamageDealt) || 0) + damageDealt;
+              fight.player2DamageTaken = (Number(fight.player2DamageTaken) || 0) + damageDealt;
+            } else {
+              fight.player2DamageDealt = (Number(fight.player2DamageDealt) || 0) + damageDealt;
+              fight.player1DamageTaken = (Number(fight.player1DamageTaken) || 0) + damageDealt;
+            }
+          }
+          if (damageTaken > 0) {
+            if (isP1) {
+              fight.player2DamageDealt = (Number(fight.player2DamageDealt) || 0) + damageTaken;
+              fight.player1DamageTaken = (Number(fight.player1DamageTaken) || 0) + damageTaken;
+            } else {
+              fight.player1DamageDealt = (Number(fight.player1DamageDealt) || 0) + damageTaken;
+              fight.player2DamageTaken = (Number(fight.player2DamageTaken) || 0) + damageTaken;
+            }
+          }
         }
         // Hold ultimate progress until the fight resolves; forfeits grant no quest or awakening progress.
         addFightProgress(fight,player.id,"ults",1);
@@ -3462,7 +3549,26 @@ async function handleButton(interaction) {
       } else {
         const targetHpBeforeAttack=opponent.currentHp;
         const result=calculateDamage(player,opponent);
-        if (result.damage > 0) addFightProgress(fight,player.id,"damage",result.damage);
+        if (result.damage > 0) {
+          addFightProgress(fight,player.id,"damage",result.damage);
+          if (isP1) {
+            fight.player1DamageDealt = (Number(fight.player1DamageDealt) || 0) + result.damage;
+            fight.player2DamageTaken = (Number(fight.player2DamageTaken) || 0) + result.damage;
+          } else {
+            fight.player2DamageDealt = (Number(fight.player2DamageDealt) || 0) + result.damage;
+            fight.player1DamageTaken = (Number(fight.player1DamageTaken) || 0) + result.damage;
+          }
+        }
+        if (result.missedAttack && Number(result.attackerMutations?.hpDelta) < 0) {
+          const counterDamage = Math.max(0, -Number(result.attackerMutations.hpDelta));
+          if (isP1) {
+            fight.player2DamageDealt = (Number(fight.player2DamageDealt) || 0) + counterDamage;
+            fight.player1DamageTaken = (Number(fight.player1DamageTaken) || 0) + counterDamage;
+          } else {
+            fight.player1DamageDealt = (Number(fight.player1DamageDealt) || 0) + counterDamage;
+            fight.player2DamageTaken = (Number(fight.player2DamageTaken) || 0) + counterDamage;
+          }
+        }
         player.currentHp=Math.max(0,Math.min(player.maxHp,player.currentHp+result.attackerMutations.hpDelta));
         if (result.instantKill) {
           opponent.currentHp=0;

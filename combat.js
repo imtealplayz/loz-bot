@@ -7,7 +7,7 @@ function makeCombatant(id, species) {
   return {
     id, species,
     maxHp: species.hp, currentHp: species.hp,
-    healCooldown: 0, ultCooldown: 0, ultBuff: null,
+    healCooldown: 0, ultCooldown: 0, ultBuff: null, ultDebuffs: [],
     adaptiveStacks: 0, attackCounter: 0, slimeMissStacks: 0,
     bloodMoonFrenzyUsed:false, bloodMoonAttacks:0,
     burn: 0, burnRounds: 0, bleed:0, bleedRounds:0, curse: 0, curseRounds: 0,
@@ -230,6 +230,19 @@ function calculateDamage(attacker, defender) {
       multiplier*=0.8; specialLines.push("🐉 Dragon Spirit Suppression -20% attack");
       ub.duration--; if(ub.duration<=0) attacker.ultBuff=null;
     }
+  }
+
+  // Opponent-applied ULT effects are tracked separately from the combatant's own ULT buff,
+  // so effects such as True Dragon suppression can coexist with Slime Lord assimilation.
+  if (Array.isArray(attacker.ultDebuffs) && attacker.ultDebuffs.length) {
+    for (const effect of attacker.ultDebuffs) {
+      if (effect?.type === "trueDragonSuppression" && Number(effect.duration) > 0) {
+        multiplier *= 0.8;
+        specialLines.push("🐉 Dragon Spirit Suppression -20% attack");
+        effect.duration = Math.max(0, Number(effect.duration) - 1);
+      }
+    }
+    attacker.ultDebuffs = attacker.ultDebuffs.filter(effect => effect && Number(effect.duration) > 0);
   }
 
   // Defender reductions
@@ -455,7 +468,10 @@ function applyUltEffect(attacker, defender) {
     case "Werewolf": attacker.ultBuff={type:"nextAttack",multiplier:2,bleed:12,bleedRounds:3,lifeSteal:0.6}; msg="🐺 **LUNAR REND!**\n×2 next attack + 12 Bleed damage for 3 ticks + 60% life leech!"; break;
     case "True Dragon":
       attacker.ultBuff={type:"nextAttack",multiplier:2,ignoreReduction:0.1};
-      defender.ultBuff={type:"trueDragonSuppression",duration:1};
+      if (!Array.isArray(defender.ultDebuffs)) defender.ultDebuffs = [];
+      const existingSuppression = defender.ultDebuffs.find(effect => effect?.type === "trueDragonSuppression");
+      if (existingSuppression) existingSuppression.duration = Math.max(Number(existingSuppression.duration) || 0, 1);
+      else defender.ultDebuffs.push({type:"trueDragonSuppression",duration:1});
       msg="🐉 **FOURFOLD CATACLYSM!**\nYour next attack deals 2× damage and bypasses 10% of enemy damage reduction. The opponent’s next attack is suppressed by 20%.";
       break;
     case "Chimera": {
@@ -518,6 +534,10 @@ function cleanFightLog(logLines = []) {
 function getBuffLine(p) {
   const parts = [];
   if (p.ultBuff)        parts.push("✦ Ultimate " + inlineCode(p.ultBuff.type));
+  for (const effect of Array.isArray(p.ultDebuffs) ? p.ultDebuffs : []) {
+    if (effect?.type === "trueDragonSuppression" && Number(effect.duration) > 0)
+      parts.push("🐉 Attack suppressed " + inlineCode("-20% × " + effect.duration));
+  }
   if (p.burn > 0)       parts.push("🔥 Burn " + inlineCode(p.burn + " × " + p.burnRounds));
   if (p.bleed > 0)      parts.push("🩸 Bleed " + inlineCode(p.bleed + " × " + p.bleedRounds));
   if (p.curse > 0)      parts.push("☠ Curse " + inlineCode(p.curse));
@@ -594,9 +614,15 @@ function buildBotFightEmbed(fight, logLines = [], phase = "playing") {
   const playerEffects = [];
   const botEffects = [];
   if (fight.playerUltBuff) playerEffects.push("✦ Ultimate " + inlineCode(fight.playerUltBuff.type));
+  for (const effect of Array.isArray(fight.playerUltDebuffs) ? fight.playerUltDebuffs : []) {
+    if (effect?.type === "trueDragonSuppression" && Number(effect.duration) > 0) playerEffects.push("🐉 Attack suppressed (-20%)");
+  }
   if ((fight.playerBurn || 0) > 0) playerEffects.push("🔥 Burn " + inlineCode(fight.playerBurn + " × " + fight.playerBurnRounds));
   if ((fight.playerBleed || 0) > 0) playerEffects.push("🩸 Bleed " + inlineCode(fight.playerBleed + " × " + fight.playerBleedRounds));
   if (fight.botUltBuff) botEffects.push("✦ Ultimate " + inlineCode(fight.botUltBuff.type));
+  for (const effect of Array.isArray(fight.botUltDebuffs) ? fight.botUltDebuffs : []) {
+    if (effect?.type === "trueDragonSuppression" && Number(effect.duration) > 0) botEffects.push("🐉 Attack suppressed (-20%)");
+  }
   if ((fight.botBurn || 0) > 0) botEffects.push("🔥 Burn " + inlineCode(fight.botBurn + " × " + fight.botBurnRounds));
   if ((fight.botBleed || 0) > 0) botEffects.push("🩸 Bleed " + inlineCode(fight.botBleed + " × " + fight.botBleedRounds));
   const logs = cleanFightLog(logLines);
@@ -682,6 +708,10 @@ function buildBotFightMessagePayload(fight, logLines = [], phase = "playing", ro
     buildBotFightEmbed(fight, logLines, phase),
   ];
   if (phase !== "ended") components.push(buildBotFightRow(fight.fightId, fight, rowPhase));
+  else {
+    const rematchRow = buildBotFightRematchRow(fight);
+    if (rematchRow) components.push(rematchRow);
+  }
   return {
     flags: MessageFlags.IsComponentsV2,
     allowedMentions: { parse: [], users: phase === "bot_thinking" || phase === "ended" ? [] : [fight.playerId] },
@@ -689,7 +719,17 @@ function buildBotFightMessagePayload(fight, logLines = [], phase = "playing", ro
   };
 }
 
-function buildFightResultPayload(header, body, color, mentionIds = []) {
+function buildBotFightRematchRow(fight) {
+  if (!fight?.allowRematch || fight.isEventBoss) return null;
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("botfight_again_" + fight.playerId + "_" + fight.difficulty)
+      .setLabel("Fight Again")
+      .setStyle(ButtonStyle.Primary)
+  );
+}
+
+function buildFightResultPayload(header, body, color, mentionIds = [], extraComponents = []) {
   const container = new ContainerBuilder()
     .setAccentColor(color)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(body))
@@ -697,7 +737,11 @@ function buildFightResultPayload(header, body, color, mentionIds = []) {
   return {
     flags: MessageFlags.IsComponentsV2,
     allowedMentions: { parse: [], users: mentionIds },
-    components: [new TextDisplayBuilder().setContent(header), container],
+    components: [
+      new TextDisplayBuilder().setContent(header),
+      container,
+      ...(Array.isArray(extraComponents) ? extraComponents.filter(Boolean) : []),
+    ],
   };
 }
 
@@ -706,6 +750,6 @@ module.exports = {
   processBurnTick, processBleedTick, processCurseTick, tickCooldowns, tickBothUltCooldowns, applyOgreRegen,
   applyUltEffect,
   getBuffLine, buildFightEmbed, buildFightRow, buildFightMessagePayload,
-  buildBotFightEmbed, buildBotFightRow, buildBotFightMessagePayload,
+  buildBotFightEmbed, buildBotFightRow, buildBotFightMessagePayload, buildBotFightRematchRow,
   buildFightResultPayload, formatFightHealth, cleanFightLog,
 };

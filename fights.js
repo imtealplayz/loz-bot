@@ -12,7 +12,7 @@ const {
 const {
   makeCombatant, calculateDamage, applyUltEffect,
   tickCooldowns, applyOgreRegen, processCurseTick, processBleedTick,
-  buildFightMessagePayload, buildBotFightMessagePayload, buildFightResultPayload, formatFightHealth,
+  buildFightMessagePayload, buildBotFightMessagePayload, buildBotFightRematchRow, buildFightResultPayload, formatFightHealth,
 } = require("./combat.js");
 
 let _state = null;
@@ -25,7 +25,8 @@ const BOT_TURN_STATE_FIELDS = [
   "playerBloodMoonFrenzyUsed", "playerBloodMoonAttacks", "botBloodMoonFrenzyUsed", "botBloodMoonAttacks",
   "playerBurn", "playerBurnRounds", "botBurn", "botBurnRounds", "playerBleed", "playerBleedRounds", "botBleed", "botBleedRounds",
   "playerBlockHeal", "botBlockHeal", "playerCurse", "botCurse",
-  "playerUltBuff", "botUltBuff", "botAdaptiveStacks", "botAttackCounter",
+  "playerUltBuff", "botUltBuff", "playerUltDebuffs", "botUltDebuffs",
+  "playerDamageDealt", "playerDamageTaken", "botDamageDealt", "botDamageTaken", "botAdaptiveStacks", "botAttackCounter",
   "botLastUltUsed", "botHealCooldown", "botUltCooldown", "playerUltCooldown",
   "playerAdaptiveStacks", "playerSlimeMissStacks", "botSlimeMissStacks", "round", "log",
 ];
@@ -133,7 +134,7 @@ async function startFight(channel, player1Id, player2Id) {
   player2.displayName = member2?.displayName || member2?.user?.username || "Player 2";
   const firstTurn = Math.random()<0.5?player1Id:player2Id;
   const fightId = `${player1Id}-${player2Id}-${Date.now()}`;
-  const fight = { fightId, player1Id, player2Id, player1, player2, currentTurn:firstTurn, round:1, lastActionTime:Date.now(), timeout:null };
+  const fight = { fightId, player1Id, player2Id, player1, player2, currentTurn:firstTurn, round:1, lastActionTime:Date.now(), timeout:null, player1DamageDealt:0, player1DamageTaken:0, player2DamageDealt:0, player2DamageTaken:0 };
   const msg = await channel.send(buildFightMessagePayload(fight, ["Fight started."], "playing"));
   _state.fightMessages.set(fightId, msg);
   _state.activeFights.set(fightId, fight);
@@ -209,6 +210,16 @@ async function endFight(channel, fightId, winnerId, loserId, reason="normal") {
   _state.fightCooldowns.set(loserId,Date.now()+30000);
   let desc = "**" + winner.species.name + "**: " + formatFightHealth(Math.max(0, winner.currentHp), winner.maxHp) + "\n";
   desc += "**" + loser.species.name + "**: " + formatFightHealth(0, loser.maxHp) + "\n\n";
+  desc += "**Battle recap**\n";
+  desc += "<@" + fight.player1Id + "> — dealt **" + (Number(fight.player1DamageDealt)||0) + "** direct damage · took **" + (Number(fight.player1DamageTaken)||0) + "** direct damage\n";
+  desc += "<@" + fight.player2Id + "> — dealt **" + (Number(fight.player2DamageDealt)||0) + "** direct damage · took **" + (Number(fight.player2DamageTaken)||0) + "** direct damage\n";
+  const outcomeText = reason === "timeout" ? "<@" + loserId + "> timed out."
+    : reason === "forfeit" ? "<@" + loserId + "> forfeited the fight."
+    : reason === "counter" ? "<@" + loserId + "> was defeated by a counter-strike."
+    : reason === "chaos-disintegrate" ? "<@" + loserId + "> was disintegrated by Chaos Creator."
+    : reason === "divine-intervention" ? "<@" + loserId + "> was defeated by divine intervention."
+    : "The opponent's HP reached zero.";
+  desc += "**Outcome:** " + outcomeText + "\n\n";
   if (reason === "timeout") desc += "Opponent timed out.\n";
   if (reason === "forfeit") desc += "Opponent forfeited.\n";
   if (reason === "counter") desc += "Opponent was defeated by a counter-strike.\n";
@@ -254,7 +265,7 @@ async function runBotTurn(channel, fightId, turnToken) {
   const log = fight.log || [];
   const botC = {
     id:"BOT", species:fight.botSpecies, currentHp:fight.botHp, maxHp:fight.botMaxHp, isEventBoss:Boolean(fight.isEventBoss),
-    ultBuff:fight.botUltBuff, adaptiveStacks:fight.botAdaptiveStacks||0, attackCounter:fight.botAttackCounter||0, slimeMissStacks:fight.botSlimeMissStacks||0,
+    ultBuff:fight.botUltBuff, ultDebuffs:fight.botUltDebuffs||[], adaptiveStacks:fight.botAdaptiveStacks||0, attackCounter:fight.botAttackCounter||0, slimeMissStacks:fight.botSlimeMissStacks||0,
     bloodMoonFrenzyUsed:fight.botBloodMoonFrenzyUsed||false, bloodMoonAttacks:fight.botBloodMoonAttacks||0,
     burn:fight.botBurn||0, burnRounds:fight.botBurnRounds||0, bleed:fight.botBleed||0, bleedRounds:fight.botBleedRounds||0, curse:fight.botCurse||0,
     blockHeal:fight.botBlockHeal||false, possession:fight.botPossession||false, stunnedTurns:fight.botStunnedTurns||0,
@@ -262,7 +273,7 @@ async function runBotTurn(channel, fightId, turnToken) {
   };
   const playerC = {
     id:fight.playerId, species:fight.playerSpecies, currentHp:fight.playerHp, maxHp:fight.playerMaxHp,
-    ultBuff:fight.playerUltBuff, adaptiveStacks:fight.playerAdaptiveStacks||0, attackCounter:fight.playerAttackCounter||0, slimeMissStacks:fight.playerSlimeMissStacks||0,
+    ultBuff:fight.playerUltBuff, ultDebuffs:fight.playerUltDebuffs||[], adaptiveStacks:fight.playerAdaptiveStacks||0, attackCounter:fight.playerAttackCounter||0, slimeMissStacks:fight.playerSlimeMissStacks||0,
     bloodMoonFrenzyUsed:fight.playerBloodMoonFrenzyUsed||false, bloodMoonAttacks:fight.playerBloodMoonAttacks||0,
     burn:fight.playerBurn||0, burnRounds:fight.playerBurnRounds||0, bleed:fight.playerBleed||0, bleedRounds:fight.playerBleedRounds||0, curse:fight.playerCurse||0,
     blockHeal:fight.playerBlockHeal||false, possession:fight.playerPossession||false, stunnedTurns:fight.playerStunnedTurns||0,
@@ -335,7 +346,10 @@ async function runBotTurn(channel, fightId, turnToken) {
         }
       }
     }
+    let botHpBeforeUlt = null, playerHpBeforeUlt = null;
     if (botAction==="ult") {
+      botHpBeforeUlt = botC.currentHp;
+      playerHpBeforeUlt = playerC.currentHp;
       let chaosUltNullified=false;
       if (chaosSystem.isChaosCreatorOwner(playerC)) {
         const decision=await chaosSystem.askChaosReaction({
@@ -381,9 +395,30 @@ async function runBotTurn(channel, fightId, turnToken) {
         fight.botUltCooldown=botC.species.ultCooldown; fight.botUltBuff=botC.ultBuff; fight.botLastUltUsed=botC.lastUltUsed;
       }
     }
+    if (botAction === "ult" && botHpBeforeUlt !== null && playerHpBeforeUlt !== null) {
+      const damageDealt = Math.max(0, playerHpBeforeUlt - playerC.currentHp);
+      const damageTaken = Math.max(0, botHpBeforeUlt - botC.currentHp);
+      if (damageDealt > 0) {
+        fight.botDamageDealt = (Number(fight.botDamageDealt) || 0) + damageDealt;
+        fight.playerDamageTaken = (Number(fight.playerDamageTaken) || 0) + damageDealt;
+      }
+      if (damageTaken > 0) {
+        fight.playerDamageDealt = (Number(fight.playerDamageDealt) || 0) + damageTaken;
+        fight.botDamageTaken = (Number(fight.botDamageTaken) || 0) + damageTaken;
+      }
+    }
     if (botAction==="attack") {
       const playerHpBeforeBotAttack=playerC.currentHp;
       const result=calculateDamage(botC,playerC);
+      if (result.damage > 0) {
+        fight.botDamageDealt = (Number(fight.botDamageDealt) || 0) + result.damage;
+        fight.playerDamageTaken = (Number(fight.playerDamageTaken) || 0) + result.damage;
+      }
+      if (result.missedAttack && Number(result.attackerMutations?.hpDelta) < 0) {
+        const counterDamage = Math.max(0, -Number(result.attackerMutations.hpDelta));
+        fight.playerDamageDealt = (Number(fight.playerDamageDealt) || 0) + counterDamage;
+        fight.botDamageTaken = (Number(fight.botDamageTaken) || 0) + counterDamage;
+      }
       // Apply counter-strike damage to bot (attackerMutations.hpDelta is negative on counter)
       botC.currentHp=Math.max(0,Math.min(botC.maxHp,botC.currentHp+result.attackerMutations.hpDelta));
       if (result.missedAttack) {
@@ -439,6 +474,8 @@ async function runBotTurn(channel, fightId, turnToken) {
   fight.playerPossession=playerC.possession; fight.playerStunnedTurns=playerC.stunnedTurns||0;
   fight.botPossession=botC.possession||false; fight.botCurse=botC.curse; fight.botStunnedTurns=botC.stunnedTurns||0;
   fight.playerUltBuff=playerC.ultBuff;
+  fight.playerUltDebuffs=playerC.ultDebuffs||[];
+  fight.botUltDebuffs=botC.ultDebuffs||[];
   fight.playerSlimeMissStacks=playerC.slimeMissStacks||0;
   fight.botSlimeMissStacks=botC.slimeMissStacks||0;
 
@@ -528,17 +565,17 @@ async function startSlimeLordBoss(channel, previousFight, bossType="slimeLord") 
   const fightId=(isWerewolf?"werewolf-boss-":"slime-boss-")+playerId+"-"+Date.now();
   const fight={
     fightId,playerId,playerSpecies,playerHp:playerMaxHp,playerMaxHp,
-    playerHealCooldown:0,playerUltCooldown:0,playerUltBuff:null,
+    playerHealCooldown:0,playerUltCooldown:0,playerUltBuff:null,playerUltDebuffs:[],
     playerAdaptiveStacks:0,playerAttackCounter:0,playerSlimeMissStacks:0,
     playerBloodMoonFrenzyUsed:false,playerBloodMoonAttacks:0,
     playerBurn:0,playerBurnRounds:0,playerBleed:0,playerBleedRounds:0,playerCurse:0,playerCurseRounds:0,
     playerBlockHeal:false,playerPossession:false,playerStunnedTurns:0,playerLastUltUsed:null,
     botSpecies:bossSpecies,botHp:bossSpecies.hp,botMaxHp:bossSpecies.hp,
-    botHealCooldown:0,botUltCooldown:0,botUltBuff:null,botAdaptiveStacks:0,botAttackCounter:0,botSlimeMissStacks:0,
+    botHealCooldown:0,botUltCooldown:0,botUltBuff:null,botUltDebuffs:[],botAdaptiveStacks:0,botAttackCounter:0,botSlimeMissStacks:0,
     botBloodMoonFrenzyUsed:false,botBloodMoonAttacks:0,
     botBurn:0,botBurnRounds:0,botBleed:0,botBleedRounds:0,botCurse:0,botCurseRounds:0,
     botPossession:false,botBlockHeal:false,botStunnedTurns:0,botLastUltUsed:null,
-    round:1,difficulty,botPersonality:botPersonalities[difficulty],timeout:null,
+    round:1,difficulty,botPersonality:botPersonalities[difficulty],timeout:null,playerDamageDealt:0,playerDamageTaken:0,botDamageDealt:0,botDamageTaken:0,
     log:[
       "A rare "+(isWerewolf?"Werewolf":"Slime Lord")+" has emerged after your "+difficulty.toUpperCase()+" victory.",
       "Boss stats scale to the difficulty of the battle that triggered this encounter.",
@@ -596,6 +633,10 @@ async function finishSlimeLordBoss(channel,fight,winner,reason) {
   let desc="**Difficulty:** "+String(fight.difficulty).toUpperCase()+"\n";
   desc+="**Your HP:** "+formatFightHealth(won?fight.playerHp:0,fight.playerMaxHp)+"\n";
   desc+="**Boss HP:** "+formatFightHealth(won?0:fight.botHp,fight.botMaxHp)+"\n";
+  desc+="\n**Battle recap**\n";
+  desc+="Damage dealt: **"+(Number(fight.playerDamageDealt)||0)+"**\n";
+  desc+="Damage taken: **"+(Number(fight.playerDamageTaken)||0)+"**\n";
+  desc+="**Outcome:** "+(won?"Boss defeated.":reason==="timeout"?"Your turn timed out; the boss survived.":"The boss defeated you.")+"\n";
   if(fight.progressionResult?.ok) {
     desc+="**Progress:** Level "+fight.progressionResult.level+" · "+fight.progressionResult.xpProgress+"/100 XP (+"+fight.progressionResult.xp+" XP)\n";
     if(fight.progressionResult.candies>0) desc+="<:Candies:1562536882561224734> Candies: +"+fight.progressionResult.candies+"\n";
@@ -678,7 +719,17 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
     desc += "\n⭐ Level "+progressionResult.level+" · "+progressionResult.xpProgress+"/100 XP (+"+progressionResult.xp+" XP)";
     if(progressionResult.candies>0) desc += "\n<:Candies:1562536882561224734> Candies: +"+progressionResult.candies;
   }
-  const resultPayload = buildFightResultPayload(header, desc, won ? 0x2ecc71 : 0xe74c3c, []);
+  const bossSpawnEligibleReason=!["timeout","disintegration","judge","divine-intervention","chaos-disintegrate"].includes(String(reason));
+  const willSpawnBoss = won && !fight.isEventBoss && bossSpawnEligibleReason
+    && ["medium","hard","impossible","brutal"].includes(difficulty) && Math.random()<0.075;
+  const selectedBoss = willSpawnBoss ? (Math.random()<0.6 ? "slimeLord" : "werewolf") : null;
+  fight.allowRematch = !willSpawnBoss && !fight.isEventBoss;
+  desc += "\n**Battle recap**\n";
+  desc += "Damage dealt: **" + (Number(fight.playerDamageDealt)||0) + "**\n";
+  desc += "Damage taken: **" + (Number(fight.playerDamageTaken)||0) + "**\n";
+  desc += "**Outcome:** " + (won ? "Victory — opponent defeated." : reason === "timeout" ? "Defeat — your turn timed out." : "Defeat — opponent survived.") + "\n";
+  const rematchRow = fight.allowRematch ? buildBotFightRematchRow(fight) : null;
+  const resultPayload = buildFightResultPayload(header, desc, won ? 0x2ecc71 : 0xe74c3c, [], rematchRow ? [rematchRow] : []);
   const msg = _state.fightMessages.get(fightId);
   if (msg) await msg.edit({ content: null, embeds: null, ...resultPayload }).catch(() => {});
   _state.activeBotFights.delete(fightId);
@@ -686,11 +737,7 @@ async function endBotFight(channel, fightId, winner, loser, difficulty, reason='
   _state.fightMessages.delete(fightId);
 
   // Only genuine wins against regular bots can trigger the rare boss encounter.
-  const bossSpawnEligibleReason=!["timeout","disintegration","judge","divine-intervention","chaos-disintegrate"].includes(String(reason));
-  if (won && !fight.isEventBoss && bossSpawnEligibleReason && ["medium","hard","impossible","brutal"].includes(difficulty) && Math.random()<0.075) {
-    const selectedBoss=Math.random()<0.6?"slimeLord":"werewolf";
-    await startSlimeLordBoss(channel,fight,selectedBoss);
-  }
+  if (willSpawnBoss) await startSlimeLordBoss(channel,fight,selectedBoss);
   } catch (error) {
     console.error("[Bot fight " + fightId + "] Fight resolution failed; releasing the fight lock:", error?.stack || error);
   } finally {
