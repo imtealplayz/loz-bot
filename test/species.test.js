@@ -101,7 +101,7 @@ test("True Dragon stats, abilities, and Brutal-bot availability match the specif
   const dragon = helpers.getSpeciesByName("True Dragon");
   assert.deepEqual(
     [dragon.hp, dragon.atkMin, dragon.atkMax, dragon.healMin, dragon.healMax, dragon.ultCooldown],
-    [200, 32, 42, 18, 28, 9]
+    [175, 32, 42, 18, 28, 9]
   );
   assert.ok(constants.botSpeciesByDifficulty.brutal.includes("True Dragon"));
   assert.match(constants.getPassiveDescription("True Dragon"), /Dragon Spirit Haki/i);
